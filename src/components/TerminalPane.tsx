@@ -64,6 +64,18 @@ function getSession(id: string): Session {
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon());
 
+  // The terminal holds focus whenever a repository is selected, so without this
+  // Ctrl+K reached the shell as a literal ^K and the palette never opened.
+  //
+  // Returning false stops xterm processing the key, which both keeps it out of
+  // the PTY and lets it bubble to App's window listener. Do not also dispatch an
+  // event here: the window handler already fires, and two toggles cancel out.
+  term.attachCustomKeyEventHandler((event) => {
+    const chord =
+      (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k";
+    return !(event.type === "keydown" && chord);
+  });
+
   const host = document.createElement("div");
   host.style.height = "100%";
 

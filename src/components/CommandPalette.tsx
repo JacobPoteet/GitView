@@ -14,14 +14,37 @@ interface Props {
 }
 
 /** Subsequence match, so "lsdev" finds "LunchSpecial · dev". */
-function matches(needle: string, haystack: string): boolean {
-  if (!needle) return true;
+function isSubsequence(needle: string, haystack: string): boolean {
   let index = 0;
-  for (const char of haystack.toLowerCase()) {
+  for (const char of haystack) {
     if (char === needle[index]) index += 1;
     if (index === needle.length) return true;
   }
   return false;
+}
+
+/**
+ * Higher is better, null means no match.
+ *
+ * Subsequence matching runs against the label only. Including the hint made
+ * every npm task match almost anything, because "npm run x" donates the r, u
+ * and n of a query like "prune". The hint still matches, but only contiguously.
+ */
+function score(needle: string, item: PaletteItem): number | null {
+  if (!needle) return 0;
+  const label = item.label.toLowerCase();
+  const hint = (item.hint ?? "").toLowerCase();
+
+  const inLabel = label.indexOf(needle);
+  if (inLabel === 0) return 1000;
+  // A match at a word boundary reads as intentional; mid-word is weaker.
+  if (inLabel > 0) return (/[\s·:/-]/.test(label[inLabel - 1]) ? 900 : 800) - inLabel;
+
+  const inHint = hint.indexOf(needle);
+  if (inHint >= 0) return 600 - inHint;
+
+  if (isSubsequence(needle, label)) return 300;
+  return null;
 }
 
 export default function CommandPalette({ items, onClose }: Props) {
@@ -33,7 +56,11 @@ export default function CommandPalette({ items, onClose }: Props) {
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items
-      .filter((item) => matches(needle, `${item.label} ${item.kind} ${item.hint ?? ""}`))
+      .map((item) => ({ item, rank: score(needle, item) }))
+      .filter((row): row is { item: PaletteItem; rank: number } => row.rank !== null)
+      // Ties keep their build order, which puts repositories before tasks.
+      .sort((a, b) => b.rank - a.rank)
+      .map((row) => row.item)
       .slice(0, 60);
   }, [items, query]);
 

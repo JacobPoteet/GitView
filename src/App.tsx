@@ -104,6 +104,8 @@ export default function App() {
       }
       if (event.key === "Escape") setConfirmation(null);
     }
+    // The terminal lets Ctrl+K through to here rather than handling it itself,
+    // see attachCustomKeyEventHandler in TerminalPane.
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);

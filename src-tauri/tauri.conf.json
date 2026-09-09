@@ -5,7 +5,7 @@
   "identifier": "com.jacobpoteet.gitview",
   "build": {
     "beforeDevCommand": "npm run dev:vite",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5183",
     "beforeBuildCommand": "npm run build:vite",
     "frontendDist": "../dist"
   },

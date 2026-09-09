@@ -23,3 +23,6 @@ desktop.ini
 
 # TypeScript project-reference build info
 .tsbuild/
+
+# Dev server log from a detached launch
+devrun.log
