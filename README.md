@@ -47,6 +47,15 @@ Three rules shape the whole app:
   palette too.
 - **Command palette.** `Ctrl+K` for repositories, tasks and actions.
 
+## Installing it
+
+Windows installers are attached to each [release](https://github.com/JacobPoteet/GitView/releases).
+Download `GitView_<version>_x64-setup.exe` and run it; it installs for the current user and asks for
+no elevation.
+
+The installer is not code signed, so SmartScreen will warn on first run. **More info** then **Run
+anyway** is the way past it, and building from source below is the way around it.
+
 ## Requirements
 
 | Requirement | Why |
@@ -64,8 +73,13 @@ npm install
 npm run dev
 ```
 
-`npm run build` produces an installer. `npm run tauri build -- --no-bundle` produces just the
-executable, which is faster when you only want to check that it compiles.
+`npm run build` produces an installer under `src-tauri/target/release/bundle/nsis`.
+`npm run tauri build -- --no-bundle` produces just the executable, which is faster when you only
+want to check that it compiles.
+
+Pushing a `v*` tag builds the same installer on CI and attaches it to the GitHub release. The
+workflow refuses to run if the tag disagrees with the version in `tauri.conf.json`, `package.json`
+or `Cargo.toml`, because the installer is named from the first of those.
 
 The scanner can be checked without opening a window:
 

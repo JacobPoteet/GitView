@@ -1,0 +1,140 @@
+name: Release
+
+# CI never built an installer. It runs on `push: branches: [main]`, which a tag
+# push does not match, and it builds with `--no-bundle` on purpose so the check
+# stays fast. Pushing v0.1.0 therefore produced a release with nothing attached
+# to it. This is the workflow that makes the artifact.
+
+on:
+  push:
+    tags: ["v*"]
+  # So a tag that was already pushed, or a release whose build failed, can be
+  # filled in without deleting and re-pushing the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing tag to build and attach to, e.g. v0.1.0"
+        required: true
+
+# Uploading an asset to a release is a write to the repository.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    # Same reason as CI: the only runner with the MSVC linker and a WebView2
+    # runtime already present, and Windows is the only target so far.
+    runs-on: windows-latest
+
+    steps:
+      - name: Work out which tag this is for
+        id: target
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) { $tag = "${{ github.ref_name }}" }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Building $tag"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          # Release uses lto = true and codegen-units = 1, so its artifacts are
+          # nothing like the debug ones CI caches. Sharing a key would evict one
+          # on every run of the other.
+          key: release
+
+      - name: The tag and the tree must agree on the version
+        shell: pwsh
+        run: |
+          $want = "${{ steps.target.outputs.tag }}" -replace '^v', ''
+          $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $crate = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+
+          Write-Host "tag $want | tauri.conf.json $conf | package.json $pkg | Cargo.toml $crate"
+
+          $bad = @()
+          if ($conf -ne $want) { $bad += "tauri.conf.json says $conf" }
+          if ($pkg -ne $want) { $bad += "package.json says $pkg" }
+          if ($crate -ne $want) { $bad += "Cargo.toml says $crate" }
+
+          if ($bad.Count -gt 0) {
+            # The installer takes its filename and its Add/Remove Programs entry
+            # from tauri.conf.json, so a mismatch here ships a v0.2.0 release
+            # containing a file called GitView_0.1.0_x64-setup.exe.
+            Write-Host "::error::Tag does not match the tree: $($bad -join '; '). Bump all three, or tag the commit that has them."
+            exit 1
+          }
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Rust tests
+        working-directory: src-tauri
+        # A tag does not have to point at a commit that went through CI, so the
+        # release build re-runs the one gate that is cheap once compiled.
+        run: cargo test
+
+      - name: Build the installer
+        # No --no-bundle this time. tauri.conf.json targets nsis, and the CLI
+        # fetches NSIS itself on a Windows runner.
+        run: npm run tauri build
+
+      - name: Attach the installer to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A nonzero exit from gh is something this script handles rather than
+          # something it should die on, and Actions runs pwsh with `stop`.
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          $tag = "${{ steps.target.outputs.tag }}"
+          # Asking for a wildcard that matches nothing is an error under `stop`,
+          # which would fail the step before the message below could explain why.
+          $dir = "src-tauri/target/release/bundle/nsis"
+          $installer = if (Test-Path $dir) {
+            Get-ChildItem -Path $dir -Filter "*-setup.exe" | Select-Object -First 1
+          } else { $null }
+
+          if (-not $installer) {
+            Write-Host "::error::The build produced no NSIS installer under src-tauri/target/release/bundle/nsis."
+            exit 1
+          }
+          Write-Host "Uploading $($installer.Name), $([math]::Round($installer.Length / 1MB, 1)) MB"
+
+          # A tag can be pushed with no release behind it, and a release can
+          # already exist because someone made one by hand. Both are normal.
+          gh release view $tag --json tagName | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No release for $tag yet, creating one."
+            gh release create $tag --title $tag --generate-notes
+          }
+
+          # --clobber so re-running this on a tag replaces the asset rather than
+          # failing on a name that is already there.
+          gh release upload $tag $installer.FullName --clobber
+
+      - name: Keep the installer on the run as well
+        uses: actions/upload-artifact@v4
+        with:
+          name: GitView-${{ steps.target.outputs.tag }}-windows
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
