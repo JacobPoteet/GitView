@@ -3,6 +3,10 @@
 //! A session belongs to a repository rather than to a view, so switching to
 //! another project and back leaves the shell, its scrollback and any dev server
 //! running. That is the behaviour the whole app is arranged around.
+//!
+//! A PowerShell session also carries GitView's shell integration, which emits
+//! OSC 133 prompt marks so the app can tell one command from the next, read its
+//! exit code and find its output. See the Command Blocks note in the wiki.
 
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -21,6 +25,8 @@ pub struct Session {
     alive: Arc<AtomicBool>,
     pub cwd: String,
     pub shell: String,
+    /// Whether this shell was started with the OSC 133 integration.
+    pub integration: bool,
 }
 
 #[derive(Default)]
@@ -63,8 +69,19 @@ impl PtyManager {
         // Lets a shell profile detect the host without guessing.
         cmd.env("GITVIEW", "1");
         cmd.env("TERM", "xterm-256color");
-        if shell.ends_with("pwsh.exe") || shell.ends_with("powershell.exe") {
-            cmd.args(["-NoLogo"]);
+        let integration = is_powershell(&shell);
+        if integration {
+            // An encoded command rather than a path to dot-source. A script file
+            // is subject to the execution policy and this is not, and base64 has
+            // no quoting left to get wrong. The user's profile still loads first,
+            // which is what lets the script wrap an existing prompt instead of
+            // replacing it.
+            cmd.args([
+                "-NoLogo",
+                "-NoExit",
+                "-EncodedCommand",
+                &encoded_integration(),
+            ]);
         }
 
         let mut child = pair
@@ -92,6 +109,7 @@ impl PtyManager {
             alive: alive.clone(),
             cwd: cwd.to_string(),
             shell: shell.clone(),
+            integration,
         });
 
         // Reader thread. Owns nothing the commands need, so a blocked read never
@@ -202,6 +220,55 @@ impl PtyManager {
     }
 }
 
+/// The prompt hook, handed to PowerShell at session start.
+///
+/// Kept beside the Rust rather than written into the user's data folder because
+/// it is source, not state: it ships with the binary, it is readable in the
+/// repository, and there is no copy on disk to go stale against it.
+const INTEGRATION: &str = include_str!("shell_integration.ps1");
+
+pub fn is_powershell(shell: &str) -> bool {
+    let name = shell
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(shell)
+        .to_ascii_lowercase();
+    name.starts_with("pwsh") || name.starts_with("powershell")
+}
+
+/// The integration script as PowerShell's `-EncodedCommand` wants it: UTF-16LE,
+/// base64.
+fn encoded_integration() -> String {
+    let utf16: Vec<u8> = INTEGRATION
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    base64(&utf16)
+}
+
+/// Sixteen lines against a dependency. Nothing else in the app encodes anything,
+/// and a crate here would be one more thing for the release build to compile.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = u32::from(b[0]) << 16 | u32::from(b[1]) << 8 | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - i * 6)) as usize & 0x3F] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// PowerShell 7 when it is installed, Windows PowerShell otherwise.
 pub fn default_shell() -> String {
     #[cfg(windows)]
@@ -226,4 +293,46 @@ fn find_on_path(name: &str) -> Option<String> {
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.is_file())
         .map(|candidate| candidate.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_matches_the_known_vectors() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foob"), "Zm9vYg==");
+        assert_eq!(base64(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+        // Every value of the alphabet, so a wrong index shows up here.
+        assert_eq!(base64(&[0xFB, 0xFF, 0xBF]), "+/+/");
+    }
+
+    #[test]
+    fn the_integration_encodes_as_utf16le() {
+        // PowerShell reads the payload as UTF-16LE, so each character of the
+        // script is a byte followed by a zero. The script opens on a comment,
+        // and the first three of those bytes are 0x23 0x00 0x20.
+        let encoded = encoded_integration();
+        assert!(!encoded.is_empty());
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+/=".contains(c)));
+        assert_eq!(base64(&[b'#', 0, b' ']), "IwAg");
+        assert!(encoded.starts_with("IwAg"));
+    }
+
+    #[test]
+    fn powershell_is_recognised_by_name() {
+        assert!(is_powershell(r"C:\Program Files\PowerShell\7\pwsh.exe"));
+        assert!(is_powershell(
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        ));
+        assert!(!is_powershell(r"C:\Windows\System32\cmd.exe"));
+        assert!(!is_powershell("/bin/bash"));
+    }
 }

@@ -55,6 +55,8 @@ export const api = {
   ptyResize: (id: string, cols: number, rows: number) =>
     invoke<void>("pty_resize", { id, cols, rows }),
   ptyClose: (id: string) => invoke<void>("pty_close", { id }),
+  /** Whether the shell behind a session is still running. */
+  ptyAlive: (id: string) => invoke<boolean>("pty_alive", { id }),
   ptyLive: () => invoke<string[]>("pty_live"),
 
   settingsRoots: () => invoke<string[]>("settings_roots"),

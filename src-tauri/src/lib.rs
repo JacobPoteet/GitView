@@ -48,6 +48,9 @@ pub struct ScanReport {
 pub struct AppInfo {
     git_version: Option<String>,
     shell: String,
+    /// Whether this shell gets OSC 133 marks, which is what makes command
+    /// blocks possible. A shell without them is not broken, it just has none.
+    shell_integration: bool,
     data_dir: String,
     roots: Vec<String>,
 }
@@ -313,9 +316,11 @@ fn settings_remove_root(state: State<'_, AppState>, path: String) -> Result<Vec<
 
 #[tauri::command]
 fn app_info(state: State<'_, AppState>) -> AppInfo {
+    let shell = pty::default_shell();
     AppInfo {
         git_version: gitops::version(),
-        shell: pty::default_shell(),
+        shell_integration: pty::is_powershell(&shell),
+        shell,
         data_dir: cache::data_dir().to_string_lossy().to_string(),
         roots: settings::roots(&state.cache),
     }

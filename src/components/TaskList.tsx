@@ -6,6 +6,8 @@ interface Props {
   disabled: boolean;
   onRun: (task: Task) => void;
   onSetHidden: (task: Task, hidden: boolean) => void;
+  /** Only a saved task can be deleted. A discovered one belongs to a manifest. */
+  onDelete: (task: Task) => void;
 }
 
 function HideIcon({ hidden }: { hidden: boolean }) {
@@ -25,11 +27,13 @@ function Row({
   disabled,
   onRun,
   onSetHidden,
+  onDelete,
 }: {
   task: Task;
   disabled: boolean;
   onRun: (task: Task) => void;
   onSetHidden: (task: Task, hidden: boolean) => void;
+  onDelete: (task: Task) => void;
 }) {
   return (
     <div className="task-row-wrap">
@@ -49,6 +53,18 @@ function Row({
       >
         <HideIcon hidden={task.hidden} />
       </button>
+      {task.saved && (
+        <button className="row-action" onClick={() => onDelete(task)} title="Delete this task">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M4 4l8 8M12 4l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -58,7 +74,7 @@ function Row({
  * several that only CI or an agent ever runs. Hiding one drops it out of the
  * palette as well, which is where the noise actually hurt.
  */
-export default function TaskList({ tasks, disabled, onRun, onSetHidden }: Props) {
+export default function TaskList({ tasks, disabled, onRun, onSetHidden, onDelete }: Props) {
   const [showHidden, setShowHidden] = useState(false);
 
   const { grouped, hidden } = useMemo(() => {
@@ -108,6 +124,7 @@ export default function TaskList({ tasks, disabled, onRun, onSetHidden }: Props)
                 disabled={disabled}
                 onRun={onRun}
                 onSetHidden={onSetHidden}
+                onDelete={onDelete}
               />
             ))}
           </div>
@@ -130,6 +147,7 @@ export default function TaskList({ tasks, disabled, onRun, onSetHidden }: Props)
                   disabled={disabled}
                   onRun={onRun}
                   onSetHidden={onSetHidden}
+                  onDelete={onDelete}
                 />
               ))}
             </div>
