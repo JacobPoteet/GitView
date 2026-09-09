@@ -17,6 +17,11 @@ pub struct Task {
     /// Which manifest proposed it, or "saved" when a person did.
     pub source: String,
     pub saved: bool,
+    /// Sent to the collapsed section at the bottom of the list. Discovery finds
+    /// every script a project declares, and most projects declare several that
+    /// only CI or an agent ever runs.
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl Task {
@@ -27,6 +32,7 @@ impl Task {
             command,
             source: source.to_string(),
             saved: false,
+            hidden: false,
         }
     }
 }

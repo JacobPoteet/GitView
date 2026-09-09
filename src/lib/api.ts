@@ -1,5 +1,5 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
-import type { AppInfo, GitOutcome, RepoState, Task } from "./types";
+import type { AppInfo, BranchGraph, GitOutcome, RepoPref, RepoState, Task } from "./types";
 
 export const api = {
   fleetCached: () => invoke<RepoState[]>("fleet_cached"),
@@ -13,6 +13,15 @@ export const api = {
 
   repoRefresh: (path: string) => invoke<RepoState>("repo_refresh", { path }),
   repoTasks: (path: string) => invoke<Task[]>("repo_tasks", { path }),
+  repoGraph: (path: string) => invoke<BranchGraph>("repo_graph", { path }),
+
+  repoPrefs: () => invoke<RepoPref[]>("repo_prefs"),
+  repoSetHidden: (path: string, hidden: boolean) =>
+    invoke<void>("repo_set_hidden", { path, hidden }),
+  repoSetPinned: (path: string, pinned: boolean) =>
+    invoke<void>("repo_set_pinned", { path, pinned }),
+  taskSetHidden: (repoPath: string, taskId: string, hidden: boolean) =>
+    invoke<void>("task_set_hidden", { repoPath, taskId, hidden }),
 
   taskSave: (repoPath: string, name: string, command: string) =>
     invoke<Task>("task_save", { repoPath, name, command }),
@@ -40,5 +49,7 @@ export const api = {
 
   settingsRoots: () => invoke<string[]>("settings_roots"),
   settingsSetRoots: (roots: string[]) => invoke<void>("settings_set_roots", { roots }),
+  settingsAddRoot: (path: string) => invoke<string[]>("settings_add_root", { path }),
+  settingsRemoveRoot: (path: string) => invoke<string[]>("settings_remove_root", { path }),
   appInfo: () => invoke<AppInfo>("app_info"),
 };

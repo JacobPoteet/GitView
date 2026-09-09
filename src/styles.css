@@ -154,6 +154,24 @@ input {
   padding: 12px 12px 10px;
 }
 
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  transition: color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+
+.icon-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -217,23 +235,92 @@ input {
   color: var(--line-strong);
 }
 
-.repo-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 7px 8px;
+/* The row and its controls are siblings. A button cannot hold a button, and the
+   controls have to be reachable by keyboard rather than painted on top. */
+.repo-row-wrap {
+  position: relative;
   border-radius: var(--radius);
   border: 1px solid transparent;
   transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
 }
 
-.repo-row:hover {
+.repo-row-wrap:hover {
   background: var(--bg-hover);
 }
 
-.repo-row.selected {
+.repo-row-wrap.selected {
   background: var(--accent-soft);
   border-color: var(--accent-line);
+}
+
+.repo-row-wrap.muted {
+  opacity: 0.55;
+}
+
+.repo-row-wrap.muted:hover {
+  opacity: 1;
+}
+
+.repo-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+}
+
+.row-actions {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: none;
+  gap: 2px;
+  padding-left: 14px;
+  /* The controls land on top of the chips, so the fade keeps the row from
+     looking like two things stacked. */
+  background: linear-gradient(90deg, transparent, var(--bg-hover) 40%);
+}
+
+.repo-row-wrap:hover .row-actions,
+.repo-row-wrap:focus-within .row-actions {
+  display: flex;
+}
+
+.repo-row-wrap.selected .row-actions {
+  background: linear-gradient(90deg, transparent, var(--bg-active) 40%);
+}
+
+.row-action {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.row-action:hover {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.row-action.on {
+  color: var(--accent);
+}
+
+.group-label.toggle {
+  width: 100%;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.group-label.toggle:hover {
+  color: var(--text-dim);
+}
+
+.group-label .chevron {
+  font-size: 8px;
+  width: 8px;
 }
 
 .repo-row-top {
@@ -692,4 +779,395 @@ input {
   height: 1px;
   background: var(--accent);
   transition: width 0.3s var(--ease);
+}
+
+/* ------------------------------------------------------------------ graph */
+/* Two rails, time left to right. The strip sits between the header and the
+   terminal and collapses to its own summary line, because the sentence at the
+   top is most of the value and the terminal must not lose height for a picture
+   nobody is reading right now. */
+
+.graph {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.graph-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.graph-bar:hover {
+  color: var(--text);
+}
+
+.graph-chevron {
+  font-size: 8px;
+  color: var(--text-faint);
+  width: 8px;
+}
+
+.graph-summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: -0.01em;
+}
+
+.graph-note {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.graph-body {
+  display: flex;
+  align-items: stretch;
+  padding-bottom: 6px;
+}
+
+/* The branch names sit outside the scrolling area, so scrolling back through a
+   long branch never costs you the labels that say which rail is which. */
+.graph-gutter {
+  position: relative;
+  width: 132px;
+  flex: none;
+  border-right: 1px solid var(--line);
+}
+
+.graph-label {
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 122px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.graph-label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-label.base .graph-label-name {
+  color: var(--blue);
+}
+
+.graph-label.head .graph-label-name {
+  color: var(--accent);
+}
+
+.graph-label-count {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 9.5px;
+}
+
+.graph-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.graph-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.graph-canvas {
+  position: relative;
+}
+
+.graph-canvas svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.rail {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.rail.trunk {
+  stroke: var(--line-strong);
+}
+
+.rail.theirs {
+  stroke: var(--blue);
+  opacity: 0.85;
+}
+
+.rail.ours {
+  stroke: var(--accent);
+  filter: drop-shadow(0 0 5px oklch(70% 0.185 292 / 0.4));
+}
+
+.graph-node {
+  position: absolute;
+  transform: translate(-50%, -9px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.graph-dot {
+  width: 18px;
+  height: 18px;
+  display: block;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1.8px var(--line-strong);
+  transition: box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+
+.graph-node:hover .graph-dot {
+  transform: scale(1.18);
+}
+
+.graph-node.trunk .graph-dot {
+  width: 12px;
+  height: 12px;
+  margin: 3px 0;
+}
+
+/* The fork is the answer to "when did these two part", so it gets its own mark
+   rather than being one more dot on the shared rail. */
+.graph-node.fork .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--text-faint);
+  background: var(--bg-inset);
+}
+
+.graph-node.theirs .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--blue);
+  background: color-mix(in oklch, var(--blue) 22%, var(--bg));
+}
+
+.graph-node.ours .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: color-mix(in oklch, var(--accent) 24%, var(--bg));
+}
+
+.graph-node.merge .graph-dot {
+  border-radius: 4px;
+}
+
+.graph-node.ours.tip .graph-dot {
+  background: var(--accent);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 0 4px var(--accent-soft),
+    0 0 12px oklch(70% 0.185 292 / 0.55);
+}
+
+.graph-node.theirs.tip .graph-dot {
+  background: var(--blue);
+  box-shadow:
+    inset 0 0 0 2px var(--blue),
+    0 0 0 4px oklch(74% 0.135 242 / 0.16);
+}
+
+.graph-ref {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 3px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-raised);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  max-width: 118px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  max-width: 112px;
+  text-align: center;
+}
+
+.graph-caption .sha {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.graph-caption .msg {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  max-width: 112px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-node:hover .graph-caption .msg {
+  color: var(--text);
+}
+
+/* --------------------------------------------------------- hidden sections */
+
+.task-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: background 0.12s var(--ease);
+}
+
+.task-row-wrap:hover {
+  background: var(--bg-hover);
+}
+
+.task-row-wrap .row-action {
+  flex: none;
+  margin-right: 4px;
+  opacity: 0;
+}
+
+.task-row-wrap:hover .row-action,
+.task-row-wrap:focus-within .row-action {
+  opacity: 1;
+}
+
+.task-row-wrap .task-row:hover {
+  background: none;
+}
+
+.task-hidden {
+  flex: none;
+  border-top: 1px solid var(--line);
+  max-height: 45%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.task-hidden-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.task-hidden-bar:hover {
+  color: var(--text-dim);
+}
+
+.task-hidden-bar .chevron {
+  font-size: 8px;
+  width: 8px;
+}
+
+.task-hidden-bar .count {
+  margin-left: auto;
+  color: var(--line-strong);
+}
+
+.task-hidden-list {
+  overflow-y: auto;
+  padding: 0 6px 6px;
+  opacity: 0.7;
+}
+
+.task-hidden-list:hover {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ roots */
+
+.confirm.roots {
+  width: 520px;
+}
+
+.root-list {
+  list-style: none;
+  margin: 14px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.root-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 11px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
+}
+
+.root-list li:last-child {
+  border-bottom: none;
+}
+
+.root-list li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.root-list li.empty {
+  display: block;
+  padding: 14px;
+  font-family: var(--font-ui);
+}
+
+.root-add {
+  display: flex;
+  gap: 6px;
+}
+
+.root-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.root-add input:focus {
+  border-color: var(--accent-line);
+}
+
+.root-error {
+  margin-top: 8px;
+  color: var(--amber);
+  font-size: 11.5px;
 }
