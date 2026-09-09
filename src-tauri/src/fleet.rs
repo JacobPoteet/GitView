@@ -7,11 +7,31 @@
 //!
 //! Network operations do not belong here. See `gitops.rs`.
 
-use git2::{BranchType, Repository, Status, StatusOptions};
+use git2::{BranchType, Oid, Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::cache::now_secs;
+
+/// One local branch, measured against the default branch.
+///
+/// The scanner already ran `graph_ahead_behind` per branch to decide what was
+/// merged and threw both numbers away. Keeping them costs nothing and answers
+/// two separate questions: which branches exist at all when you are standing on
+/// the default one, and how far the branch you are on has drifted from it.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchSummary {
+    pub name: String,
+    /// Commits here that the default branch does not have.
+    pub ahead: usize,
+    /// Commits on the default branch that are not here.
+    pub behind: usize,
+    pub is_head: bool,
+    /// Contained in the default branch, so `git branch -d` would take it.
+    pub merged: bool,
+    pub last_commit_at: Option<i64>,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +52,20 @@ pub struct RepoState {
     pub default_branch: Option<String>,
     pub merged_branches: Vec<String>,
     pub local_branch_count: usize,
+    /// Every local branch, newest first, with the current one leading.
+    #[serde(default)]
+    pub branches: Vec<BranchSummary>,
+    /// The ref every branch was measured against, `origin/main` where there is
+    /// one. Named so the UI can say what the numbers mean.
+    #[serde(default)]
+    pub default_base: Option<String>,
+    /// Drift of the current branch from that base. Unlike `ahead` and `behind`
+    /// these are filled whether or not the branch has an upstream, which is the
+    /// case where work exists in exactly one place.
+    #[serde(default)]
+    pub ahead_of_default: usize,
+    #[serde(default)]
+    pub behind_default: usize,
     pub last_commit_at: Option<i64>,
     pub last_commit_summary: Option<String>,
     pub is_worktree: bool,
@@ -61,6 +95,10 @@ impl RepoState {
             default_branch: None,
             merged_branches: Vec::new(),
             local_branch_count: 0,
+            branches: Vec::new(),
+            default_base: None,
+            ahead_of_default: 0,
+            behind_default: 0,
             last_commit_at: None,
             last_commit_summary: None,
             is_worktree: false,
@@ -224,6 +262,117 @@ fn read_status(repo: &Repository, state: &mut RepoState) {
     }
 }
 
+/// One row in the changes pane.
+///
+/// A file staged and then edited again is two rows, the way `git status` reports
+/// it, because the two halves take different commands to undo.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    pub path: String,
+    /// `new`, `modified`, `deleted`, `renamed`, `typechange` or `conflicted`.
+    pub state: String,
+    /// In the index rather than the worktree.
+    pub staged: bool,
+}
+
+/// The working tree, file by file.
+///
+/// `read_status` counts these for the sidebar and throws the paths away, since a
+/// row that says `3 changed` needs no more than that. The changes pane needs the
+/// paths, and it is opened for one repository at a time rather than eleven, so
+/// this is a separate read instead of a wider scan.
+pub fn read_changes(path: &Path) -> Vec<FileChange> {
+    let Ok(repo) = Repository::open(path) else {
+        return Vec::new();
+    };
+
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        // Unlike the sweep, this one names files, and a collapsed directory
+        // cannot be staged by path. A fresh clone with no install is the cost.
+        .recurse_untracked_dirs(true)
+        .include_ignored(false)
+        .include_unmodified(false)
+        .exclude_submodules(true)
+        .renames_head_to_index(true)
+        .renames_index_to_workdir(true);
+
+    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for entry in statuses.iter() {
+        let status = entry.status();
+        let name = entry.path().map(str::to_string).unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+
+        if status.is_conflicted() {
+            out.push(FileChange {
+                path: name,
+                state: "conflicted".to_string(),
+                staged: false,
+            });
+            continue;
+        }
+
+        if let Some(state) = index_state(status) {
+            out.push(FileChange {
+                path: name.clone(),
+                state,
+                staged: true,
+            });
+        }
+        if let Some(state) = worktree_state(status) {
+            out.push(FileChange {
+                path: name,
+                state,
+                staged: false,
+            });
+        }
+    }
+
+    out.sort_by(|a, b| a.staged.cmp(&b.staged).then(a.path.cmp(&b.path)));
+    out
+}
+
+fn index_state(status: Status) -> Option<String> {
+    let state = if status.contains(Status::INDEX_NEW) {
+        "new"
+    } else if status.contains(Status::INDEX_DELETED) {
+        "deleted"
+    } else if status.contains(Status::INDEX_RENAMED) {
+        "renamed"
+    } else if status.contains(Status::INDEX_TYPECHANGE) {
+        "typechange"
+    } else if status.contains(Status::INDEX_MODIFIED) {
+        "modified"
+    } else {
+        return None;
+    };
+    Some(state.to_string())
+}
+
+fn worktree_state(status: Status) -> Option<String> {
+    let state = if status.contains(Status::WT_NEW) {
+        "new"
+    } else if status.contains(Status::WT_DELETED) {
+        "deleted"
+    } else if status.contains(Status::WT_RENAMED) {
+        "renamed"
+    } else if status.contains(Status::WT_TYPECHANGE) {
+        "typechange"
+    } else if status.contains(Status::WT_MODIFIED) {
+        "modified"
+    } else {
+        return None;
+    };
+    Some(state.to_string())
+}
+
 fn read_remote(repo: &Repository, state: &mut RepoState) {
     let Ok(remote) = repo.find_remote("origin") else {
         return;
@@ -296,12 +445,39 @@ fn short_ref(reference: &str) -> &str {
     reference.rsplit('/').next().unwrap_or(reference)
 }
 
+/// Where the default branch actually is, preferring the remote copy.
+///
+/// The local copy of `main` is usually the stale one, so measuring drift against
+/// it understates how far a branch has run. This is the same choice `graph.rs`
+/// makes in `pick_base`, and the two have to agree or the sidebar and the graph
+/// would report different numbers for the same branch.
+fn default_tip(repo: &Repository, default_branch: Option<&str>) -> (Option<Oid>, Option<String>) {
+    let Some(name) = default_branch else {
+        return (None, None);
+    };
+    let remote = format!("origin/{name}");
+    if let Ok(branch) = repo.find_branch(&remote, BranchType::Remote) {
+        if let Some(oid) = branch.get().target() {
+            return (Some(oid), Some(remote));
+        }
+    }
+    if let Ok(branch) = repo.find_branch(name, BranchType::Local) {
+        if let Some(oid) = branch.get().target() {
+            return (Some(oid), Some(name.to_string()));
+        }
+    }
+    (None, None)
+}
+
+/// Every local branch, measured against that tip in one pass.
+///
+/// This walk already existed to find merged branches. It now keeps both halves
+/// of each `graph_ahead_behind` result rather than testing one and discarding
+/// the pair, which is what lets the sidebar sort on drift and the header list
+/// the branches you cannot otherwise see from the default branch.
 fn read_branches(repo: &Repository, state: &mut RepoState) {
-    let default_tip = state
-        .default_branch
-        .as_ref()
-        .and_then(|name| repo.find_branch(name, BranchType::Local).ok())
-        .and_then(|branch| branch.get().target());
+    let (default_tip, base_name) = default_tip(repo, state.default_branch.as_deref());
+    state.default_base = base_name;
 
     let Ok(branches) = repo.branches(Some(BranchType::Local)) else {
         return;
@@ -315,22 +491,49 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
         let name = name.to_string();
         state.local_branch_count += 1;
 
-        // Never propose deleting the branch you are standing on or the default.
-        if Some(&name) == state.default_branch.as_ref() || Some(&name) == state.branch.as_ref() {
-            continue;
-        }
+        let tip = branch.get().target();
+        let last_commit_at = tip
+            .and_then(|oid| repo.find_commit(oid).ok())
+            .map(|commit| commit.time().seconds());
+        let is_head = !state.detached && Some(&name) == state.branch.as_ref();
 
-        let (Some(tip), Some(default_tip)) = (branch.get().target(), default_tip) else {
-            continue;
+        let (ahead, behind) = match (tip, default_tip) {
+            (Some(tip), Some(base)) => repo.graph_ahead_behind(tip, base).unwrap_or((0, 0)),
+            // Nothing to measure against. Unrelated histories are not a special
+            // case here: libgit2 counts both sides in full, which is the truth.
+            _ => (0, 0),
         };
 
-        // Nothing on this branch that the default branch does not already have.
-        if let Ok((ahead, _behind)) = repo.graph_ahead_behind(tip, default_tip) {
-            if ahead == 0 {
-                state.merged_branches.push(name);
-            }
+        // Never propose deleting the branch you are standing on or the default.
+        let protected = Some(&name) == state.default_branch.as_ref() || is_head;
+        let merged = !protected && default_tip.is_some() && tip.is_some() && ahead == 0;
+        if merged {
+            state.merged_branches.push(name.clone());
         }
+
+        if is_head {
+            state.ahead_of_default = ahead;
+            state.behind_default = behind;
+        }
+
+        state.branches.push(BranchSummary {
+            name,
+            ahead,
+            behind,
+            is_head,
+            merged,
+            last_commit_at,
+        });
     }
+
+    // The branch you are on leads, then the ones touched most recently. A list
+    // ordered by name buries the branch from yesterday under an alphabet.
+    state.branches.sort_by(|a, b| {
+        b.is_head
+            .cmp(&a.is_head)
+            .then(b.last_commit_at.cmp(&a.last_commit_at))
+            .then(a.name.cmp(&b.name))
+    });
 }
 
 #[cfg(test)]

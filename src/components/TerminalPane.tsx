@@ -86,18 +86,31 @@ function getSession(id: string): Session {
 
 interface Props {
   repoPath: string | null;
+  /** False once the shell has been closed on purpose, until it is asked for
+   *  again. Without it the pane would open a replacement on the next render and
+   *  there would still be no way to end a session. */
+  open: boolean;
   /** Fires once output has been quiet for a beat, which is when a hand-typed
    *  commit is worth picking up in the sidebar. */
   onSettled: (repoPath: string) => void;
   onLiveChange: (repoPath: string, live: boolean) => void;
+  onRequestClose: (repoPath: string) => void;
+  onReopen: (repoPath: string) => void;
 }
 
-export default function TerminalPane({ repoPath, onSettled, onLiveChange }: Props) {
+export default function TerminalPane({
+  repoPath,
+  open,
+  onSettled,
+  onLiveChange,
+  onRequestClose,
+  onReopen,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const settleTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!repoPath || !containerRef.current) return;
+    if (!repoPath || !open || !containerRef.current) return;
 
     const container = containerRef.current;
     const session = getSession(repoPath);
@@ -157,9 +170,10 @@ export default function TerminalPane({ repoPath, onSettled, onLiveChange }: Prop
       observer.disconnect();
       window.clearTimeout(settleTimer.current);
       // The session stays open on purpose. Closing here would kill the dev
-      // server every time the user looked at another project.
+      // server every time the user looked at another project. Ending one is a
+      // separate, deliberate act; see `closeSession`.
     };
-  }, [repoPath, onSettled, onLiveChange]);
+  }, [repoPath, open, onSettled, onLiveChange]);
 
   if (!repoPath) {
     return (
@@ -170,12 +184,44 @@ export default function TerminalPane({ repoPath, onSettled, onLiveChange }: Prop
     );
   }
 
+  if (!open) {
+    return (
+      <div className="terminal-pane">
+        <div className="pane-tab-bar">
+          <span>shell</span>
+          <span style={{ color: "var(--line-strong)" }}>·</span>
+          <span>closed</span>
+        </div>
+        <div className="empty">
+          <p>The shell for this repository is closed.</p>
+          <button className="btn" onClick={() => onReopen(repoPath)}>
+            Open a shell
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="terminal-pane">
       <div className="pane-tab-bar">
         <span>shell</span>
         <span style={{ color: "var(--line-strong)" }}>·</span>
-        <span>{repoPath}</span>
+        <span className="tab-path">{repoPath}</span>
+        <button
+          className="pane-close"
+          onClick={() => onRequestClose(repoPath)}
+          title="Close this shell"
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M4 4l8 8M12 4l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
       </div>
       <div className="terminal-host" ref={containerRef} />
     </div>
@@ -186,4 +232,21 @@ export default function TerminalPane({ repoPath, onSettled, onLiveChange }: Prop
 export async function sendCommand(repoPath: string, command: string) {
   await api.ptyWrite(repoPath, `${command}\r`);
   sessions.get(repoPath)?.term.focus();
+}
+
+/**
+ * Ends a session for good: the shell exits, the scrollback goes, and the module
+ * map forgets it so the next open builds a fresh terminal.
+ *
+ * `pty_close` has existed since the terminal was written and nothing called it,
+ * which is how clicking through the fleet once ended with eight PowerShell
+ * processes and no control anywhere that brought the count down.
+ */
+export async function closeSession(repoPath: string) {
+  await api.ptyClose(repoPath).catch(() => undefined);
+  const session = sessions.get(repoPath);
+  if (!session) return;
+  session.term.dispose();
+  session.host.remove();
+  sessions.delete(repoPath);
 }

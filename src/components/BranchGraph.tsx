@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BranchGraph as Graph, GraphCommit } from "../lib/types";
 import { relativeTime } from "../lib/types";
 
@@ -24,8 +24,26 @@ interface Props {
 /** Wide enough to caption each node. Past this the rails go to bare dots. */
 const WIDE_LIMIT = 7;
 
+/**
+ * `trunk` is a floor, not a count.
+ *
+ * It used to be the number of shared commits drawn, and two of them is what a
+ * repository in sync with its base has to show: a strip that stopped a couple of
+ * hundred pixels in and left the rest of the pane empty. The strip now measures
+ * itself and spends whatever width the branch does not need on more history,
+ * down to this many.
+ */
+/*
+ * The two rails sit 84 px apart in the wide layout, not 62.
+ *
+ * Both rails put their commits in the same columns, so a caption hanging under
+ * a top-rail node and a ref badge standing over the bottom-rail node beneath it
+ * occupy the same strip of canvas. At 62 px they overlapped by about ten, which
+ * only showed once a repository had commits on both sides at once. Two roots
+ * with no shared history is the case that made it obvious.
+ */
 const LAYOUT = {
-  wide: { gap: 122, trunk: 2, top: 38, bottom: 100, height: 150, captions: true },
+  wide: { gap: 122, trunk: 2, top: 38, bottom: 122, height: 172, captions: true },
   compact: { gap: 26, trunk: 8, top: 30, bottom: 68, height: 96, captions: false },
 } as const;
 
@@ -41,8 +59,23 @@ interface Placed {
 
 export default function BranchGraph({ graph, collapsed, onToggle, onCommand }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
 
-  const model = useMemo(() => build(graph), [graph]);
+  // How much history fits is a question about the pane, so the pane has to be
+  // measured. Zero until the first observation, which `build` reads as "draw the
+  // floor" rather than as "draw nothing".
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    setWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, [collapsed, graph !== null]);
+
+  const model = useMemo(() => build(graph, width), [graph, width]);
 
   // Newest first. The right end is where the answer is, and a long branch would
   // otherwise open scrolled to history nobody asked about.
@@ -74,6 +107,7 @@ export default function BranchGraph({ graph, collapsed, onToggle, onCommand }: P
       <button className="graph-bar" onClick={onToggle} title="Collapse the branch graph">
         <span className="graph-chevron">{collapsed ? "▸" : "▾"}</span>
         <span className="graph-summary">{summary}</span>
+        {graph.unrelated && <span className="graph-note">no shared history</span>}
         {graph.truncated && <span className="graph-note">first 40 each way</span>}
       </button>
 
@@ -89,7 +123,7 @@ export default function BranchGraph({ graph, collapsed, onToggle, onCommand }: P
                 y={model.layout.top}
                 name={graph.base ?? "no base"}
                 count={graph.theirs.length}
-                arrow="↓"
+                arrow={graph.unrelated ? "" : "↓"}
                 kind="base"
               />
               {/* With nothing of your own ahead of the base, HEAD sits on the
@@ -100,7 +134,7 @@ export default function BranchGraph({ graph, collapsed, onToggle, onCommand }: P
                   y={model.layout.bottom}
                   name={graph.head ?? "HEAD"}
                   count={graph.ours.length}
-                  arrow="↑"
+                  arrow={graph.unrelated ? "" : "↑"}
                   kind="head"
                 />
               )}
@@ -166,7 +200,11 @@ function Node({
   onCommand: (command: string, typeOnly: boolean) => void;
 }) {
   const { commit } = node;
-  const command = `git show ${commit.short}`;
+  // `git show` hands its output to the pager, which then holds the shell until
+  // you find out that the way out is Q. The strip is a place you click to read a
+  // commit message, not a place to open a reader, so this prints and returns to
+  // the prompt. The full diff is one `git show` away in the same shell.
+  const command = `git --no-pager show --stat ${commit.short}`;
   return (
     <button
       className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${commit.isMerge ? " merge" : ""}`}
@@ -186,8 +224,15 @@ function Node({
   );
 }
 
-/** Turns the three lists into placed nodes and the paths that join them. */
-function build(graph: Graph | null) {
+/**
+ * Turns the three lists into placed nodes and the paths that join them.
+ *
+ * `available` is the measured width of the scroller. The branch is drawn in
+ * full and whatever is left over goes to shared history, so a repository in sync
+ * with its base fills the strip with the trunk rather than stopping two commits
+ * in. Zero means unmeasured, and the floors in `LAYOUT` apply.
+ */
+function build(graph: Graph | null, available: number) {
   const empty = {
     nodes: [] as Placed[],
     rails: [] as { key: string; d: string }[],
@@ -200,7 +245,17 @@ function build(graph: Graph | null) {
   const spread = Math.max(graph.ours.length, graph.theirs.length);
   const layout = spread <= WIDE_LIMIT ? LAYOUT.wide : LAYOUT.compact;
 
-  const trunk = graph.trunk.slice(-layout.trunk);
+  // Columns that fit without scrolling. The branch has first claim on them.
+  const fits =
+    available > 0
+      ? Math.max(1, Math.floor((available - PAD_X * 2) / layout.gap) + 1)
+      : layout.trunk + spread;
+  const room = Math.max(layout.trunk, fits - spread);
+
+  // Unrelated histories have no shared commits and no fork. Two branches that
+  // never met are two independent rails, and drawing a trunk under them would
+  // put the pair's supposed parting at a commit only one of them can reach.
+  const trunk = graph.unrelated ? [] : graph.trunk.slice(-room);
   const x = (column: number) => PAD_X + column * layout.gap;
 
   const nodes: Placed[] = [];
@@ -218,11 +273,11 @@ function build(graph: Graph | null) {
     });
   });
 
-  const forkColumn = trunk.length - 1;
+  const start = trunk.length;
   graph.theirs.forEach((commit, i) => {
     nodes.push({
       commit,
-      x: x(forkColumn + 1 + i),
+      x: x(start + i),
       y: layout.top,
       lane: "theirs",
       tip: i === graph.theirs.length - 1,
@@ -231,34 +286,42 @@ function build(graph: Graph | null) {
   graph.ours.forEach((commit, i) => {
     nodes.push({
       commit,
-      x: x(forkColumn + 1 + i),
+      x: x(start + i),
       y: layout.bottom,
       lane: "ours",
       tip: i === graph.ours.length - 1,
     });
   });
 
-  const forkX = x(Math.max(forkColumn, 0));
+  const hasFork = trunk.length > 0;
+  const forkX = x(hasFork ? trunk.length - 1 : 0);
   const rails: { key: string; d: string }[] = [];
 
   if (trunk.length > 1) {
     rails.push({ key: "trunk", d: `M ${x(0)} ${layout.top} H ${forkX}` });
   }
   if (graph.theirs.length > 0) {
+    const from = hasFork ? forkX : x(0);
     rails.push({
       key: "theirs",
-      d: `M ${forkX} ${layout.top} H ${x(forkColumn + graph.theirs.length)}`,
+      d: `M ${from} ${layout.top} H ${x(start + graph.theirs.length - 1)}`,
     });
   }
   if (graph.ours.length > 0) {
-    const first = x(forkColumn + 1);
-    const bend = Math.min(layout.gap * 0.6, 46);
-    rails.push({
-      key: "ours",
-      d:
-        `M ${forkX} ${layout.top} C ${forkX + bend} ${layout.top} ${first - bend} ${layout.bottom} ${first} ${layout.bottom}` +
-        ` H ${x(forkColumn + graph.ours.length)}`,
-    });
+    const last = x(start + graph.ours.length - 1);
+    if (hasFork) {
+      const first = x(start);
+      const bend = Math.min(layout.gap * 0.6, 46);
+      rails.push({
+        key: "ours",
+        d:
+          `M ${forkX} ${layout.top} C ${forkX + bend} ${layout.top} ${first - bend} ${layout.bottom} ${first} ${layout.bottom}` +
+          ` H ${last}`,
+      });
+    } else {
+      // Nothing to bend away from.
+      rails.push({ key: "ours", d: `M ${x(0)} ${layout.bottom} H ${last}` });
+    }
   }
 
   const columns = trunk.length + spread;
@@ -279,6 +342,9 @@ function describe(graph: Graph): string {
     return graph.detached ? `Detached at ${head}` : `${head}, nothing to compare against`;
   }
   const base = graph.base ?? "the base";
+  if (graph.unrelated) {
+    return `${head} and ${base} share no history`;
+  }
   const parts: string[] = [];
   if (graph.ours.length > 0) parts.push(`${graph.ours.length} ahead`);
   if (graph.theirs.length > 0) parts.push(`${graph.theirs.length} behind`);

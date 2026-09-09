@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { attentionScore, isClean, type RepoPref, type RepoState } from "../lib/types";
+import { attentionScore, isClean, unpushed, type RepoPref, type RepoState } from "../lib/types";
 
 interface Props {
   repos: RepoState[];
@@ -12,6 +12,10 @@ interface Props {
   onSelect: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
   onHide: (path: string, hidden: boolean) => void;
+  /** Only offered on a row that has one. The fleet view exists so a repository
+   *  can be acted on without opening it, and that has to include ending its
+   *  shell. */
+  onCloseShell: (path: string) => void;
   onManageRoots: () => void;
 }
 
@@ -69,6 +73,8 @@ function HideIcon({ hidden }: { hidden: boolean }) {
 
 function Chips({ repo }: { repo: RepoState }) {
   const dirty = repo.staged + repo.modified;
+  const local = unpushed(repo);
+  const base = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
   return (
     <span className="chips">
       {repo.conflicted > 0 && (
@@ -86,6 +92,16 @@ function Chips({ repo }: { repo: RepoState }) {
           ↑{repo.ahead}
         </span>
       )}
+      {/* No upstream, so `ahead` reads zero however far this has run. These
+          commits are on this disk and nowhere else. */}
+      {local > 0 && (
+        <span
+          className="chip unpushed"
+          title={`${local} commits ahead of ${base}, on a branch with no upstream`}
+        >
+          ⇡{local}
+        </span>
+      )}
       {dirty > 0 && (
         <span className="chip dirty" title="staged and modified files">
           ●{dirty}
@@ -96,7 +112,20 @@ function Chips({ repo }: { repo: RepoState }) {
           ⌫{repo.mergedBranches.length}
         </span>
       )}
+      {repo.localBranchCount > 1 && (
+        <span className="chip branches" title={`${repo.localBranchCount} local branches`}>
+          ⑂{repo.localBranchCount}
+        </span>
+      )}
     </span>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -109,6 +138,7 @@ function Row({
   onSelect,
   onPin,
   onHide,
+  onCloseShell,
 }: {
   repo: RepoState;
   selected: boolean;
@@ -118,6 +148,7 @@ function Row({
   onSelect: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
   onHide: (path: string, hidden: boolean) => void;
+  onCloseShell: (path: string) => void;
 }) {
   const state = repo.error ? "error" : live ? "live" : isClean(repo) ? "clean" : "attention";
 
@@ -141,6 +172,15 @@ function Row({
       </button>
 
       <span className="row-actions">
+        {live && (
+          <button
+            className="row-action live"
+            onClick={() => onCloseShell(repo.path)}
+            title="Close this repository's shell"
+          >
+            <CloseIcon />
+          </button>
+        )}
         <button
           className={`row-action${pinned ? " on" : ""}`}
           onClick={() => onPin(repo.path, !pinned)}
@@ -171,6 +211,7 @@ export default function FleetSidebar({
   onSelect,
   onPin,
   onHide,
+  onCloseShell,
   onManageRoots,
 }: Props) {
   const [showHidden, setShowHidden] = useState(false);
@@ -219,6 +260,7 @@ export default function FleetSidebar({
       onSelect={onSelect}
       onPin={onPin}
       onHide={onHide}
+      onCloseShell={onCloseShell}
     />
   );
 

@@ -1,3 +1,13 @@
+/** One local branch, measured against the default branch. */
+export interface BranchSummary {
+  name: string;
+  ahead: number;
+  behind: number;
+  isHead: boolean;
+  merged: boolean;
+  lastCommitAt: number | null;
+}
+
 export interface RepoState {
   path: string;
   name: string;
@@ -15,6 +25,11 @@ export interface RepoState {
   defaultBranch: string | null;
   mergedBranches: string[];
   localBranchCount: number;
+  branches: BranchSummary[];
+  /** The ref the drift numbers were measured against, `origin/main` usually. */
+  defaultBase: string | null;
+  aheadOfDefault: number;
+  behindDefault: number;
   lastCommitAt: number | null;
   lastCommitSummary: string | null;
   isWorktree: boolean;
@@ -60,7 +75,22 @@ export interface BranchGraph {
   theirs: GraphCommit[];
   ours: GraphCommit[];
   truncated: boolean;
+  /** No merge base at all, so there is no fork and no shared rail to draw. */
+  unrelated: boolean;
   error: string | null;
+}
+
+/** One row in the changes pane. */
+export interface FileChange {
+  path: string;
+  state: "new" | "modified" | "deleted" | "renamed" | "typechange" | "conflicted";
+  staged: boolean;
+}
+
+/** What one sweep did, including any preferences that followed a renamed folder. */
+export interface ScanReport {
+  scanned: number;
+  adopted: { ownerRepo: string; from: string; to: string }[];
 }
 
 export interface GitOutcome {
@@ -77,6 +107,19 @@ export interface AppInfo {
   roots: string[];
 }
 
+/**
+ * Commits that exist in exactly one place.
+ *
+ * `ahead` only counts against an upstream, so a branch that has never been
+ * pushed reported zero however far it had run. That is precisely the case where
+ * the work exists on one disk and nowhere else, which is what the ahead weight
+ * was there to catch. Measured against the default branch instead, and only
+ * when there is no upstream, so a pushed branch is not counted twice.
+ */
+export function unpushed(repo: RepoState): number {
+  return repo.upstream ? 0 : repo.aheadOfDefault;
+}
+
 /** What the sidebar sorts on. Higher wants attention sooner. */
 export function attentionScore(repo: RepoState): number {
   if (repo.error) return 1000;
@@ -84,6 +127,9 @@ export function attentionScore(repo: RepoState): number {
     repo.conflicted * 500 +
     repo.behind * 12 +
     repo.ahead * 8 +
+    // Below `ahead`: work that is only local is a smaller problem than work that
+    // has diverged from a branch someone else is also pushing to.
+    unpushed(repo) * 5 +
     (repo.staged + repo.modified) * 4 +
     repo.mergedBranches.length * 3 +
     Math.min(repo.untracked, 20)
