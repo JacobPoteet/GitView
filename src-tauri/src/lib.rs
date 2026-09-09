@@ -19,8 +19,8 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
-use cache::{Cache, RepoPref};
-use fleet::RepoState;
+use cache::{Adoption, Cache, RepoPref};
+use fleet::{FileChange, RepoState};
 use gitops::GitOutcome;
 use graph::BranchGraph;
 use pty::PtyManager;
@@ -29,6 +29,18 @@ use tasks::Task;
 pub struct AppState {
     cache: Arc<Cache>,
     pty: Arc<PtyManager>,
+}
+
+/// What one sweep did.
+///
+/// The count was the whole return value until preferences learned to follow a
+/// renamed folder. Moving someone's pins is not something to do quietly, so the
+/// moves come back with the count and the status bar says what happened.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanReport {
+    pub scanned: usize,
+    pub adopted: Vec<Adoption>,
 }
 
 #[derive(Serialize)]
@@ -55,7 +67,7 @@ fn fleet_cached(state: State<'_, AppState>) -> Result<Vec<RepoState>, String> {
 async fn fleet_scan(
     state: State<'_, AppState>,
     on_repo: Channel<RepoState>,
-) -> Result<usize, String> {
+) -> Result<ScanReport, String> {
     let cache = state.cache.clone();
     let roots = settings::roots(&cache);
 
@@ -68,18 +80,36 @@ async fn fleet_scan(
         let _ = cache.retain_repos(&keep);
 
         let mut scanned = 0usize;
+        let mut identity: Vec<(String, Option<String>)> = Vec::with_capacity(paths.len());
         for path in paths {
             let repo_state = fleet::read_repo(&path);
             let _ = cache.put_repo(&repo_state);
+            identity.push((repo_state.path.clone(), repo_state.owner_repo.clone()));
             if on_repo.send(repo_state).is_err() {
                 break;
             }
             scanned += 1;
         }
-        scanned
+
+        // After the sweep, not before: a folder renamed since the last launch is
+        // only recognisable once this pass has read what is at the new path.
+        let adopted = cache.adopt_moved_repos(&identity).unwrap_or_default();
+        ScanReport { scanned, adopted }
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// The working tree of one repository, file by file.
+///
+/// Read on demand rather than during the sweep. Eleven repositories do not need
+/// their file lists on the home screen, and the one that is open needs it fresh
+/// every time the shell goes quiet.
+#[tauri::command]
+async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
+    tauri::async_runtime::spawn_blocking(move || fleet::read_changes(&PathBuf::from(&path)))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// One repository, read fresh. The frontend calls this after the terminal goes
@@ -310,6 +340,7 @@ pub fn run() {
             fleet_scan,
             repo_refresh,
             repo_graph,
+            repo_changes,
             repo_prefs,
             repo_set_hidden,
             repo_set_pinned,

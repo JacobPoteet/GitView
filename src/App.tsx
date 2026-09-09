@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FleetSidebar from "./components/FleetSidebar";
-import TerminalPane, { sendCommand } from "./components/TerminalPane";
+import TerminalPane, { closeSession, sendCommand } from "./components/TerminalPane";
 import TaskList from "./components/TaskList";
 import BranchGraph from "./components/BranchGraph";
+import BranchMenu from "./components/BranchMenu";
+import ChangesPane from "./components/ChangesPane";
 import RootsDialog from "./components/RootsDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
+import { shellKind } from "./lib/shell";
 import {
   relativeTime,
   type AppInfo,
   type BranchGraph as Graph,
+  type FileChange,
+  type GitOutcome,
   type RepoPref,
   type RepoState,
   type Task,
@@ -18,8 +23,22 @@ import {
 interface Confirmation {
   title: string;
   body: string;
-  command: string;
+  /** Shown verbatim when the action is a command. Omitted when it is not. */
+  command?: string;
   confirmLabel: string;
+  onConfirm: () => void;
+}
+
+/** One repository that did not fetch, with everything git said about it. */
+interface FetchFailure {
+  name: string;
+  path: string;
+  outcome: GitOutcome;
+}
+
+interface FetchReport {
+  ok: number;
+  failures: FetchFailure[];
 }
 
 const GRAPH_KEY = "gitview.graph.collapsed";
@@ -29,6 +48,7 @@ export default function App() {
   const [prefs, setPrefs] = useState<Map<string, RepoPref>>(new Map());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [changes, setChanges] = useState<FileChange[]>([]);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [graphCollapsed, setGraphCollapsed] = useState(
     () => localStorage.getItem(GRAPH_KEY) === "1",
@@ -39,8 +59,14 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(0);
   const [live, setLive] = useState<Set<string>>(new Set());
+  // The one repository whose shell was closed on purpose, until something else
+  // is selected. Anything wider would mean a repository you opened yesterday
+  // greeting you with a button instead of a prompt.
+  const [closedShell, setClosedShell] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [fetchReport, setFetchReport] = useState<FetchReport | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
@@ -48,6 +74,9 @@ export default function App() {
     () => repos.find((r) => r.path === selectedPath) ?? null,
     [repos, selectedPath],
   );
+
+  // Commands are typed at a prompt, so quoting has to match whatever is there.
+  const shell = useMemo(() => shellKind(info?.shell), [info]);
 
   const upsert = useCallback((repo: RepoState) => {
     setRepos((current) => {
@@ -73,7 +102,7 @@ export default function App() {
     setScanned(0);
     try {
       const seen = new Set<string>();
-      await api.fleetScan((repo) => {
+      const report = await api.fleetScan((repo) => {
         seen.add(repo.path);
         upsert(repo);
         setScanned((n) => n + 1);
@@ -84,12 +113,25 @@ export default function App() {
       // Pruning only after the scan resolves keeps a failed sweep from emptying
       // the list.
       setRepos((current) => current.filter((repo) => seen.has(repo.path)));
+
+      // A folder renamed since the last launch brought its pins and its saved
+      // tasks with it. Silence is what made the old behaviour a bug, so this
+      // says what moved.
+      if (report.adopted.length > 0) {
+        await loadPrefs();
+        const names = report.adopted.map((move) => move.ownerRepo).join(", ");
+        setNote(
+          report.adopted.length === 1
+            ? `Preferences for ${names} followed it to its new folder.`
+            : `Preferences for ${report.adopted.length} repositories followed them: ${names}.`,
+        );
+      }
     } catch (err) {
       setNote(String(err));
     } finally {
       setScanning(false);
     }
-  }, [upsert]);
+  }, [upsert, loadPrefs]);
 
   // Cache first, so the list is on screen before anything is opened.
   useEffect(() => {
@@ -133,6 +175,28 @@ export default function App() {
     };
   }, [selectedPath]);
 
+  // Selecting a repository is as deliberate as closing its shell was, so it
+  // clears the closed flag and the pane opens a fresh session.
+  useEffect(() => {
+    setClosedShell(null);
+    if (!selectedPath) {
+      setChanges([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .repoChanges(selectedPath)
+      .then((found) => {
+        if (!cancelled) setChanges(found);
+      })
+      .catch(() => {
+        if (!cancelled) setChanges([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPath]);
+
   // The graph is cheap enough to read fresh, and it has to move the moment HEAD
   // does. Keying on the branch and its counts rather than on `scannedAt` keeps a
   // refresh that changed nothing from redrawing the strip.
@@ -168,6 +232,7 @@ export default function App() {
       if (event.key === "Escape") {
         setConfirmation(null);
         setRootsOpen(false);
+        setReportOpen(false);
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -186,8 +251,13 @@ export default function App() {
   const refreshRepo = useCallback(
     (path: string) => {
       api.repoRefresh(path).then(upsert).catch(() => undefined);
+      // A commit typed by hand empties the changes pane, and the pane is right
+      // next to the prompt it was typed at.
+      if (path === selectedPath) {
+        api.repoChanges(path).then(setChanges).catch(() => undefined);
+      }
     },
-    [upsert],
+    [upsert, selectedPath],
   );
 
   const onLiveChange = useCallback((path: string, isLive: boolean) => {
@@ -237,6 +307,34 @@ export default function App() {
   );
 
   /**
+   * Ending a session always asks first.
+   *
+   * Persistence is the whole reason a dev server survives switching projects, so
+   * the one control that undoes it has to name what it is about to stop. There
+   * is no way to tell a live build from an idle prompt from out here.
+   */
+  const askCloseShell = useCallback(
+    (path: string) => {
+      const repo = repos.find((r) => r.path === path);
+      setConfirmation({
+        title: `Close the shell in ${repo?.name ?? path}`,
+        body: "Anything still running in it stops: a dev server, a watcher, a build. Sessions outlive a view change precisely so those keep going, so this is the only thing that ends one.",
+        confirmLabel: "Close the shell",
+        onConfirm: () => {
+          closeSession(path);
+          setLive((current) => {
+            const next = new Set(current);
+            next.delete(path);
+            return next;
+          });
+          if (path === selectedPath) setClosedShell(path);
+        },
+      });
+    },
+    [repos, selectedPath],
+  );
+
+  /**
    * Every action in the app goes through here, so the command is always visible
    * in the terminal rather than happening behind the UI. Holding shift types it
    * without running it.
@@ -256,18 +354,60 @@ export default function App() {
     return `git branch -d ${repo.mergedBranches.join(" ")}`;
   }
 
+  function pruneConfirmation(repo: RepoState): Confirmation {
+    const command = pruneCommand(repo);
+    return {
+      title: `Delete ${repo.mergedBranches.length} merged branches`,
+      body: `Every branch listed is already contained in ${repo.defaultBranch ?? "the default branch"}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`,
+      command,
+      confirmLabel: "Delete branches",
+      onConfirm: () => emit(command),
+    };
+  }
+
+  /**
+   * The one operation allowed to run out of sight, so the one that has to be
+   * honest about failing.
+   *
+   * `git fetch` reports most of what goes wrong through its exit status rather
+   * than by throwing, so catching the promise was never going to see an expired
+   * credential or a remote that has moved. Both halves are read here, and the
+   * count in the note is the count that actually succeeded.
+   */
   async function fetchAll() {
+    setFetchReport(null);
     setNote("Fetching every repository…");
     // A hidden repository is one the user has said they are not thinking about,
     // so it stays out of the fleet-wide sweep too.
     const targets = repos.filter(
       (r) => !r.error && r.remoteUrl && !prefs.get(r.path)?.hidden,
     );
+
+    const failures: FetchFailure[] = [];
+    let ok = 0;
+
     for (const repo of targets) {
-      await api.gitRun(repo.path, ["fetch", "--prune", "--quiet"]).catch(() => undefined);
+      const outcome = await api
+        .gitRun(repo.path, ["fetch", "--prune", "--quiet"])
+        .catch(
+          (err): GitOutcome => ({
+            code: -1,
+            stdout: "",
+            stderr: String(err),
+            command: "git fetch --prune --quiet",
+          }),
+        );
+      if (outcome.code === 0) ok += 1;
+      else failures.push({ name: repo.name, path: repo.path, outcome });
       refreshRepo(repo.path);
     }
-    setNote(`Fetched ${targets.length} repositories.`);
+
+    setFetchReport(failures.length > 0 ? { ok, failures } : null);
+    setNote(
+      failures.length === 0
+        ? `Fetched ${ok} repositories.`
+        : `Fetched ${ok}, ${failures.length} failed.`,
+    );
   }
 
   const paletteItems = useMemo<PaletteItem[]>(() => {
@@ -308,13 +448,7 @@ export default function App() {
           label: `Prune ${selected.mergedBranches.length} merged branches`,
           kind: "git",
           hint: pruneCommand(selected),
-          run: () =>
-            setConfirmation({
-              title: `Delete ${selected.mergedBranches.length} merged branches`,
-              body: `Every branch listed is already contained in ${selected.defaultBranch ?? "the default branch"}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`,
-              command: pruneCommand(selected),
-              confirmLabel: "Delete branches",
-            }),
+          run: () => setConfirmation(pruneConfirmation(selected)),
         });
       }
 
@@ -332,6 +466,20 @@ export default function App() {
         kind: "fleet",
         hint: "out of the list and out of this palette",
         run: () => setHidden(selected.path, true),
+      });
+    }
+
+    // One row per live shell, which is what makes the count in the status bar
+    // worth clicking: it opens the palette, and the palette is where the
+    // sessions can be ended without hunting for the row that owns each one.
+    for (const path of live) {
+      const repo = repos.find((r) => r.path === path);
+      items.push({
+        id: `close:${path}`,
+        label: `Close the shell in ${repo?.name ?? path}`,
+        kind: "fleet",
+        hint: "ends the process and its scrollback",
+        run: () => askCloseShell(path),
       });
     }
 
@@ -358,29 +506,42 @@ export default function App() {
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repos, prefs, tasks, selected, emit, scan, setPinned, setHidden]);
+  }, [repos, prefs, tasks, selected, live, emit, scan, setPinned, setHidden, askCloseShell]);
 
   const dirty = selected ? selected.staged + selected.modified : 0;
   const hiddenCount = useMemo(
     () => repos.filter((r) => prefs.get(r.path)?.hidden).length,
     [repos, prefs],
   );
+  const shellReady = selected != null && live.has(selected.path);
 
   return (
     <div className="app">
-      <FleetSidebar
-        repos={repos}
-        prefs={prefs}
-        selectedPath={selectedPath}
-        liveSessions={live}
-        query={query}
-        scanning={scanning}
-        onQuery={setQuery}
-        onSelect={setSelectedPath}
-        onPin={setPinned}
-        onHide={setHidden}
-        onManageRoots={() => setRootsOpen(true)}
-      />
+      {/* The fleet and the tasks share the left rail. Tasks belong to whichever
+          repository is selected, which is chosen immediately above them, and
+          moving them here freed the right-hand column for the working tree. */}
+      <div className="rail">
+        <FleetSidebar
+          repos={repos}
+          prefs={prefs}
+          selectedPath={selectedPath}
+          liveSessions={live}
+          query={query}
+          scanning={scanning}
+          onQuery={setQuery}
+          onSelect={setSelectedPath}
+          onPin={setPinned}
+          onHide={setHidden}
+          onCloseShell={askCloseShell}
+          onManageRoots={() => setRootsOpen(true)}
+        />
+        <TaskList
+          tasks={selected ? tasks : []}
+          disabled={!shellReady}
+          onRun={(task) => emit(task.command)}
+          onSetHidden={setTaskHidden}
+        />
+      </div>
 
       <main className="main">
         {selected ? (
@@ -398,6 +559,7 @@ export default function App() {
               </div>
 
               <div className="head-actions">
+                <BranchMenu repo={selected} shell={shell} onCommand={emit} />
                 <button
                   className="btn"
                   title={`${syncCommand}\n\nShift-click to type it without running it.`}
@@ -413,14 +575,7 @@ export default function App() {
                       ? pruneCommand(selected)
                       : "No merged branches to delete"
                   }
-                  onClick={() =>
-                    setConfirmation({
-                      title: `Delete ${selected.mergedBranches.length} merged branches`,
-                      body: `Every branch listed is already contained in ${selected.defaultBranch ?? "the default branch"}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`,
-                      command: pruneCommand(selected),
-                      confirmLabel: "Delete branches",
-                    })
-                  }
+                  onClick={() => setConfirmation(pruneConfirmation(selected))}
                 >
                   Prune merged
                   {selected.mergedBranches.length > 0 && ` (${selected.mergedBranches.length})`}
@@ -445,41 +600,62 @@ export default function App() {
               onCommand={emit}
             />
 
-            <div className="panes">
-              <TerminalPane
-                repoPath={selected.path}
-                onSettled={refreshRepo}
-                onLiveChange={onLiveChange}
-              />
-              <TaskList
-                tasks={tasks}
-                disabled={!live.has(selected.path)}
-                onRun={(task) => emit(task.command)}
-                onSetHidden={setTaskHidden}
-              />
-            </div>
+            <TerminalPane
+              repoPath={selected.path}
+              open={closedShell !== selected.path}
+              onSettled={refreshRepo}
+              onLiveChange={onLiveChange}
+              onRequestClose={askCloseShell}
+              onReopen={() => setClosedShell(null)}
+            />
           </>
         ) : (
-          <div className="panes">
-            <div className="terminal-pane">
-              <div className="pane-tab-bar">terminal</div>
-              <p className="empty">
-                {repos.length === 0 && scanning
-                  ? "Scanning the roots…"
-                  : "Pick a repository on the left, or press Ctrl+K."}
-              </p>
-            </div>
-            <TaskList tasks={[]} disabled onRun={() => undefined} onSetHidden={() => undefined} />
+          <div className="terminal-pane">
+            <div className="pane-tab-bar">terminal</div>
+            <p className="empty">
+              {repos.length === 0 && scanning
+                ? "Scanning the roots…"
+                : "Pick a repository on the left, or press Ctrl+K."}
+            </p>
           </div>
         )}
       </main>
+
+      <ChangesPane
+        repo={selected}
+        changes={changes}
+        disabled={!shellReady}
+        shell={shell}
+        onCommand={emit}
+      />
 
       <div className="status-bar">
         <span>{repos.length - hiddenCount} repos</span>
         {hiddenCount > 0 && <span>{hiddenCount} hidden</span>}
         {scanning && <span style={{ color: "var(--accent)" }}>scanning {scanned}</span>}
-        {live.size > 0 && <span style={{ color: "var(--green)" }}>{live.size} shells</span>}
-        {note && <span style={{ color: "var(--amber)" }}>{note}</span>}
+        {live.size > 0 && (
+          <button
+            className="status-link"
+            style={{ color: "var(--green)" }}
+            onClick={() => setPaletteOpen(true)}
+            title="Every open shell, and the row that closes one"
+          >
+            {live.size} shells
+          </button>
+        )}
+        {note &&
+          (fetchReport ? (
+            <button
+              className="status-link"
+              style={{ color: "var(--amber)" }}
+              onClick={() => setReportOpen(true)}
+              title="What git said about each one"
+            >
+              {note}
+            </button>
+          ) : (
+            <span style={{ color: "var(--amber)" }}>{note}</span>
+          ))}
         <span className="spacer" />
         {info?.gitVersion && <span>{info.gitVersion}</span>}
         {info && <span>{info.shell.split(/[\\/]/).pop()}</span>}
@@ -503,12 +679,51 @@ export default function App() {
         />
       )}
 
+      {reportOpen && fetchReport && (
+        <div className="confirm-backdrop" onMouseDown={() => setReportOpen(false)}>
+          <div className="confirm wide" onMouseDown={(e) => e.stopPropagation()}>
+            <h2>
+              {fetchReport.failures.length} of {fetchReport.ok + fetchReport.failures.length} did
+              not fetch
+            </h2>
+            <p>
+              Every other action types its command where you can read the output. Fetch-all is the
+              exception, so this is where its output goes. Running the same command in that
+              repository's shell is the way to see more.
+            </p>
+            <div className="report-list">
+              {fetchReport.failures.map((failure) => (
+                <div key={failure.path} className="report-row">
+                  <button
+                    className="report-name"
+                    onClick={() => {
+                      setSelectedPath(failure.path);
+                      setReportOpen(false);
+                    }}
+                    title={failure.path}
+                  >
+                    {failure.name}
+                  </button>
+                  <span className="report-code">exit {failure.outcome.code}</span>
+                  <pre>{failure.outcome.stderr.trim() || failure.outcome.stdout.trim() || "no output"}</pre>
+                </div>
+              ))}
+            </div>
+            <div className="confirm-actions">
+              <button className="btn" onClick={() => setReportOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmation && (
         <div className="confirm-backdrop" onMouseDown={() => setConfirmation(null)}>
           <div className="confirm" onMouseDown={(e) => e.stopPropagation()}>
             <h2>{confirmation.title}</h2>
             <p>{confirmation.body}</p>
-            <pre>{confirmation.command}</pre>
+            {confirmation.command && <pre>{confirmation.command}</pre>}
             <div className="confirm-actions">
               <button className="btn" onClick={() => setConfirmation(null)}>
                 Cancel
@@ -516,7 +731,7 @@ export default function App() {
               <button
                 className="btn accent"
                 onClick={() => {
-                  emit(confirmation.command);
+                  confirmation.onConfirm();
                   setConfirmation(null);
                 }}
               >

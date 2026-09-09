@@ -1,5 +1,14 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
-import type { AppInfo, BranchGraph, GitOutcome, RepoPref, RepoState, Task } from "./types";
+import type {
+  AppInfo,
+  BranchGraph,
+  FileChange,
+  GitOutcome,
+  RepoPref,
+  RepoState,
+  ScanReport,
+  Task,
+} from "./types";
 
 export const api = {
   fleetCached: () => invoke<RepoState[]>("fleet_cached"),
@@ -8,12 +17,13 @@ export const api = {
   fleetScan: (onRepo: (repo: RepoState) => void) => {
     const channel = new Channel<RepoState>();
     channel.onmessage = onRepo;
-    return invoke<number>("fleet_scan", { onRepo: channel });
+    return invoke<ScanReport>("fleet_scan", { onRepo: channel });
   },
 
   repoRefresh: (path: string) => invoke<RepoState>("repo_refresh", { path }),
   repoTasks: (path: string) => invoke<Task[]>("repo_tasks", { path }),
   repoGraph: (path: string) => invoke<BranchGraph>("repo_graph", { path }),
+  repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
 
   repoPrefs: () => invoke<RepoPref[]>("repo_prefs"),
   repoSetHidden: (path: string, hidden: boolean) =>

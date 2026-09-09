@@ -7,7 +7,8 @@ use anyhow::Result;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::fleet::RepoState;
 use crate::tasks::Task;
@@ -27,6 +28,30 @@ pub struct RepoPref {
     pub path: String,
     pub hidden: bool,
     pub pinned_at: Option<i64>,
+}
+
+/// A set of preferences that followed a repository to a new folder.
+///
+/// Reported rather than done silently: the whole complaint about the old
+/// behaviour was that it happened without saying anything.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Adoption {
+    pub owner_repo: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// Whether a path has anything worth carrying across a rename.
+fn has_prefs(conn: &Connection, path: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT (SELECT COUNT(*) FROM repo_pref  WHERE path = ?1)
+              + (SELECT COUNT(*) FROM task_pref  WHERE repo_path = ?1)
+              + (SELECT COUNT(*) FROM saved_task WHERE repo_path = ?1)",
+        params![path],
+        |r| r.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 impl Cache {
@@ -66,6 +91,16 @@ impl Cache {
                 hidden    INTEGER NOT NULL DEFAULT 0,
                 pinned_at INTEGER
             );
+
+            -- What was at a path last time a scan ran, so a folder that has
+            -- been renamed can be recognised at its new one. Written by the
+            -- scanner, never by a preference, so nothing has to remember to
+            -- keep it up to date.
+            CREATE TABLE IF NOT EXISTS repo_identity (
+                path       TEXT PRIMARY KEY,
+                owner_repo TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS repo_identity_owner ON repo_identity (owner_repo);
 
             -- Task ids are only unique inside a repository, so the key is both.
             CREATE TABLE IF NOT EXISTS task_pref (
@@ -166,6 +201,111 @@ impl Cache {
             params![repo_path, task_id, hidden as i64],
         )?;
         Ok(())
+    }
+
+    // ------------------------------------------------------------- identity
+
+    /// Moves every preference from a path that has gone to the path the same
+    /// repository now sits at.
+    ///
+    /// Preferences are keyed on the absolute path, so renaming a project folder
+    /// discarded the pin, the hidden flag and every saved task with no warning
+    /// and no way back. `owner/repo` from the origin URL survives a rename and a
+    /// re-clone, and the scanner already parses it.
+    ///
+    /// Three guards, because moving someone's preferences to the wrong row is
+    /// worse than losing them:
+    ///
+    /// - the old path must be gone from disk, so a checkout merely dropped out
+    ///   of the scan roots keeps what it had;
+    /// - exactly one repository on disk may claim that `owner/repo`, so two
+    ///   clones of the same project never fight over one set of pins;
+    /// - the new path must have no preferences of its own to overwrite.
+    ///
+    /// Anything that fails a guard is left alone and stays adoptable later.
+    pub fn adopt_moved_repos(&self, fleet: &[(String, Option<String>)]) -> Result<Vec<Adoption>> {
+        let mut claims: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (path, owner) in fleet {
+            if let Some(owner) = owner {
+                claims
+                    .entry(owner.as_str())
+                    .or_default()
+                    .push(path.as_str());
+            }
+        }
+
+        let live: HashSet<&str> = fleet.iter().map(|(path, _)| path.as_str()).collect();
+
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT path, owner_repo FROM repo_identity")?;
+        let known: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(stmt);
+
+        let mut moved = Vec::new();
+        for (old_path, owner) in &known {
+            if live.contains(old_path.as_str()) {
+                continue;
+            }
+            if Path::new(old_path).exists() {
+                continue;
+            }
+            let Some(candidates) = claims.get(owner.as_str()) else {
+                continue;
+            };
+            let [new_path] = candidates.as_slice() else {
+                continue;
+            };
+            if has_prefs(&conn, new_path)? {
+                continue;
+            }
+            if !has_prefs(&conn, old_path)? {
+                conn.execute(
+                    "DELETE FROM repo_identity WHERE path = ?1",
+                    params![old_path],
+                )?;
+                continue;
+            }
+
+            conn.execute(
+                "UPDATE repo_pref SET path = ?2 WHERE path = ?1",
+                params![old_path, new_path],
+            )?;
+            conn.execute(
+                "UPDATE task_pref SET repo_path = ?2 WHERE repo_path = ?1",
+                params![old_path, new_path],
+            )?;
+            // The saved-task id embeds the path, so it has to move with the row.
+            conn.execute(
+                "UPDATE saved_task SET repo_path = ?2, id = 'saved:' || ?2 || ':' || name
+                 WHERE repo_path = ?1",
+                params![old_path, new_path],
+            )?;
+            conn.execute(
+                "DELETE FROM repo_identity WHERE path = ?1",
+                params![old_path],
+            )?;
+
+            moved.push(Adoption {
+                owner_repo: owner.clone(),
+                from: old_path.clone(),
+                to: (*new_path).to_string(),
+            });
+        }
+
+        for (path, owner) in fleet {
+            if let Some(owner) = owner {
+                conn.execute(
+                    "INSERT INTO repo_identity (path, owner_repo) VALUES (?1, ?2)
+                     ON CONFLICT(path) DO UPDATE SET owner_repo = ?2",
+                    params![path, owner],
+                )?;
+            }
+        }
+
+        Ok(moved)
     }
 
     /// Drops cached rows for repositories that are no longer on disk, so a deleted

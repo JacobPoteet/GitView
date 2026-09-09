@@ -19,7 +19,13 @@ use std::path::Path;
 const MAX_PER_SIDE: usize = 40;
 
 /// Shared commits kept to the left of the fork, for context.
-const TRUNK_DEPTH: usize = 8;
+///
+/// This is a budget, not a count. The strip decides how many of these it can
+/// actually draw from the width it has been given, because a repository sitting
+/// in sync with its base has nothing but trunk to show and a two-commit picture
+/// left a pane of empty canvas to its right. Thirty-two first-parent commits
+/// fill a 2560 px strip at the wide gap and cost one `find_commit` each.
+const TRUNK_DEPTH: usize = 32;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +59,13 @@ pub struct BranchGraph {
     pub ours: Vec<GraphCommit>,
     /// Set when either side hit `MAX_PER_SIDE`, so the view can say so.
     pub truncated: bool,
+    /// HEAD and the base share no ancestor at all, so there is no fork to draw.
+    ///
+    /// An orphan branch, a history grafted in from another repository, anything
+    /// in `--allow-unrelated-histories` territory. `ours` and `theirs` stay
+    /// correct because they come from revwalks with a `hide`; it is the fork
+    /// marker and the shared rail that have nothing to say.
+    pub unrelated: bool,
     pub error: Option<String>,
 }
 
@@ -68,6 +81,7 @@ impl BranchGraph {
             theirs: Vec::new(),
             ours: Vec::new(),
             truncated: false,
+            unrelated: false,
             error: None,
         }
     }
@@ -113,7 +127,7 @@ pub fn read(path: &Path) -> BranchGraph {
 
     let Some(base_oid) = base_oid else {
         // Nothing to compare against, so recent history is the whole story.
-        graph.trunk = walk_first_parent(&repo, head_oid, TRUNK_DEPTH + 4, &names);
+        graph.trunk = walk_first_parent(&repo, head_oid, TRUNK_DEPTH, &names);
         return graph;
     };
 
@@ -125,8 +139,15 @@ pub fn read(path: &Path) -> BranchGraph {
     graph.theirs = theirs;
     graph.truncated = ours_cut || theirs_cut;
 
-    let fork = repo.merge_base(head_oid, base_oid).unwrap_or(head_oid);
-    graph.trunk = walk_first_parent(&repo, fork, TRUNK_DEPTH, &names);
+    // No merge base means the two branches never met. Falling back to HEAD here
+    // drew the trunk as HEAD's own recent history and claimed the pair parted at
+    // a commit only one of them can reach, which is a picture that lies rather
+    // than one that fails. The absence is a state now, and the view draws two
+    // independent rails and says so.
+    match repo.merge_base(head_oid, base_oid) {
+        Ok(fork) => graph.trunk = walk_first_parent(&repo, fork, TRUNK_DEPTH, &names),
+        Err(_) => graph.unrelated = true,
+    }
 
     graph
 }
@@ -318,4 +339,119 @@ fn ref_names(repo: &Repository) -> HashMap<Oid, Vec<String>> {
     });
 
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Signature;
+    use std::path::PathBuf;
+
+    /// A repository under the system temp directory, removed when the test ends.
+    ///
+    /// No `tempfile` dependency: one directory and a `Drop` is less to carry than
+    /// a crate, and the tree is deliberately short.
+    struct Fixture {
+        dir: PathBuf,
+        repo: Repository,
+    }
+
+    impl Fixture {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "gitview-graph-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            let repo = Repository::init(&dir).expect("git init");
+            Self { dir, repo }
+        }
+
+        /// An empty-tree commit on `refname`. The message differs per commit so
+        /// two roots with the same tree do not collapse into one object id.
+        fn commit(&self, refname: &str, message: &str, parents: &[Oid]) -> Oid {
+            let sig = Signature::now("Test", "test@example.com").expect("signature");
+            let tree_id = self
+                .repo
+                .treebuilder(None)
+                .expect("treebuilder")
+                .write()
+                .expect("write tree");
+            let tree = self.repo.find_tree(tree_id).expect("find tree");
+            let loaded: Vec<git2::Commit> = parents
+                .iter()
+                .map(|oid| self.repo.find_commit(*oid).expect("find parent"))
+                .collect();
+            let refs: Vec<&git2::Commit> = loaded.iter().collect();
+            self.repo
+                .commit(Some(refname), &sig, &sig, message, &tree, &refs)
+                .expect("commit")
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// The case that used to draw a fork at HEAD.
+    ///
+    /// With no merge base the trunk was `walk_first_parent(head)`, so the picture
+    /// claimed the two branches parted at a commit only one of them can reach.
+    /// None of the eleven repositories on the development machine has an
+    /// unrelated history, which is why this went unnoticed and why it is a
+    /// fixture rather than an observation.
+    #[test]
+    fn an_orphan_branch_has_no_fork_and_says_so() {
+        let fixture = Fixture::new("orphan");
+        fixture.commit("refs/heads/main", "root of main", &[]);
+        fixture.commit("refs/heads/orphan", "root of orphan", &[]);
+        fixture
+            .repo
+            .set_head("refs/heads/orphan")
+            .expect("checkout orphan");
+
+        let graph = read(&fixture.dir);
+
+        assert!(graph.error.is_none(), "{:?}", graph.error);
+        assert!(graph.unrelated, "two roots share no ancestor");
+        assert!(
+            graph.trunk.is_empty(),
+            "there is no shared history to draw, got {:?}",
+            graph.trunk.iter().map(|c| &c.summary).collect::<Vec<_>>()
+        );
+        // Both sides still come from revwalks with a `hide`, so both stay right.
+        assert_eq!(graph.base.as_deref(), Some("main"));
+        assert_eq!(graph.ours.len(), 1);
+        assert_eq!(graph.theirs.len(), 1);
+    }
+
+    /// The ordinary case, so the fix above cannot quietly empty every trunk.
+    #[test]
+    fn a_branch_off_main_keeps_its_shared_history() {
+        let fixture = Fixture::new("fork");
+        let first = fixture.commit("refs/heads/main", "one", &[]);
+        let second = fixture.commit("refs/heads/main", "two", &[first]);
+        fixture.commit("refs/heads/feature", "three", &[second]);
+        fixture
+            .repo
+            .set_head("refs/heads/feature")
+            .expect("checkout feature");
+
+        let graph = read(&fixture.dir);
+
+        assert!(!graph.unrelated);
+        assert_eq!(graph.trunk.len(), 2, "both shared commits, oldest first");
+        assert_eq!(graph.trunk[0].summary, "one");
+        assert_eq!(graph.trunk[1].summary, "two");
+        assert_eq!(graph.ours.len(), 1);
+        assert_eq!(graph.ours[0].summary, "three");
+        assert!(graph.theirs.is_empty());
+    }
 }

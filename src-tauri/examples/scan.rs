@@ -25,9 +25,11 @@ fn main() {
         started.elapsed()
     );
 
+    // LOCAL is the drift from the default branch on a branch with no upstream,
+    // which is what AHEAD cannot see and what the attention sort now weighs.
     println!(
-        "{:<26} {:<28} {:>5} {:>5} {:>6} {:>7}  {}",
-        "REPO", "BRANCH", "AHEAD", "BEHIND", "DIRTY", "MERGED", "REMOTE"
+        "{:<26} {:<28} {:>5} {:>6} {:>5} {:>5} {:>6} {:>6}  REMOTE",
+        "REPO", "BRANCH", "AHEAD", "BEHIND", "LOCAL", "BRCH", "DIRTY", "MERGED"
     );
 
     let mut total = std::time::Duration::ZERO;
@@ -37,12 +39,20 @@ fn main() {
         let elapsed = one.elapsed();
         total += elapsed;
 
+        let local = if state.upstream.is_some() {
+            0
+        } else {
+            state.ahead_of_default
+        };
+
         println!(
-            "{:<26} {:<28} {:>5} {:>5} {:>6} {:>7}  {} ({:?})",
+            "{:<26} {:<28} {:>5} {:>6} {:>5} {:>5} {:>6} {:>6}  {} ({:?})",
             truncate(&state.name, 26),
             truncate(&state.branch.clone().unwrap_or_else(|| "-".to_string()), 28),
             state.ahead,
             state.behind,
+            local,
+            state.local_branch_count,
             state.staged + state.modified,
             state.merged_branches.len(),
             state.owner_repo.clone().unwrap_or_else(|| "-".to_string()),

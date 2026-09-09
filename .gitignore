@@ -26,3 +26,6 @@ desktop.ini
 
 # Dev server log from a detached launch
 devrun.log
+
+# Build log from `npm run tauri build`, same class of thing as devrun.log
+relbuild.log
