@@ -156,9 +156,10 @@ impl PtyManager {
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
         let session = self.get(id)?;
-        session
-            .master
-            .lock()
+        // The guard is bound rather than chained: a temporary here would outlive
+        // `session`, which owns the mutex it borrows from.
+        let master = session.master.lock();
+        master
             .resize(PtySize {
                 rows: rows.max(2),
                 cols: cols.max(20),
