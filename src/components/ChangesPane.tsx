@@ -189,15 +189,6 @@ export default function ChangesPane({ repo, changes, disabled, shell, onCommand 
           onCommand={onCommand}
         />
         <Section
-          label="Staged"
-          rows={staged}
-          bulk="git restore --staged ."
-          bulkLabel="unstage all"
-          disabled={disabled}
-          shell={shell}
-          onCommand={onCommand}
-        />
-        <Section
           label="Changed"
           rows={unstaged}
           bulk="git add -A"
@@ -207,6 +198,24 @@ export default function ChangesPane({ repo, changes, disabled, shell, onCommand 
           onCommand={onCommand}
         />
       </div>
+
+      {/* Staged sits outside the scrolling list, directly above the commit box.
+          It is the list the message is about, so the two belong together, and
+          ordering it last inside the scroller would only put it near the box
+          while the changed list happened to be short. */}
+      {staged.length > 0 && (
+        <div className="change-staged">
+          <Section
+            label="Staged"
+            rows={staged}
+            bulk="git restore --staged ."
+            bulkLabel="unstage all"
+            disabled={disabled}
+            shell={shell}
+            onCommand={onCommand}
+          />
+        </div>
+      )}
 
       <div className="commit-box">
         <textarea
