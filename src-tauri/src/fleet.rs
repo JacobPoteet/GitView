@@ -231,8 +231,29 @@ fn read_remote(repo: &Repository, state: &mut RepoState) {
     let Some(url) = remote.url() else {
         return;
     };
-    state.remote_url = Some(url.to_string());
+    state.remote_url = Some(redact_userinfo(url));
     state.owner_repo = parse_owner_repo(url);
+}
+
+/// Strips the `user:token@` component from an HTTP remote before the URL reaches
+/// the cache.
+///
+/// `git remote set-url origin https://user:token@github.com/o/r` is a real thing
+/// people do, and the cache is a plain file inside the roaming profile, so
+/// storing the URL verbatim would write that token into every backup and sync
+/// target. `git@github.com:o/r` is left alone: that is a username, not a secret.
+pub fn redact_userinfo(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let Some((userinfo, host)) = rest.split_once('@') else {
+        return url.to_string();
+    };
+    // Only the password half is a secret, and only when there is one.
+    match userinfo.split_once(':') {
+        Some((user, _)) => format!("{scheme}://{user}:***@{host}"),
+        None => url.to_string(),
+    }
 }
 
 /// Pulls `owner/repo` out of an origin URL so the GitHub layer can alias the whole
@@ -331,6 +352,27 @@ mod tests {
                 "failed on {url}"
             );
         }
+    }
+
+    #[test]
+    fn strips_a_token_from_a_remote_before_caching() {
+        assert_eq!(
+            super::redact_userinfo("https://jacob:ghp_secret@github.com/o/r.git"),
+            "https://jacob:***@github.com/o/r.git"
+        );
+        // A username with no password is not a secret, and neither is scp-style ssh.
+        assert_eq!(
+            super::redact_userinfo("https://jacob@github.com/o/r.git"),
+            "https://jacob@github.com/o/r.git"
+        );
+        assert_eq!(
+            super::redact_userinfo("git@github.com:o/r.git"),
+            "git@github.com:o/r.git"
+        );
+        assert_eq!(
+            super::redact_userinfo("https://github.com/o/r.git"),
+            "https://github.com/o/r.git"
+        );
     }
 
     #[test]
