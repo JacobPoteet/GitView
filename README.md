@@ -6,8 +6,8 @@ The home screen is the whole fleet at once. The terminal is a primary pane rathe
 run and build commands for each project sit next to the repository that needs them.
 
 > [!NOTE]
-> The fleet scanner, the persistent terminal, task discovery and the branch graph work. Staging,
-> the full commit history and the GitHub inbox are designed but not built. See
+> The fleet scanner, the persistent terminal, task discovery, the branch graph and command blocks
+> work. The diff view, the full commit history and the GitHub inbox are designed but not built. See
 > [Status](#status).
 
 ## Why
@@ -45,6 +45,15 @@ Three rules shape the whole app:
 - **Tasks you actually run.** Discovery finds every script a project declares, which for one
   project here is 29. Move the CI-only ones to a collapsed Hidden section and they leave the
   palette too.
+- **Command blocks.** PowerShell tells GitView where each command started, what it printed and what
+  it exited with. The strip under the terminal shows the last one, and a two-pixel bar marks it in
+  the scrollback: green, red, or violet while it runs.
+- **Keeping a command you already ran.** One button turns the last command into a task for that
+  repository. Nothing is written into the repository, and you never type the command twice.
+- **Ports, without a config file.** A `localhost:5173` printed by a running command becomes a chip.
+  Clicking it types `Start-Process`, like every other button here.
+- **A failing build, in one copy.** The command, its directory, its exit code and its output go to
+  the clipboard together, ready to paste into Claude in the next window.
 - **Command palette.** `Ctrl+K` for repositories, tasks and actions.
 
 ## Installing it
@@ -112,11 +121,16 @@ times per repository per refresh is slow enough to feel.
 | Phase | Contents | State |
 | --- | --- | --- |
 | 0 | Fleet view, terminal, task discovery, sync and prune, palette | Built |
-| 0.5 | Pinning and hiding, watched folders, the branch graph | Built |
-| 1 | Command blocks via OSC 133, saving a block as a task, ports panel, batch operations across repositories | Designed |
+| 0.5 | Pinning and hiding, watched folders, the branch graph, staging and commit | Built |
+| 1 | Command blocks via OSC 133, saving a block as a task, ports, copying a failure | Built |
+| 1 | Sync and prune across several repositories with a transcript, dragging to reorder pins | Designed |
 | 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Designed |
 | 3 | Diff, hunk staging, commit graph | Designed |
 | 4 | Worktree lanes and a local API for agents | Designed |
+
+Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and
+oh-my-posh keep working, and it writes nothing to your profile or anywhere else outside its own
+data folder. A `cmd.exe` session gets a working shell and no blocks.
 
 ## Documentation
 

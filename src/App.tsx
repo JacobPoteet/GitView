@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FleetSidebar from "./components/FleetSidebar";
-import TerminalPane, { closeSession, sendCommand } from "./components/TerminalPane";
+import TerminalPane, {
+  blockOutput,
+  closeSession,
+  revealBlock,
+  sendCommand,
+  subscribeBlocks,
+} from "./components/TerminalPane";
+import BlockBar from "./components/BlockBar";
 import TaskList from "./components/TaskList";
 import BranchGraph from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
@@ -8,11 +15,13 @@ import ChangesPane from "./components/ChangesPane";
 import RootsDialog from "./components/RootsDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
-import { shellKind } from "./lib/shell";
+import { copyText } from "./lib/clipboard";
+import { openUrlCommand, shellKind } from "./lib/shell";
 import {
   relativeTime,
   type AppInfo,
   type BranchGraph as Graph,
+  type CommandBlock,
   type FileChange,
   type GitOutcome,
   type RepoPref,
@@ -41,7 +50,26 @@ interface FetchReport {
   failures: FetchFailure[];
 }
 
+/** A command on its way into the task list, waiting to be named. */
+interface PendingTask {
+  repoPath: string;
+  command: string;
+  name: string;
+}
+
 const GRAPH_KEY = "gitview.graph.collapsed";
+
+/**
+ * A first guess at what to call a command being kept as a task.
+ *
+ * The runner prefix is the part that carries no information: every script in a
+ * package is `npm run <something>`, and the something is the name. Everything
+ * else keeps its first two words, so `cargo test` stays `cargo test`.
+ */
+function taskNameFor(command: string): string {
+  const stripped = command.replace(/^(npm|pnpm|yarn|bun|deno)\s+(run\s+)?/i, "");
+  return stripped.split(/\s+/).slice(0, 2).join(" ").slice(0, 40) || command.slice(0, 40);
+}
 
 export default function App() {
   const [repos, setRepos] = useState<RepoState[]>([]);
@@ -69,6 +97,10 @@ export default function App() {
   const [reportOpen, setReportOpen] = useState(false);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [blocks, setBlocks] = useState<CommandBlock[]>([]);
+  /** Bumped when a task is saved or deleted, to re-read the list. */
+  const [taskEpoch, setTaskEpoch] = useState(0);
+  const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
 
   const selected = useMemo(
     () => repos.find((r) => r.path === selectedPath) ?? null,
@@ -173,7 +205,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPath]);
+  }, [selectedPath, taskEpoch]);
 
   // Selecting a repository is as deliberate as closing its shell was, so it
   // clears the closed flag and the pane opens a fresh session.
@@ -223,6 +255,17 @@ export default function App() {
     };
   }, [selectedPath, headSignature]);
 
+  // Blocks belong to the session, not to this component, so they survive a view
+  // change the same way the scrollback does. Resubscribing on `shellOpen` is
+  // what clears the strip when a shell is closed and fills it again on reopen.
+  useEffect(() => {
+    if (!selectedPath || closedShell === selectedPath) {
+      setBlocks([]);
+      return;
+    }
+    return subscribeBlocks(selectedPath, setBlocks);
+  }, [selectedPath, closedShell]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -233,6 +276,7 @@ export default function App() {
         setConfirmation(null);
         setRootsOpen(false);
         setReportOpen(false);
+        setPendingTask(null);
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -348,6 +392,72 @@ export default function App() {
     [selectedPath],
   );
 
+  /**
+   * A block is the command, its exit code and its output as one unit, which is
+   * exactly what is worth handing to Claude. Nothing is sent anywhere: it goes
+   * to the clipboard and the user decides where it lands.
+   */
+  const copyBlock = useCallback(
+    async (block: CommandBlock) => {
+      const output = blockOutput(block.repoPath, block.id);
+      const text = [
+        `Command: ${block.command}`,
+        `Directory: ${block.repoPath}`,
+        block.exitCode === null ? "Still running." : `Exit code: ${block.exitCode}`,
+        "",
+        output || "(nothing from this command is left in the scrollback)",
+      ].join("\n");
+      const copied = await copyText(text);
+      setNote(
+        copied
+          ? `Copied ${block.command} and its output.`
+          : "The clipboard refused the copy.",
+      );
+    },
+    [],
+  );
+
+  const askSaveTask = useCallback((block: CommandBlock) => {
+    setPendingTask({
+      repoPath: block.repoPath,
+      command: block.command,
+      name: taskNameFor(block.command),
+    });
+  }, []);
+
+  const saveTask = useCallback(async () => {
+    if (!pendingTask) return;
+    const name = pendingTask.name.trim();
+    if (!name) return;
+    try {
+      await api.taskSave(pendingTask.repoPath, name, pendingTask.command);
+      setPendingTask(null);
+      setTaskEpoch((n) => n + 1);
+      setNote(`Saved ${name}.`);
+    } catch (err) {
+      setNote(String(err));
+    }
+  }, [pendingTask]);
+
+  /**
+   * Saved tasks are the only ones that can be deleted. A discovered task belongs
+   * to a manifest, and hiding is what that one has.
+   */
+  const askDeleteTask = useCallback((task: Task) => {
+    setConfirmation({
+      title: `Delete the saved task ${task.name}`,
+      body: "It was kept from a command run here, so deleting it costs the name and nothing else. Anything discovered from a manifest is untouched.",
+      command: task.command,
+      confirmLabel: "Delete the task",
+      onConfirm: () => {
+        api
+          .taskDelete(task.id)
+          .then(() => setTaskEpoch((n) => n + 1))
+          .catch((err) => setNote(String(err)));
+      },
+    });
+  }, []);
+
   const syncCommand = "git fetch --prune; git pull --ff-only";
 
   function pruneCommand(repo: RepoState): string {
@@ -453,6 +563,36 @@ export default function App() {
       }
 
       const pinned = prefs.get(selected.path)?.pinnedAt != null;
+      const lastBlock = blocks.length > 0 ? blocks[blocks.length - 1] : null;
+      if (lastBlock) {
+        items.push({
+          id: "action:rerun",
+          label: `Run ${lastBlock.command} again`,
+          kind: "task",
+          hint: "the last command in this shell",
+          run: () => emit(lastBlock.command),
+        });
+        items.push({
+          id: "action:save-block",
+          label: `Save ${lastBlock.command} as a task`,
+          kind: "task",
+          hint: "keeps it in this repository's list",
+          run: () => askSaveTask(lastBlock),
+        });
+      }
+      const lastFailure = [...blocks]
+        .reverse()
+        .find((block) => block.exitCode !== null && block.exitCode !== 0);
+      if (lastFailure) {
+        items.push({
+          id: "action:copy-failure",
+          label: `Copy ${lastFailure.command} for Claude`,
+          kind: "task",
+          hint: `exit ${lastFailure.exitCode}, with its output`,
+          run: () => copyBlock(lastFailure),
+        });
+      }
+
       items.push({
         id: "action:pin",
         label: `${pinned ? "Unpin" : "Pin"} ${selected.name}`,
@@ -506,7 +646,21 @@ export default function App() {
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repos, prefs, tasks, selected, live, emit, scan, setPinned, setHidden, askCloseShell]);
+  }, [
+    repos,
+    prefs,
+    tasks,
+    selected,
+    live,
+    blocks,
+    emit,
+    scan,
+    setPinned,
+    setHidden,
+    askCloseShell,
+    askSaveTask,
+    copyBlock,
+  ]);
 
   const dirty = selected ? selected.staged + selected.modified : 0;
   const hiddenCount = useMemo(
@@ -540,6 +694,7 @@ export default function App() {
           disabled={!shellReady}
           onRun={(task) => emit(task.command)}
           onSetHidden={setTaskHidden}
+          onDelete={askDeleteTask}
         />
       </div>
 
@@ -607,7 +762,17 @@ export default function App() {
               onLiveChange={onLiveChange}
               onRequestClose={askCloseShell}
               onReopen={() => setClosedShell(null)}
-            />
+            >
+              <BlockBar
+                blocks={blocks}
+                onRun={(command) => emit(command)}
+                onSave={askSaveTask}
+                onCopy={copyBlock}
+                onReveal={(block) => revealBlock(block.repoPath, block.id)}
+                portCommand={(port) => openUrlCommand(`http://localhost:${port}`, shell)}
+                onPort={(port) => emit(openUrlCommand(`http://localhost:${port}`, shell))}
+              />
+            </TerminalPane>
           </>
         ) : (
           <div className="terminal-pane">
@@ -658,7 +823,18 @@ export default function App() {
           ))}
         <span className="spacer" />
         {info?.gitVersion && <span>{info.gitVersion}</span>}
-        {info && <span>{info.shell.split(/[\\/]/).pop()}</span>}
+        {info && (
+          <span
+            title={
+              info.shellIntegration
+                ? "This shell reports where each command starts and ends, which is what fills the strip above the terminal."
+                : "This shell reports nothing about the commands run in it, so there are no blocks."
+            }
+          >
+            {info.shell.split(/[\\/]/).pop()}
+            {info.shellIntegration && " · blocks"}
+          </span>
+        )}
         <span>
           <kbd>Ctrl</kbd> <kbd>K</kbd>
         </span>
@@ -715,6 +891,42 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {pendingTask && (
+        <div className="confirm-backdrop" onMouseDown={() => setPendingTask(null)}>
+          <form
+            className="confirm"
+            onMouseDown={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveTask();
+            }}
+          >
+            <h2>Keep this command as a task</h2>
+            <p>
+              It joins this repository's list above anything discovery found, and running it types
+              the same line you just typed. Nothing is written into the repository: the task lives
+              in GitView's own database, keyed on this folder.
+            </p>
+            <pre>{pendingTask.command}</pre>
+            <input
+              className="text-input"
+              autoFocus
+              value={pendingTask.name}
+              placeholder="A name for it"
+              onChange={(e) => setPendingTask({ ...pendingTask, name: e.target.value })}
+            />
+            <div className="confirm-actions">
+              <button type="button" className="btn" onClick={() => setPendingTask(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn accent" disabled={!pendingTask.name.trim()}>
+                Save the task
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

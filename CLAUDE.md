@@ -34,7 +34,8 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
 | `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
-| `src-tauri/src/pty.rs` | Terminal sessions |
+| `src-tauri/src/pty.rs` | Terminal sessions, and the base64 that hands the shell its prompt hook |
+| `src-tauri/src/shell_integration.ps1` | The OSC 133 hook. Source, not an asset: `include_str!` puts it in the binary |
 | `src-tauri/src/tasks.rs` | Task discovery across manifests |
 | `src-tauri/src/cache.rs` | SQLite. Cached scans, saved tasks, settings, and the pin and hide preferences |
 | `src-tauri/examples/scan.rs` | Headless scanner check, no window |
@@ -54,6 +55,9 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | A preference is keyed on the path, and follows a rename by `owner/repo` | Keying on the identity outright strands every repository with no remote. `repo_identity` records what was at a path so a move can be recognised afterwards, guarded so two clones of one project cannot fight over a set of pins |
 | Staging and committing type their commands too | Fetch-all is the only operation allowed to run out of sight, and it earned that by having no output worth reading. A second exception would make the rule decoration |
 | An operation that runs out of sight reports what failed | `git_run` resolves with an exit code rather than throwing, so catching the promise sees almost nothing. Read `code` |
+| The prompt hook wraps the user's prompt and touches nothing on disk | Overwriting `prompt` discards Starship and oh-my-posh. The script is handed over as `-EncodedCommand` after the profile has loaded, so it captures whatever is there. Never write to a profile without asking |
+| A terminal line number is checked against the command text before it is used | ConPTY repaints on resize and can duplicate a line, and `cls` rewrites lines in place, so a marker stops describing what it was taken from. `anchor` in `TerminalPane.tsx` is the only way to turn a block into a line |
+| The output channel belongs to the session, not to a React effect | An effect-owned callback drops everything a shell prints while its pane is off screen, which is most of what a dev server prints. Sessions outlive views, and so does their output |
 
 ## Building
 
@@ -91,7 +95,9 @@ Opening the app is not optional. Every bug found in this project so far survived
 test`, a full CI build and a read-through, and fell out within minutes of looking at the window.
 Two were in the keyboard path, one only appeared after removing a watched folder, and three more
 were visual: a path rendered `/src/lib` because of a bidi reorder, two graph rails whose captions
-overlapped, and a commit message that followed the selection into the next repository.
+overlapped, and a commit message that followed the selection into the next repository. Command
+blocks added four, including one that had been dropping terminal output since Phase 0 whenever a
+build finished in a project nobody was looking at.
 
 Some cases the eleven repositories here do not have. An unrelated history, a branch far ahead with
 no upstream, and a remote that does not resolve each need a throwaway repository; the wiki's
@@ -105,9 +111,15 @@ $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
 npm run dev
 ```
 
-Connect with `playwright-core`'s `chromium.connectOverCDP("http://localhost:9222")`. Keep the driver
-outside this repository so it never lands in `npm ci`. Synthetic desktop input does not reach the
-window on the development machine; the wiki records why.
+Connect with `playwright-core`'s `chromium.connectOverCDP("http://localhost:9222")`, and pick the
+page whose URL starts `http://localhost:5183` rather than `pages()[0]`, since a permission dialog
+opens as a page of its own and would take that slot. Keep the driver outside this repository so it
+never lands in `npm ci`. Synthetic desktop input does not reach the window on the development
+machine; the wiki records why.
+
+A dev build exposes `window.__gitview.sessions`, which is the only way to read a session's blocks,
+its markers and its buffer. The WebGL renderer draws to a canvas, so there is no terminal text in
+the DOM to scrape. Vite drops the handle from a production bundle.
 
 Restart the app rather than trusting Vite's hot update when the change touches the terminal.
 `TerminalPane` holds its sessions in module state, so a hot update leaves the existing `Terminal`

@@ -52,3 +52,14 @@ export function commitCommand(message: string, kind: ShellKind, amend = false): 
   }
   return parts.join(" ");
 }
+
+/**
+ * Opening a URL the shell just announced.
+ *
+ * A dev server prints its address and GitView notices; the browser still gets
+ * opened by a command typed at the prompt, because a button that reaches the
+ * desktop without saying how would be the only one in the app that does.
+ */
+export function openUrlCommand(url: string, kind: ShellKind): string {
+  return kind === "powershell" ? `Start-Process ${quote(url, kind)}` : `open ${quote(url, kind)}`;
+}

@@ -103,8 +103,53 @@ export interface GitOutcome {
 export interface AppInfo {
   gitVersion: string | null;
   shell: string;
+  /** Whether this shell emits OSC 133 marks, so blocks are possible at all. */
+  shellIntegration: boolean;
   dataDir: string;
   roots: string[];
+}
+
+/**
+ * One command typed at the prompt, as the shell integration reported it.
+ *
+ * The output is not held here. It is read back out of the terminal buffer on
+ * demand, so a build that printed forty thousand lines costs nothing until
+ * somebody asks for it, and what comes back has already had its escape codes
+ * applied. See `blockOutput` in TerminalPane.
+ */
+export interface CommandBlock {
+  id: number;
+  repoPath: string;
+  command: string;
+  startedAt: number;
+  endedAt: number | null;
+  /** Null while it is still running. */
+  exitCode: number | null;
+}
+
+export function blockDuration(block: CommandBlock): string {
+  const ms = (block.endedAt ?? Date.now()) - block.startedAt;
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  return `${minutes}m ${Math.round((ms % 60000) / 1000)}s`;
+}
+
+/**
+ * Ports a running command announced, in the order they appeared.
+ *
+ * Only a running block is worth scanning: a dev server holds its block open for
+ * as long as it is up, so a port found in one is live, and one found in a build
+ * that has already finished is a line of documentation.
+ */
+export function portsIn(output: string): number[] {
+  const found: number[] = [];
+  const pattern = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(\d{2,5})/gi;
+  for (const match of output.matchAll(pattern)) {
+    const port = Number.parseInt(match[1], 10);
+    if (port > 0 && port < 65536 && !found.includes(port)) found.push(port);
+  }
+  return found;
 }
 
 /**

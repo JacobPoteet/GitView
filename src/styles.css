@@ -1583,3 +1583,163 @@ input {
 .status-link:hover {
   text-decoration: underline;
 }
+
+/* ------------------------------------------------------------------ blocks */
+
+/* The last command in this repository's shell, sitting between the graph and
+   the terminal because that is where the eye already goes when something
+   finishes. Everything on the row was on screen a moment ago; what the strip
+   adds is that the app now knows where one command ended and the next began. */
+.block-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-raised);
+  font-size: 11.5px;
+  border-left: 2px solid transparent;
+}
+
+.block-bar.ok {
+  border-left-color: var(--green);
+}
+
+.block-bar.failed {
+  border-left-color: var(--red);
+  background: color-mix(in oklch, var(--red) 7%, var(--bg-raised));
+}
+
+.block-bar.running {
+  border-left-color: var(--accent);
+}
+
+.block-status {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+
+.block-bar.ok .block-status {
+  color: var(--green);
+  border-color: color-mix(in oklch, var(--green) 40%, transparent);
+}
+
+.block-bar.failed .block-status {
+  color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+
+.block-bar.running .block-status {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.block-status:hover {
+  background: var(--bg-hover);
+}
+
+.block-command {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.block-time {
+  flex: none;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.block-ports {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+/* A dev server holds its block open for as long as it is up, so a port found in
+   a running block is one that is listening now. */
+.port-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.port-chip:hover {
+  background: var(--bg-active);
+}
+
+.block-action {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.block-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.block-action:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.block-action.warn {
+  color: var(--red);
+}
+
+/* The gutter mark on the line a command was typed on, drawn in the padding the
+   terminal host already leaves rather than over the first character.
+
+   xterm sizes a decoration to a whole cell inline, so the bar is a border on
+   the element rather than a width on it. */
+.block-mark {
+  border-left: 2px solid var(--line-strong);
+  margin-left: -7px;
+  pointer-events: none;
+}
+
+.block-mark.ok {
+  border-left-color: color-mix(in oklch, var(--green) 60%, transparent);
+}
+
+.block-mark.failed {
+  border-left-color: var(--red);
+}
+
+.block-mark.running {
+  border-left-color: var(--accent);
+}
+
+.text-input {
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+
+.text-input:focus {
+  border-color: var(--accent-line);
+}
