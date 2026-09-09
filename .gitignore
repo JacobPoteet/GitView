@@ -1,0 +1,25 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+
+# Local agent state. Holds the wiki location, which never enters the repo.
+.claude/wiki-path.local
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# TypeScript project-reference build info
+.tsbuild/
