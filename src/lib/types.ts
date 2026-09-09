@@ -28,6 +28,39 @@ export interface Task {
   command: string;
   source: string;
   saved: boolean;
+  /** Sent to the collapsed section at the foot of the pane, and out of the palette. */
+  hidden: boolean;
+}
+
+/** A display choice about one repository, kept apart from the scanned state. */
+export interface RepoPref {
+  path: string;
+  hidden: boolean;
+  /** When it was pinned, which is also the order pinned rows are drawn in. */
+  pinnedAt: number | null;
+}
+
+export interface GraphCommit {
+  id: string;
+  short: string;
+  summary: string;
+  author: string;
+  time: number;
+  refs: string[];
+  isMerge: boolean;
+}
+
+export interface BranchGraph {
+  path: string;
+  head: string | null;
+  detached: boolean;
+  base: string | null;
+  baseKind: "remote-default" | "default" | "upstream" | "none";
+  trunk: GraphCommit[];
+  theirs: GraphCommit[];
+  ours: GraphCommit[];
+  truncated: boolean;
+  error: string | null;
 }
 
 export interface GitOutcome {

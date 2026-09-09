@@ -2,9 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FleetSidebar from "./components/FleetSidebar";
 import TerminalPane, { sendCommand } from "./components/TerminalPane";
 import TaskList from "./components/TaskList";
+import BranchGraph from "./components/BranchGraph";
+import RootsDialog from "./components/RootsDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
-import { relativeTime, type AppInfo, type RepoState, type Task } from "./lib/types";
+import {
+  relativeTime,
+  type AppInfo,
+  type BranchGraph as Graph,
+  type RepoPref,
+  type RepoState,
+  type Task,
+} from "./lib/types";
 
 interface Confirmation {
   title: string;
@@ -13,10 +22,19 @@ interface Confirmation {
   confirmLabel: string;
 }
 
+const GRAPH_KEY = "gitview.graph.collapsed";
+
 export default function App() {
   const [repos, setRepos] = useState<RepoState[]>([]);
+  const [prefs, setPrefs] = useState<Map<string, RepoPref>>(new Map());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [graph, setGraph] = useState<Graph | null>(null);
+  const [graphCollapsed, setGraphCollapsed] = useState(
+    () => localStorage.getItem(GRAPH_KEY) === "1",
+  );
+  const [roots, setRoots] = useState<string[]>([]);
+  const [rootsOpen, setRootsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(0);
@@ -41,14 +59,31 @@ export default function App() {
     });
   }, []);
 
+  const loadPrefs = useCallback(async () => {
+    try {
+      const rows = await api.repoPrefs();
+      setPrefs(new Map(rows.map((row) => [row.path, row])));
+    } catch {
+      // A missing preference is a cosmetic loss, not a reason to blank the fleet.
+    }
+  }, []);
+
   const scan = useCallback(async () => {
     setScanning(true);
     setScanned(0);
     try {
+      const seen = new Set<string>();
       await api.fleetScan((repo) => {
+        seen.add(repo.path);
         upsert(repo);
         setScanned((n) => n + 1);
       });
+      // The stream only adds and updates, so a repository that has gone away
+      // stays on screen until this runs. Removing a watched folder made that
+      // obvious: the rows behind it kept their place until the next launch.
+      // Pruning only after the scan resolves keeps a failed sweep from emptying
+      // the list.
+      setRepos((current) => current.filter((repo) => seen.has(repo.path)));
     } catch (err) {
       setNote(String(err));
     } finally {
@@ -65,6 +100,8 @@ export default function App() {
         if (cancelled) return;
         setRepos(cached);
         setInfo(appInfo);
+        setRoots(appInfo.roots);
+        await loadPrefs();
         const liveIds = await api.ptyLive();
         if (!cancelled) setLive(new Set(liveIds));
       } catch (err) {
@@ -75,7 +112,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [scan]);
+  }, [scan, loadPrefs]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -96,13 +133,42 @@ export default function App() {
     };
   }, [selectedPath]);
 
+  // The graph is cheap enough to read fresh, and it has to move the moment HEAD
+  // does. Keying on the branch and its counts rather than on `scannedAt` keeps a
+  // refresh that changed nothing from redrawing the strip.
+  const headSignature = selected
+    ? `${selected.branch}|${selected.lastCommitAt}|${selected.ahead}|${selected.behind}`
+    : "";
+
+  useEffect(() => {
+    if (!selectedPath) {
+      setGraph(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .repoGraph(selectedPath)
+      .then((found) => {
+        if (!cancelled) setGraph(found);
+      })
+      .catch(() => {
+        if (!cancelled) setGraph(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPath, headSignature]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
       }
-      if (event.key === "Escape") setConfirmation(null);
+      if (event.key === "Escape") {
+        setConfirmation(null);
+        setRootsOpen(false);
+      }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
     // see attachCustomKeyEventHandler in TerminalPane.
@@ -133,6 +199,43 @@ export default function App() {
     });
   }, []);
 
+  const toggleGraph = useCallback(() => {
+    setGraphCollapsed((collapsed) => {
+      localStorage.setItem(GRAPH_KEY, collapsed ? "0" : "1");
+      return !collapsed;
+    });
+  }, []);
+
+  const setPinned = useCallback(
+    async (path: string, pinned: boolean) => {
+      await api.repoSetPinned(path, pinned).catch((err) => setNote(String(err)));
+      await loadPrefs();
+    },
+    [loadPrefs],
+  );
+
+  const setHidden = useCallback(
+    async (path: string, hidden: boolean) => {
+      await api.repoSetHidden(path, hidden).catch((err) => setNote(String(err)));
+      await loadPrefs();
+      // Leaving a hidden repository open would keep a shell attached to something
+      // the list no longer shows, with no obvious way back to it.
+      if (hidden && path === selectedPath) setSelectedPath(null);
+    },
+    [loadPrefs, selectedPath],
+  );
+
+  const setTaskHidden = useCallback(
+    async (task: Task, hidden: boolean) => {
+      if (!selectedPath) return;
+      setTasks((current) =>
+        current.map((t) => (t.id === task.id ? { ...t, hidden } : t)),
+      );
+      await api.taskSetHidden(selectedPath, task.id, hidden).catch((err) => setNote(String(err)));
+    },
+    [selectedPath],
+  );
+
   /**
    * Every action in the app goes through here, so the command is always visible
    * in the terminal rather than happening behind the UI. Holding shift types it
@@ -155,7 +258,11 @@ export default function App() {
 
   async function fetchAll() {
     setNote("Fetching every repository…");
-    const targets = repos.filter((r) => !r.error && r.remoteUrl);
+    // A hidden repository is one the user has said they are not thinking about,
+    // so it stays out of the fleet-wide sweep too.
+    const targets = repos.filter(
+      (r) => !r.error && r.remoteUrl && !prefs.get(r.path)?.hidden,
+    );
     for (const repo of targets) {
       await api.gitRun(repo.path, ["fetch", "--prune", "--quiet"]).catch(() => undefined);
       refreshRepo(repo.path);
@@ -167,6 +274,7 @@ export default function App() {
     const items: PaletteItem[] = [];
 
     for (const repo of repos) {
+      if (prefs.get(repo.path)?.hidden) continue;
       items.push({
         id: `repo:${repo.path}`,
         label: repo.name,
@@ -178,6 +286,7 @@ export default function App() {
 
     if (selected) {
       for (const task of tasks) {
+        if (task.hidden) continue;
         items.push({
           id: `task:${task.id}`,
           label: `${selected.name} · ${task.name}`,
@@ -208,6 +317,22 @@ export default function App() {
             }),
         });
       }
+
+      const pinned = prefs.get(selected.path)?.pinnedAt != null;
+      items.push({
+        id: "action:pin",
+        label: `${pinned ? "Unpin" : "Pin"} ${selected.name}`,
+        kind: "fleet",
+        hint: pinned ? "back to the sorted list" : "hold a position at the top",
+        run: () => setPinned(selected.path, !pinned),
+      });
+      items.push({
+        id: "action:hide",
+        label: `Hide ${selected.name}`,
+        kind: "fleet",
+        hint: "out of the list and out of this palette",
+        run: () => setHidden(selected.path, true),
+      });
     }
 
     items.push({
@@ -223,23 +348,38 @@ export default function App() {
       kind: "fleet",
       run: scan,
     });
+    items.push({
+      id: "action:roots",
+      label: "Watched folders",
+      kind: "fleet",
+      hint: "add or remove a folder GitView scans",
+      run: () => setRootsOpen(true),
+    });
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repos, tasks, selected, emit, scan]);
+  }, [repos, prefs, tasks, selected, emit, scan, setPinned, setHidden]);
 
   const dirty = selected ? selected.staged + selected.modified : 0;
+  const hiddenCount = useMemo(
+    () => repos.filter((r) => prefs.get(r.path)?.hidden).length,
+    [repos, prefs],
+  );
 
   return (
     <div className="app">
       <FleetSidebar
         repos={repos}
+        prefs={prefs}
         selectedPath={selectedPath}
         liveSessions={live}
         query={query}
         scanning={scanning}
         onQuery={setQuery}
         onSelect={setSelectedPath}
+        onPin={setPinned}
+        onHide={setHidden}
+        onManageRoots={() => setRootsOpen(true)}
       />
 
       <main className="main">
@@ -298,6 +438,13 @@ export default function App() {
               </div>
             </header>
 
+            <BranchGraph
+              graph={graph}
+              collapsed={graphCollapsed}
+              onToggle={toggleGraph}
+              onCommand={emit}
+            />
+
             <div className="panes">
               <TerminalPane
                 repoPath={selected.path}
@@ -308,6 +455,7 @@ export default function App() {
                 tasks={tasks}
                 disabled={!live.has(selected.path)}
                 onRun={(task) => emit(task.command)}
+                onSetHidden={setTaskHidden}
               />
             </div>
           </>
@@ -321,13 +469,14 @@ export default function App() {
                   : "Pick a repository on the left, or press Ctrl+K."}
               </p>
             </div>
-            <TaskList tasks={[]} disabled onRun={() => undefined} />
+            <TaskList tasks={[]} disabled onRun={() => undefined} onSetHidden={() => undefined} />
           </div>
         )}
       </main>
 
       <div className="status-bar">
-        <span>{repos.length} repos</span>
+        <span>{repos.length - hiddenCount} repos</span>
+        {hiddenCount > 0 && <span>{hiddenCount} hidden</span>}
         {scanning && <span style={{ color: "var(--accent)" }}>scanning {scanned}</span>}
         {live.size > 0 && <span style={{ color: "var(--green)" }}>{live.size} shells</span>}
         {note && <span style={{ color: "var(--amber)" }}>{note}</span>}
@@ -341,6 +490,17 @@ export default function App() {
 
       {paletteOpen && (
         <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />
+      )}
+
+      {rootsOpen && (
+        <RootsDialog
+          roots={roots}
+          onChange={(next) => {
+            setRoots(next);
+            scan();
+          }}
+          onClose={() => setRootsOpen(false)}
+        />
       )}
 
       {confirmation && (

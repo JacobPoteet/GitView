@@ -7,6 +7,7 @@
 pub mod cache;
 pub mod fleet;
 pub mod gitops;
+pub mod graph;
 pub mod pty;
 pub mod settings;
 pub mod tasks;
@@ -18,9 +19,10 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
-use cache::Cache;
+use cache::{Cache, RepoPref};
 use fleet::RepoState;
 use gitops::GitOutcome;
+use graph::BranchGraph;
 use pty::PtyManager;
 use tasks::Task;
 
@@ -94,20 +96,74 @@ async fn repo_refresh(state: State<'_, AppState>, path: String) -> Result<RepoSt
     .map_err(|e| e.to_string())
 }
 
+/// The shape of one repository's current branch against the branch it merges
+/// into. Small enough to read fresh every time HEAD moves, so nothing caches it.
+#[tauri::command]
+async fn repo_graph(path: String) -> Result<BranchGraph, String> {
+    tauri::async_runtime::spawn_blocking(move || graph::read(&PathBuf::from(&path)))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ------------------------------------------------------------ preferences
+
+/// Pins and hides, merged into the list by the frontend rather than folded into
+/// `RepoState`, which the next scan overwrites.
+#[tauri::command]
+fn repo_prefs(state: State<'_, AppState>) -> Result<Vec<RepoPref>, String> {
+    state.cache.repo_prefs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn repo_set_hidden(state: State<'_, AppState>, path: String, hidden: bool) -> Result<(), String> {
+    state
+        .cache
+        .set_repo_hidden(&path, hidden)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn repo_set_pinned(state: State<'_, AppState>, path: String, pinned: bool) -> Result<(), String> {
+    state
+        .cache
+        .set_repo_pinned(&path, pinned)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn task_set_hidden(
+    state: State<'_, AppState>,
+    repo_path: String,
+    task_id: String,
+    hidden: bool,
+) -> Result<(), String> {
+    state
+        .cache
+        .set_task_hidden(&repo_path, &task_id, hidden)
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------- tasks
 
 #[tauri::command]
 async fn repo_tasks(state: State<'_, AppState>, path: String) -> Result<Vec<Task>, String> {
     let cache = state.cache.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut found = tasks::discover(&PathBuf::from(&path));
+        let mut all = tasks::discover(&PathBuf::from(&path));
         if let Ok(saved) = cache.saved_tasks(&path) {
             // Saved tasks lead, because a person chose those.
-            let mut all = saved;
-            all.append(&mut found);
-            return all;
+            let mut ordered = saved;
+            ordered.append(&mut all);
+            all = ordered;
         }
-        found
+        // The list arrives whole and flagged. The pane decides where a hidden
+        // task is drawn; the palette drops it entirely.
+        if let Ok(hidden) = cache.hidden_tasks(&path) {
+            for task in &mut all {
+                task.hidden = hidden.iter().any(|id| id == &task.id);
+            }
+        }
+        all
     })
     .await
     .map_err(|e| e.to_string())
@@ -191,6 +247,40 @@ fn settings_set_roots(state: State<'_, AppState>, roots: Vec<String>) -> Result<
     settings::set_roots(&state.cache, &roots).map_err(|e| e.to_string())
 }
 
+/// Appends a folder to the scan roots and hands back the new list.
+///
+/// One verb covers both "watch this folder full of checkouts" and "watch this
+/// one repository", because `fleet::discover` already treats a root that is
+/// itself a repository as one of its results.
+#[tauri::command]
+fn settings_add_root(state: State<'_, AppState>, path: String) -> Result<Vec<String>, String> {
+    let trimmed = path.trim().trim_end_matches(['/', '\\']).to_string();
+    if trimmed.is_empty() {
+        return Err("Give a folder path.".to_string());
+    }
+    if !PathBuf::from(&trimmed).is_dir() {
+        return Err(format!("{trimmed} is not a folder on this machine."));
+    }
+
+    let mut roots = settings::roots(&state.cache);
+    if roots.iter().any(|r| r.eq_ignore_ascii_case(&trimmed)) {
+        return Ok(roots);
+    }
+    roots.push(trimmed);
+    settings::set_roots(&state.cache, &roots).map_err(|e| e.to_string())?;
+    Ok(roots)
+}
+
+#[tauri::command]
+fn settings_remove_root(state: State<'_, AppState>, path: String) -> Result<Vec<String>, String> {
+    let roots: Vec<String> = settings::roots(&state.cache)
+        .into_iter()
+        .filter(|r| !r.eq_ignore_ascii_case(&path))
+        .collect();
+    settings::set_roots(&state.cache, &roots).map_err(|e| e.to_string())?;
+    Ok(roots)
+}
+
 #[tauri::command]
 fn app_info(state: State<'_, AppState>) -> AppInfo {
     AppInfo {
@@ -206,6 +296,7 @@ fn app_info(state: State<'_, AppState>) -> AppInfo {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let cache = Cache::open()?;
             app.manage(AppState {
@@ -218,6 +309,11 @@ pub fn run() {
             fleet_cached,
             fleet_scan,
             repo_refresh,
+            repo_graph,
+            repo_prefs,
+            repo_set_hidden,
+            repo_set_pinned,
+            task_set_hidden,
             repo_tasks,
             task_save,
             task_delete,
@@ -230,6 +326,8 @@ pub fn run() {
             pty_live,
             settings_roots,
             settings_set_roots,
+            settings_add_root,
+            settings_remove_root,
             app_info,
         ])
         .run(tauri::generate_context!())
