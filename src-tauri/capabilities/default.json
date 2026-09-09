@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "GitView talks to its own Rust commands and nothing else.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
