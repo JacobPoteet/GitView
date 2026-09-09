@@ -6,8 +6,9 @@ The home screen is the whole fleet at once. The terminal is a primary pane rathe
 run and build commands for each project sit next to the repository that needs them.
 
 > [!NOTE]
-> Phase 0. The fleet scanner, the persistent terminal and task discovery work. Staging, the commit
-> graph and the GitHub inbox are designed but not built. See [Status](#status).
+> The fleet scanner, the persistent terminal, task discovery and the branch graph work. Staging,
+> the full commit history and the GitHub inbox are designed but not built. See
+> [Status](#status).
 
 ## Why
 
@@ -36,6 +37,14 @@ Three rules shape the whole app:
 - **Sync and prune.** Both type their command into the repository's own shell, so the output is
   where you already look. Prune lists the branches first and uses `git branch -d`, which refuses
   anything unmerged.
+- **Branch graph.** Two rails, time running left to right: what your branch has that `origin/main`
+  does not, and what it has that you do not. It collapses to a one-line summary, and clicking a
+  commit types `git show` into that repository's shell.
+- **A list you control.** Pin the repositories you are working on to the top, hide the ones you are
+  not, and add or remove the folders GitView watches without leaving the app.
+- **Tasks you actually run.** Discovery finds every script a project declares, which for one
+  project here is 29. Move the CI-only ones to a collapsed Hidden section and they leave the
+  palette too.
 - **Command palette.** `Ctrl+K` for repositories, tasks and actions.
 
 ## Requirements
@@ -89,6 +98,7 @@ times per repository per refresh is slow enough to feel.
 | Phase | Contents | State |
 | --- | --- | --- |
 | 0 | Fleet view, terminal, task discovery, sync and prune, palette | Built |
+| 0.5 | Pinning and hiding, watched folders, the branch graph | Built |
 | 1 | Command blocks via OSC 133, saving a block as a task, ports panel, batch operations across repositories | Designed |
 | 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Designed |
 | 3 | Diff, hunk staging, commit graph | Designed |
