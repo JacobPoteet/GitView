@@ -19,8 +19,12 @@ the `stop-slop` skill on every note.
 
 ## Documents this repository keeps
 
-`README.md`, `CLAUDE.md`, `LICENSE`, and the CI workflow. Everything else belongs in the wiki. Do
+`README.md`, `CLAUDE.md`, `LICENSE`, and the two workflows. Everything else belongs in the wiki. Do
 not add a `docs/` folder.
+
+`ci.yml` is the gate and builds `--no-bundle`, so it never produces an artifact. `release.yml` runs
+on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag push does not match
+`branches: [main]`, which is why CI cannot do both jobs.
 
 ## Layout
 
@@ -46,6 +50,7 @@ not add a `docs/` folder.
 | Numbers in the wiki are measurements | If a note states a timing or a count, it was measured. Mark a target as a target |
 | A preference is never stored in `RepoState` | That struct is scanner output, cached as a blob and rewritten every sweep. Pins and hides live in `repo_pref` and `task_pref`, and the frontend merges them |
 | Hiding something removes it from the palette | Demoting it still leaves it in the way, and the palette is where a project's thirty npm scripts do the most damage |
+| A release tag must match `tauri.conf.json`, `package.json` and `Cargo.toml` | The installer takes its filename and its Add/Remove Programs entry from the config, so tagging `v0.2.0` without bumping ships a `v0.2.0` release containing `GitView_0.1.0_x64-setup.exe`. `release.yml` fails on the mismatch rather than shipping it |
 | A preference is keyed on the path, and follows a rename by `owner/repo` | Keying on the identity outright strands every repository with no remote. `repo_identity` records what was at a path so a move can be recognised afterwards, guarded so two clones of one project cannot fight over a set of pins |
 | Staging and committing type their commands too | Fetch-all is the only operation allowed to run out of sight, and it earned that by having no output worth reading. A second exception would make the rule decoration |
 | An operation that runs out of sight reports what failed | `git_run` resolves with an exit code rather than throwing, so catching the promise sees almost nothing. Read `code` |
