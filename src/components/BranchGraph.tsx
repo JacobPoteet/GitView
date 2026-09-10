@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { BranchGraph as Graph, GraphCommit } from "../lib/types";
+import type { BranchGraph as Graph, GraphCommit, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
 
 interface Props {
   graph: Graph | null;
   collapsed: boolean;
   onToggle: () => void;
+  /** Set when the branch you are on was squash-merged into the base. */
+  squashed: Squashed | null;
   /** Types a command in the repository's shell. Shift-click leaves it unrun. */
   onCommand: (command: string, typeOnly: boolean) => void;
 }
@@ -57,7 +59,7 @@ interface Placed {
   tip: boolean;
 }
 
-export default function BranchGraph({ graph, collapsed, onToggle, onCommand }: Props) {
+export default function BranchGraph({ graph, collapsed, squashed, onToggle, onCommand }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -100,7 +102,7 @@ export default function BranchGraph({ graph, collapsed, onToggle, onCommand }: P
 
   if (!graph) return null;
 
-  const summary = describe(graph);
+  const summary = describe(graph, squashed);
 
   return (
     <section className={`graph${collapsed ? " collapsed" : ""}`}>
@@ -335,7 +337,7 @@ function build(graph: Graph | null, available: number) {
   return { nodes, rails, width, height, layout };
 }
 
-function describe(graph: Graph): string {
+function describe(graph: Graph, squashed: Squashed | null): string {
   if (graph.error) return "Unreadable";
   const head = graph.head ?? "HEAD";
   if (graph.baseKind === "none") {
@@ -344,6 +346,12 @@ function describe(graph: Graph): string {
   const base = graph.base ?? "the base";
   if (graph.unrelated) {
     return `${head} and ${base} share no history`;
+  }
+  // Ahead of the base and already on it under another commit. Saying only
+  // "3 ahead" here is what makes a squash-merged branch look like unfinished
+  // work for as long as it sits in the list.
+  if (squashed) {
+    return `${head} was squashed into ${squashed.intoShort} on ${base}`;
   }
   const parts: string[] = [];
   if (graph.ours.length > 0) parts.push(`${graph.ours.length} ahead`);

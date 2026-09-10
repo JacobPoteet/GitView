@@ -15,7 +15,7 @@
  */
 
 import { api } from "./api";
-import type { GitOutcome, RepoState } from "./types";
+import type { GitOutcome, RepoState, Squashed } from "./types";
 
 export type BatchKind = "fetch" | "sync" | "prune";
 
@@ -68,11 +68,52 @@ export function pullPlan(repo: RepoState): Plan {
   return run(["pull", "--ff-only"]);
 }
 
-/** The command that deletes every branch the default branch already contains. */
-export function pruneCommand(repo: RepoState): string {
-  return `git branch -d ${repo.mergedBranches.join(" ")}`;
+/**
+ * The branches a single-repository prune would delete, and how.
+ *
+ * Two lists, because they take different flags. A branch the trunk already
+ * contains goes through `git branch -d`, which refuses anything unmerged and is
+ * the whole safety story in [[Batch Operations]]. A squash-merged branch is not
+ * contained by anything, so `-d` refuses it too and it needs `-D`. That swaps
+ * git's judgement for GitView's, which is why the two are never mixed into one
+ * command: the dialog has to be able to say which branches are on which flag.
+ */
+export interface PruneSplit {
+  merged: string[];
+  squashed: string[];
 }
 
+export function pruneSplit(repo: RepoState, squashed: Squashed[]): PruneSplit {
+  const contained = new Set(repo.mergedBranches);
+  return {
+    merged: repo.mergedBranches,
+    squashed: squashed
+      // A remote-tracking ref is drawn in the history and is not a branch
+      // `git branch -D` can touch; `git push origin --delete` is a different
+      // action against somebody else's copy and is not one to fold in here.
+      .filter((s) => !s.protected && !s.remote && !contained.has(s.branch))
+      .map((s) => s.branch),
+  };
+}
+
+/** The commands that prune leaves in the shell, in the order they run. */
+export function pruneCommands(split: PruneSplit): string[] {
+  const out: string[] = [];
+  if (split.merged.length > 0) out.push(`git branch -d ${split.merged.join(" ")}`);
+  if (split.squashed.length > 0) out.push(`git branch -D ${split.squashed.join(" ")}`);
+  return out;
+}
+
+/**
+ * The fleet-wide prune stays on `-d` and on ancestry alone.
+ *
+ * A batch runs out of sight across twelve repositories, and its safety comes
+ * from `git branch -d` refusing anything it is not certain about. Detecting a
+ * squash costs a patch id per branch against recent history, which is a read
+ * the sweep deliberately does not do, and `-D` across twelve repositories with
+ * nobody watching is not a trade worth making for it. Squash-merged branches
+ * are offered one repository at a time, where the dialog can name them.
+ */
 export function prunePlan(repo: RepoState): Plan {
   if (repo.error) return { skip: "unreadable" };
   if (repo.mergedBranches.length === 0) return { skip: "nothing merged to delete" };

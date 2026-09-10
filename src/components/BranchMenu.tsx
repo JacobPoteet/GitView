@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import type { BranchSummary, RepoState } from "../lib/types";
+import type { BranchSummary, RepoState, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 
 interface Props {
   repo: RepoState;
   shell: ShellKind;
+  /** Branches the trunk swallowed through a squash, which it does not contain. */
+  squashed: Squashed[];
   onCommand: (command: string, typeOnly: boolean) => void;
 }
 
@@ -18,7 +20,7 @@ interface Props {
  * branch against the default one, so this is a list of what that pass found
  * rather than a second read.
  */
-export default function BranchMenu({ repo, shell, onCommand }: Props) {
+export default function BranchMenu({ repo, shell, squashed, onCommand }: Props) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -43,7 +45,14 @@ export default function BranchMenu({ repo, shell, onCommand }: Props) {
   // Branches that are neither the one you are on nor already contained in the
   // default branch. That is the number worth putting on the button, because it
   // is the work you would forget about.
-  const outstanding = repo.branches.filter((b) => !b.isHead && !b.merged).length;
+  // A squash-merged branch is not contained by anything, so the scanner reads
+  // it as outstanding work. It is not: the work is on the trunk under another
+  // commit, and counting it here is what made this button shout about branches
+  // that were finished weeks ago.
+  const squashedBy = new Map(squashed.map((s) => [s.branch, s]));
+  const outstanding = repo.branches.filter(
+    (b) => !b.isHead && !b.merged && !squashedBy.has(b.name),
+  ).length;
 
   return (
     <div className="branch-menu" ref={wrap}>
@@ -68,6 +77,7 @@ export default function BranchMenu({ repo, shell, onCommand }: Props) {
             <BranchRow
               key={branch.name}
               branch={branch}
+              squashed={squashedBy.get(branch.name) ?? null}
               shell={shell}
               onCommand={(command, typeOnly) => {
                 onCommand(command, typeOnly);
@@ -83,10 +93,12 @@ export default function BranchMenu({ repo, shell, onCommand }: Props) {
 
 function BranchRow({
   branch,
+  squashed,
   shell,
   onCommand,
 }: {
   branch: BranchSummary;
+  squashed: Squashed | null;
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
 }) {
@@ -109,6 +121,17 @@ function BranchRow({
         {branch.merged && (
           <span className="chip merged" title="Already contained in the default branch">
             merged
+          </span>
+        )}
+        {!branch.merged && squashed && (
+          <span
+            className="chip squashed"
+            title={`Squashed into ${squashed.intoShort} on ${squashed.base}
+${squashed.intoSummary}
+
+git has no link between the two. GitView matched the patch.`}
+          >
+            squashed
           </span>
         )}
       </span>

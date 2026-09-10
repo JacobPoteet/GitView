@@ -10,6 +10,7 @@ import type {
   RepoPref,
   RepoState,
   ScanReport,
+  Squashed,
   Task,
   UpdateCheck,
 } from "./types";
@@ -27,6 +28,11 @@ export const api = {
   repoRefresh: (path: string) => invoke<RepoState>("repo_refresh", { path }),
   repoTasks: (path: string) => invoke<Task[]>("repo_tasks", { path }),
   repoGraph: (path: string) => invoke<BranchGraph>("repo_graph", { path }),
+  /**
+   * Local branches that were squash-merged, and the commit each one became.
+   * Read for the open repository, not in the sweep: see squash.rs.
+   */
+  repoSquashed: (path: string) => invoke<Squashed[]>("repo_squashed", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
   /** One page of the whole DAG. Lanes come packed, see history.rs. */
   repoHistory: (path: string, offset: number, limit: number) =>

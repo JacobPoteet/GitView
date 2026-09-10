@@ -26,7 +26,8 @@ import {
   fetchPlan,
   isSkip,
   newRun,
-  pruneCommand,
+  pruneCommands,
+  pruneSplit,
   runRepo,
   verbFor,
   type BatchKind,
@@ -43,6 +44,7 @@ import {
   type Inbox,
   type RepoPref,
   type RepoState,
+  type Squashed,
   type Task,
   type UpdateCheck,
 } from "./lib/types";
@@ -95,6 +97,14 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [changes, setChanges] = useState<FileChange[]>([]);
   const [graph, setGraph] = useState<Graph | null>(null);
+  /**
+   * Local branches that were squash-merged into the trunk.
+   *
+   * Read for the open repository rather than in the sweep, because it costs a
+   * patch id per branch against recent history. Nothing about it belongs on
+   * `RepoState`, which the next sweep overwrites.
+   */
+  const [squashed, setSquashed] = useState<Squashed[]>([]);
   /**
    * The file the diff pane is showing, or nothing.
    *
@@ -167,6 +177,23 @@ export default function App() {
   const selected = useMemo(
     () => repos.find((r) => r.path === selectedPath) ?? null,
     [repos, selectedPath],
+  );
+
+  /**
+   * What Prune would delete: the branches the trunk contains, plus the ones it
+   * swallowed through a squash. The second half is why the count on the button
+   * was zero on every repository that squash-merges its pull requests.
+   */
+  const prunable = useMemo(
+    () => (selected ? pruneSplit(selected, squashed) : { merged: [], squashed: [] }),
+    [selected, squashed],
+  );
+  const prunableCount = prunable.merged.length + prunable.squashed.length;
+
+  /** The entry for the branch you are standing on, if it was squash-merged. */
+  const headSquashed = useMemo(
+    () => squashed.find((s) => s.branch === selected?.branch) ?? null,
+    [squashed, selected?.branch],
   );
 
   // Commands are typed at a prompt, so quoting has to match whatever is there.
@@ -354,6 +381,25 @@ export default function App() {
   const headSignature = selected
     ? `${selected.branch}|${selected.lastCommitAt}|${selected.ahead}|${selected.behind}`
     : "";
+
+  useEffect(() => {
+    if (!selectedPath) {
+      setSquashed([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .repoSquashed(selectedPath)
+      .then((found) => {
+        if (!cancelled) setSquashed(found);
+      })
+      .catch(() => {
+        if (!cancelled) setSquashed([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPath, headSignature]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -646,14 +692,32 @@ export default function App() {
   // commands as two separate invocations, see `lib/batch.ts`.
   const syncCommand = "git fetch --prune; git pull --ff-only";
 
-  function pruneConfirmation(repo: RepoState): Confirmation {
-    const command = pruneCommand(repo);
+  /**
+   * Prune, for one repository, with the squash-merged branches included.
+   *
+   * The two halves take different flags and the dialog has to say so. A branch
+   * the trunk already contains goes through `git branch -d`, which refuses
+   * anything it is not sure about. A squash-merged branch is contained by
+   * nothing, so `-d` refuses it as well, and deleting it means `-D` and taking
+   * GitView's word for it. That is stated rather than buried.
+   */
+  function pruneConfirmation(repo: RepoState, found: Squashed[]): Confirmation {
+    const split = pruneSplit(repo, found);
+    const total = split.merged.length + split.squashed.length;
+    const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
+    const commands = pruneCommands(split);
+
+    const body =
+      split.squashed.length === 0
+        ? `Every branch listed is already contained in ${trunk}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`
+        : `${split.merged.length > 0 ? `${split.merged.length} of these are contained in ${trunk}, and go through git branch -d, which refuses anything unmerged. ` : ""}${split.squashed.length} were squash-merged: ${split.squashed.join(", ")}. A squash rebuilds the work as a new commit with no link back, so git considers them unmerged and -d will not take them. GitView matched each one's patch to a commit on ${trunk}. -D deletes them on that evidence rather than on git's. The output prints each commit, so a wrong answer is recoverable.`;
+
     return {
-      title: `Delete ${repo.mergedBranches.length} merged branches`,
-      body: `Every branch listed is already contained in ${repo.defaultBranch ?? "the default branch"}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`,
-      command,
+      title: `Delete ${total} merged ${total === 1 ? "branch" : "branches"}`,
+      body,
+      command: commands.join("\n"),
       confirmLabel: "Delete branches",
-      onConfirm: () => emit(command),
+      onConfirm: () => commands.forEach((command) => emit(command)),
     };
   }
 
@@ -840,13 +904,13 @@ export default function App() {
         hint: syncCommand,
         run: () => emit(syncCommand),
       });
-      if (selected.mergedBranches.length > 0) {
+      if (prunableCount > 0) {
         items.push({
           id: "action:prune",
-          label: `Prune ${selected.mergedBranches.length} merged branches`,
+          label: `Prune ${prunableCount} merged ${prunableCount === 1 ? "branch" : "branches"}`,
           kind: "git",
-          hint: pruneCommand(selected),
-          run: () => setConfirmation(pruneConfirmation(selected)),
+          hint: pruneCommands(prunable).join("  ·  "),
+          run: () => setConfirmation(pruneConfirmation(selected, squashed)),
         });
       }
 
@@ -932,12 +996,20 @@ export default function App() {
       hint: "fetch and fast-forward, with a transcript",
       run: () => openBatch("sync"),
     });
-    const prunable = batchCandidates.filter((repo) => repo.mergedBranches.length > 0);
-    if (prunable.length > 0) {
-      const branches = prunable.reduce((sum, repo) => sum + repo.mergedBranches.length, 0);
+    // Ancestry only, and named apart from the single-repository `prunable`
+    // above it, which also counts the squash-merged ones. The batch stays on
+    // `git branch -d`; see prunePlan for why.
+    const containedElsewhere = batchCandidates.filter(
+      (repo) => repo.mergedBranches.length > 0,
+    );
+    if (containedElsewhere.length > 0) {
+      const branches = containedElsewhere.reduce(
+        (sum, repo) => sum + repo.mergedBranches.length,
+        0,
+      );
       items.push({
         id: "action:batch-prune",
-        label: `Prune merged branches across ${prunable.length} repositories`,
+        label: `Prune merged branches across ${containedElsewhere.length} repositories`,
         kind: "fleet",
         hint: `${branches} branches, named before anything runs`,
         run: () => openBatch("prune"),
@@ -1152,7 +1224,12 @@ gh pr view ${branchPr.number} --web`}
               </div>
 
               <div className="head-actions">
-                <BranchMenu repo={selected} shell={shell} onCommand={emit} />
+                <BranchMenu
+                  repo={selected}
+                  shell={shell}
+                  squashed={squashed}
+                  onCommand={emit}
+                />
                 <button
                   className="btn"
                   title={`${syncCommand}\n\nShift-click to type it without running it.`}
@@ -1162,16 +1239,16 @@ gh pr view ${branchPr.number} --web`}
                 </button>
                 <button
                   className="btn"
-                  disabled={selected.mergedBranches.length === 0}
+                  disabled={prunableCount === 0}
                   title={
-                    selected.mergedBranches.length > 0
-                      ? pruneCommand(selected)
+                    prunableCount > 0
+                      ? pruneCommands(prunable).join("\n")
                       : "No merged branches to delete"
                   }
-                  onClick={() => setConfirmation(pruneConfirmation(selected))}
+                  onClick={() => setConfirmation(pruneConfirmation(selected, squashed))}
                 >
                   Prune merged
-                  {selected.mergedBranches.length > 0 && ` (${selected.mergedBranches.length})`}
+                  {prunableCount > 0 && ` (${prunableCount})`}
                 </button>
                 <button
                   className="btn"
@@ -1196,6 +1273,7 @@ gh pr view ${branchPr.number} --web`}
             <BranchGraph
               graph={graph}
               collapsed={graphCollapsed}
+              squashed={headSquashed}
               onToggle={toggleGraph}
               onCommand={emit}
             />
@@ -1249,6 +1327,7 @@ gh pr view ${branchPr.number} --web`}
             repoPath={selected.path}
             repoName={selected.name}
             disabled={!shellReady}
+            squashed={squashed}
             onClose={() => setHistoryOpen(false)}
             onCommand={emit}
             onError={setNote}
