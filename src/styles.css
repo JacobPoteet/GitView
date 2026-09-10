@@ -864,6 +864,37 @@ input {
   padding: 0 16px 14px;
 }
 
+/* The update dialog is the confirm dialog carrying two blocks instead of one:
+   the release notes, which are prose, and the command, which is not. */
+.confirm.update {
+  width: min(600px, 92vw);
+}
+
+.confirm .update-notes {
+  max-height: 190px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  line-height: 1.55;
+  /* `break-all` is right for a command that must not widen the dialog and wrong
+     for a sentence, which would otherwise split mid-word. */
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.confirm kbd {
+  font-family: var(--font-mono);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.confirm b {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .scan-bar {
   height: 1px;
   background: var(--accent);

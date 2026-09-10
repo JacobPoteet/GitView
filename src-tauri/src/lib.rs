@@ -12,6 +12,7 @@ pub mod graph;
 pub mod pty;
 pub mod settings;
 pub mod tasks;
+pub mod update;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,6 +28,7 @@ use gitops::GitOutcome;
 use graph::BranchGraph;
 use pty::PtyManager;
 use tasks::Task;
+use update::UpdateCheck;
 
 pub struct AppState {
     cache: Arc<Cache>,
@@ -269,6 +271,18 @@ async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Whether a newer GitView has been released.
+///
+/// One `gh release view`, out of sight for the same reason the inbox sweep is:
+/// the question belongs to the app rather than to a repository, so there is no
+/// prompt to type it at. Installing does have one, and types its command.
+#[tauri::command]
+async fn update_check() -> Result<UpdateCheck, String> {
+    tauri::async_runtime::spawn_blocking(|| update::check(cache::now_secs()))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------- git
 
 #[tauri::command]
@@ -406,6 +420,7 @@ pub fn run() {
             task_delete,
             github_cached,
             github_refresh,
+            update_check,
             git_run,
             pty_open,
             pty_write,

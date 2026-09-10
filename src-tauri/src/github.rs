@@ -251,7 +251,12 @@ fn quote(raw: &str) -> String {
 
 // ------------------------------------------------------------------- the calls
 
-fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
+/// One `gh` invocation, with the environment a windowless process needs.
+///
+/// `update` borrows this rather than growing a second copy of the prompt
+/// disabling and the `CREATE_NO_WINDOW` flag, both of which are the difference
+/// between a failed call and a console flashing up on somebody's desktop.
+pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
     let mut cmd = Command::new("gh");
     cmd.args(args)
         .stdin(if stdin.is_some() {

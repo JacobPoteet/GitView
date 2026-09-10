@@ -9,6 +9,7 @@ import type {
   RepoState,
   ScanReport,
   Task,
+  UpdateCheck,
 } from "./types";
 
 export const api = {
@@ -44,6 +45,9 @@ export const api = {
   githubCached: () => invoke<Inbox | null>("github_cached"),
   /** One GraphQL request for the whole fleet, through the gh CLI. */
   githubRefresh: () => invoke<Inbox>("github_refresh"),
+
+  /** The latest release, read through gh. One call, at launch. */
+  updateCheck: () => invoke<UpdateCheck>("update_check"),
 
   gitRun: (path: string, args: string[]) =>
     invoke<GitOutcome>("git_run", { path, args }),

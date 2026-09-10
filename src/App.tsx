@@ -15,6 +15,7 @@ import ChangesPane from "./components/ChangesPane";
 import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
+import UpdateDialog from "./components/UpdateDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
@@ -40,6 +41,7 @@ import {
   type RepoPref,
   type RepoState,
   type Task,
+  type UpdateCheck,
 } from "./lib/types";
 
 interface Confirmation {
@@ -135,6 +137,9 @@ export default function App() {
     path: string;
     command: string;
   } | null>(null);
+  /** The launch check against the latest GitHub release, and its dialog. */
+  const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxReading, setInboxReading] = useState(false);
   /** Bumped when a task is saved or deleted, to re-read the list. */
@@ -326,6 +331,7 @@ export default function App() {
         // the only place the commands it is about to run are reported.
         setBatchOpen((open) => (open && batch?.running === true ? open : false));
         setInboxOpen(false);
+        setUpdateOpen(false);
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -348,6 +354,38 @@ export default function App() {
     window.clearTimeout(noteTimer.current);
     noteTimer.current = window.setTimeout(() => setNoteState(null), 6000);
   }, [note]);
+
+  /**
+   * Whether a newer GitView has been released.
+   *
+   * Quiet at launch on purpose. A dialog on startup is the behaviour that makes
+   * an updater the first thing people turn off, so an available release becomes
+   * one word in the status bar and nothing else. Asked from the palette it
+   * announces either answer, because somebody who asked wants to be told.
+   */
+  const checkUpdate = useCallback(
+    async (announce = false) => {
+      try {
+        const found = await api.updateCheck();
+        setUpdate(found);
+        if (!announce) return;
+        if (found.error) setNote(`Could not ask GitHub: ${found.error}`);
+        else if (found.available) setUpdateOpen(true);
+        else setNote(`GitView ${found.current} is the latest release.`);
+      } catch (err) {
+        if (announce) setNote(String(err));
+      }
+    },
+    [setNote],
+  );
+
+  // After the first paint rather than beside the cached fleet, so a slow gh
+  // never holds up the window. No gh, no check and nothing said about it: the
+  // status bar already reports whether it is there.
+  useEffect(() => {
+    if (!info?.gh.version) return;
+    checkUpdate();
+  }, [info?.gh.version, checkUpdate]);
 
   const refreshRepo = useCallback(
     (path: string) => {
@@ -852,6 +890,18 @@ export default function App() {
         });
       }
     }
+    if (info?.gh.version) {
+      const ready = update?.available === true && update.latest != null;
+      items.push({
+        id: "action:update",
+        label: ready ? `Update GitView to ${update!.latest!.version}` : "Check for a new GitView",
+        kind: "fleet",
+        hint: ready
+          ? `${update!.latest!.tag}, from the GitHub release`
+          : "asks gh for the latest release",
+        run: () => (ready ? setUpdateOpen(true) : checkUpdate(true)),
+      });
+    }
     items.push({
       id: "action:rescan",
       label: "Rescan the fleet",
@@ -887,6 +937,8 @@ export default function App() {
     fetchAll,
     inbox,
     info,
+    update,
+    checkUpdate,
   ]);
 
   /** Items that want something from this person, which is what a badge means. */
@@ -1155,6 +1207,16 @@ gh pr view ${branchPr.number} --web`}
           ) : (
             <span style={{ color: "var(--amber)" }}>{note.text}</span>
           ))}
+        {update?.available && update.latest && (
+          <button
+            className="status-link"
+            style={{ color: "var(--accent)" }}
+            onClick={() => setUpdateOpen(true)}
+            title={`GitView ${update.latest.version} is out. You are on ${update.current}.`}
+          >
+            update {update.latest.version}
+          </button>
+        )}
         <span className="spacer" />
         {info && (
           <span
@@ -1258,6 +1320,23 @@ gh pr view ${branchPr.number} --web`}
             </div>
           </form>
         </div>
+      )}
+
+      {updateOpen && update && (
+        <UpdateDialog
+          check={update}
+          shell={shell}
+          target={shellReady && selected ? selected.name : null}
+          onCommand={(command, typeOnly) => {
+            emit(command, typeOnly);
+            setUpdateOpen(false);
+          }}
+          onCopy={async (text) => {
+            const copied = await copyText(text);
+            setNote(copied ? "Copied the command." : "The clipboard refused the copy.");
+          }}
+          onClose={() => setUpdateOpen(false)}
+        />
       )}
 
       {confirmation && (
