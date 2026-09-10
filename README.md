@@ -6,9 +6,9 @@ The home screen is the whole fleet at once. The terminal is a primary pane rathe
 run and build commands for each project sit next to the repository that needs them.
 
 > [!NOTE]
-> The fleet scanner, the persistent terminal, task discovery, the branch graph and command blocks
-> work. The diff view, the full commit history and the GitHub inbox are designed but not built. See
-> [Status](#status).
+> The fleet scanner, the persistent terminal, task discovery, the branch graph, command blocks, the
+> GitHub inbox and the diff view work. Hunk staging and the full commit history are designed but not
+> built. See [Status](#status).
 
 ## Why
 
@@ -55,6 +55,10 @@ Three rules shape the whole app:
 - **A failing build, in one copy.** The command, its directory, its exit code and its output go to
   the clipboard together, ready to paste into Claude in the next window.
 - **Command palette.** `Ctrl+K` for repositories, tasks and actions.
+- **The diff, without leaving the window.** Click a file name in the changes column and its diff
+  opens over the terminal, unified, on whichever side of the index that row belongs to. A file
+  staged and then edited again has both, and the pane says which one you are reading. The shell
+  behind it keeps running.
 - **Updates that name their command.** GitView asks GitHub for its own latest release once per
   launch. When there is a newer one the status bar says so, and the dialog hands you the
   `gh release download` line to run at the prompt, like every other action here.
@@ -182,7 +186,8 @@ times per repository per refresh is slow enough to feel.
 | 1 | Command blocks via OSC 133, saving a block as a task, ports, copying a failure | Built |
 | 1 | Sync and prune across several repositories with a transcript, dragging to reorder pins | Built |
 | 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Built |
-| 3 | Diff, hunk staging, commit graph | Designed |
+| 3 | The diff pane: one file, unified, on either side of the index | Built |
+| 3 | Hunk staging, the full commit graph | Designed |
 | 4 | Worktree lanes and a local API for agents | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and

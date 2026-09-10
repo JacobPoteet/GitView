@@ -3,6 +3,7 @@ import type {
   AppInfo,
   BranchGraph,
   FileChange,
+  FileDiff,
   GitOutcome,
   Inbox,
   RepoPref,
@@ -26,6 +27,9 @@ export const api = {
   repoTasks: (path: string) => invoke<Task[]>("repo_tasks", { path }),
   repoGraph: (path: string) => invoke<BranchGraph>("repo_graph", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
+  /** One file, on one side of the index. Read per file, not per working tree. */
+  repoDiff: (path: string, file: string, staged: boolean) =>
+    invoke<FileDiff>("repo_diff", { path, file, staged }),
 
   repoPrefs: () => invoke<RepoPref[]>("repo_prefs"),
   repoSetHidden: (path: string, hidden: boolean) =>

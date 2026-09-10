@@ -57,6 +57,7 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | `src/` | React frontend. Components, plus `lib/api.ts` mirroring the Rust command surface and `lib/shell.ts` quoting the commands that get typed at a prompt |
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
+| `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index |
 | `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
 | `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |
 | `src-tauri/src/update.rs` | The launch check against the latest GitHub release, through the same `gh` invocation |
@@ -90,6 +91,9 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | A terminal line number is checked against the command text before it is used | ConPTY repaints on resize and can duplicate a line, and `cls` rewrites lines in place, so a marker stops describing what it was taken from. `anchor` in `TerminalPane.tsx` is the only way to turn a block into a line |
 | GitView's own update goes through `gh`, and installs by typing | `tauri-plugin-updater` is what every Tauri project reaches for, and it wants an HTTP client, a TLS stack in a binary built with `lto = true`, and a minisign private key living in an Actions secret. That is the trade the inbox already refused. `gh release view` reads the release out of sight, because the question belongs to the app rather than to a repository; `gh release download` and `Start-Process` get typed at a prompt, so the one action that replaces the binary still names what it ran |
 | A version is compared as numbers, and a tag has to look like a version | `0.10.0` sorts below `0.9.0` as a string, and `v2026-09-09` splits into major 2026 with a prerelease of `09-09` and beats everything. `is_newer` parses each dotted component and requires a major and a minor, so `v3` and `nightly` win nothing |
+| A pane that wants a fourth column is an overlay on the main one | The grid is full at 296 + 1fr + 300. An overlay leaves the terminal mounted at the width it had, so the shell behind it keeps running and its `ResizeObserver` never sees a 0x0 container. The inbox and the diff pane both do this |
+| A diff is read without a pathspec, and capped at 6000 rows | Rename detection pairs a delete with an add, and a pathspec drops one half of the pair before `find_similar` sees it, so a renamed file arrives as a whole-file delete. The cap stands in for virtualisation: 6000 rows of plain DOM paint in 695 ms, and past it the pane names the `git diff` that has the rest |
+| A sticky element is dimmed by colour, never by `opacity` | Opacity applies to the element's own background, so a translucent line-number gutter lets a long line scroll straight through it |
 | The output channel belongs to the session, not to a React effect | An effect-owned callback drops everything a shell prints while its pane is off screen, which is most of what a dev server prints. Sessions outlive views, and so does their output |
 
 ## Building
@@ -130,7 +134,8 @@ Two were in the keyboard path, one only appeared after removing a watched folder
 were visual: a path rendered `/src/lib` because of a bidi reorder, two graph rails whose captions
 overlapped, and a commit message that followed the selection into the next repository. Command
 blocks added four, including one that had been dropping terminal output since Phase 0 whenever a
-build finished in a project nobody was looking at.
+build finished in a project nobody was looking at. The diff pane added two, both in gutters that
+only misbehave once a line is wider than the pane.
 
 Some cases the eleven repositories here do not have. An unrelated history, a branch far ahead with
 no upstream, and a remote that does not resolve each need a throwaway repository; the wiki's
