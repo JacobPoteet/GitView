@@ -51,8 +51,10 @@ export interface Task {
 export interface RepoPref {
   path: string;
   hidden: boolean;
-  /** When it was pinned, which is also the order pinned rows are drawn in. */
+  /** When it was pinned. Kept for an upgrade, which orders the group by it. */
   pinnedAt: number | null;
+  /** Where it sits in the pinned group. Null until something has ordered it. */
+  pinnedPos: number | null;
 }
 
 export interface GraphCommit {

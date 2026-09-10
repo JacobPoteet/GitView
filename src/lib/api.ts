@@ -30,6 +30,8 @@ export const api = {
     invoke<void>("repo_set_hidden", { path, hidden }),
   repoSetPinned: (path: string, pinned: boolean) =>
     invoke<void>("repo_set_pinned", { path, pinned }),
+  /** The pinned group in the order it is now drawn, whole rather than as a move. */
+  repoReorderPins: (paths: string[]) => invoke<void>("repo_reorder_pins", { paths }),
   taskSetHidden: (repoPath: string, taskId: string, hidden: boolean) =>
     invoke<void>("task_set_hidden", { repoPath, taskId, hidden }),
 

@@ -163,6 +163,15 @@ fn repo_set_pinned(state: State<'_, AppState>, path: String, pinned: bool) -> Re
         .map_err(|e| e.to_string())
 }
 
+/// The pinned group's order, as the sidebar now has it.
+///
+/// The whole list is sent rather than the move that produced it, so the backend
+/// never has to reconstruct what the user is looking at.
+#[tauri::command]
+fn repo_reorder_pins(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), String> {
+    state.cache.reorder_pins(&paths).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn task_set_hidden(
     state: State<'_, AppState>,
@@ -349,6 +358,7 @@ pub fn run() {
             repo_prefs,
             repo_set_hidden,
             repo_set_pinned,
+            repo_reorder_pins,
             task_set_hidden,
             repo_tasks,
             task_save,

@@ -28,6 +28,12 @@ pub struct RepoPref {
     pub path: String,
     pub hidden: bool,
     pub pinned_at: Option<i64>,
+    /// Where the row sits inside the pinned group, once someone has dragged it.
+    ///
+    /// `pinned_at` was the order for two phases and cannot express one: it is
+    /// the moment the pin happened, so moving a row would mean rewriting when
+    /// it was pinned, and every row below it as well.
+    pub pinned_pos: Option<i64>,
 }
 
 /// A set of preferences that followed a repository to a new folder.
@@ -42,6 +48,54 @@ pub struct Adoption {
     pub to: String,
 }
 
+/// Gives every pin that has no position one, in the order it was pinned.
+///
+/// That is the order the list was already drawn in, so the upgrade changes
+/// nothing on screen. Positions are assigned in Rust rather than by a counting
+/// subquery because two pins made in the same second would otherwise share a
+/// position, and the sort would pick between them by whatever came back first.
+fn backfill_pin_order(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT path, pinned_at FROM repo_pref
+         WHERE pinned_at IS NOT NULL AND pinned_pos IS NULL",
+    )?;
+    let mut rows: Vec<(String, i64)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    drop(stmt);
+    if rows.is_empty() {
+        return Ok(());
+    }
+    rows.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+
+    let start: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(pinned_pos), -1) + 1 FROM repo_pref",
+        [],
+        |r| r.get(0),
+    )?;
+    for (offset, (path, _)) in rows.iter().enumerate() {
+        conn.execute(
+            "UPDATE repo_pref SET pinned_pos = ?2 WHERE path = ?1",
+            params![path, start + offset as i64],
+        )?;
+    }
+    Ok(())
+}
+
+/// Removes a preference row that has stopped holding a preference.
+///
+/// Unhiding or unpinning leaves a row of defaults behind, and `has_prefs` counts
+/// rows rather than reading them, so one of those at a path is enough to stop a
+/// renamed repository from adopting its own pins.
+fn drop_empty_pref(conn: &Connection, path: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM repo_pref WHERE path = ?1 AND hidden = 0 AND pinned_at IS NULL",
+        params![path],
+    )?;
+    Ok(())
+}
+
 /// Whether a path has anything worth carrying across a rename.
 fn has_prefs(conn: &Connection, path: &str) -> Result<bool> {
     let count: i64 = conn.query_row(
@@ -54,11 +108,39 @@ fn has_prefs(conn: &Connection, path: &str) -> Result<bool> {
     Ok(count > 0)
 }
 
+/// Adds a column to a table that predates it.
+///
+/// SQLite has no `ADD COLUMN IF NOT EXISTS`, and the alternative is to catch a
+/// failure whose message would also cover a real problem. The names here are
+/// literals in this file, never anything a user typed.
+fn add_column_if_missing(conn: &Connection, table: &str, column: &str, decl: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let present = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .any(|name| name == column);
+    drop(stmt);
+    if !present {
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"))?;
+    }
+    Ok(())
+}
+
 impl Cache {
     pub fn open() -> Result<Self> {
         let dir = data_dir();
         std::fs::create_dir_all(&dir)?;
-        let conn = Connection::open(dir.join("gitview.db"))?;
+        Self::from_connection(Connection::open(dir.join("gitview.db"))?)
+    }
+
+    /// A cache with no file behind it. The schema and its migrations are what
+    /// the tests are for, and neither needs a disk.
+    #[cfg(test)]
+    fn in_memory() -> Result<Self> {
+        Self::from_connection(Connection::open_in_memory()?)
+    }
+
+    fn from_connection(conn: Connection) -> Result<Self> {
         conn.execute_batch(
             "
             PRAGMA journal_mode = WAL;
@@ -87,9 +169,10 @@ impl Cache {
             -- How the fleet list should treat a repository, kept apart from
             -- RepoState because that is scanner output and this is a choice.
             CREATE TABLE IF NOT EXISTS repo_pref (
-                path      TEXT PRIMARY KEY,
-                hidden    INTEGER NOT NULL DEFAULT 0,
-                pinned_at INTEGER
+                path       TEXT PRIMARY KEY,
+                hidden     INTEGER NOT NULL DEFAULT 0,
+                pinned_at  INTEGER,
+                pinned_pos INTEGER
             );
 
             -- What was at a path last time a scan ran, so a folder that has
@@ -111,6 +194,12 @@ impl Cache {
             );
             ",
         )?;
+
+        // An installed database predates the column, and the pins in it are an
+        // order the user is already looking at.
+        add_column_if_missing(&conn, "repo_pref", "pinned_pos", "INTEGER")?;
+        backfill_pin_order(&conn)?;
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -149,14 +238,16 @@ impl Cache {
     pub fn repo_prefs(&self) -> Result<Vec<RepoPref>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT path, hidden, pinned_at FROM repo_pref
-             WHERE hidden = 1 OR pinned_at IS NOT NULL",
+            "SELECT path, hidden, pinned_at, pinned_pos FROM repo_pref
+             WHERE hidden = 1 OR pinned_at IS NOT NULL
+             ORDER BY pinned_pos",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(RepoPref {
                 path: r.get(0)?,
                 hidden: r.get::<_, i64>(1)? != 0,
                 pinned_at: r.get(2)?,
+                pinned_pos: r.get(3)?,
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -169,19 +260,55 @@ impl Cache {
              ON CONFLICT(path) DO UPDATE SET hidden = ?2",
             params![path, hidden as i64],
         )?;
+        drop_empty_pref(&conn, path)?;
         Ok(())
     }
 
-    /// Pin order is the moment it was pinned, so a pinned repository holds the
-    /// position it was given rather than moving when its status changes.
+    /// A new pin lands at the end of the pinned group.
+    ///
+    /// The group is an order somebody arranged, so putting a new row at the top
+    /// would move every row they had placed. `pinned_at` is still recorded,
+    /// because it is what an upgrade orders the group by.
     pub fn set_repo_pinned(&self, path: &str, pinned: bool) -> Result<()> {
-        let at: Option<i64> = pinned.then(now_secs);
         let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO repo_pref (path, pinned_at) VALUES (?1, ?2)
-             ON CONFLICT(path) DO UPDATE SET pinned_at = ?2",
-            params![path, at],
+        if !pinned {
+            conn.execute(
+                "UPDATE repo_pref SET pinned_at = NULL, pinned_pos = NULL WHERE path = ?1",
+                params![path],
+            )?;
+            drop_empty_pref(&conn, path)?;
+            return Ok(());
+        }
+        let next: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(pinned_pos), -1) + 1 FROM repo_pref",
+            [],
+            |r| r.get(0),
         )?;
+        conn.execute(
+            "INSERT INTO repo_pref (path, pinned_at, pinned_pos) VALUES (?1, ?2, ?3)
+             ON CONFLICT(path) DO UPDATE SET pinned_at = ?2, pinned_pos = ?3",
+            params![path, now_secs(), next],
+        )?;
+        Ok(())
+    }
+
+    /// Writes an order across the pinned rows.
+    ///
+    /// The whole list arrives rather than one move, so the write is a single
+    /// transaction and a row the frontend forgot cannot be left sharing a
+    /// position with another. A path that is no longer pinned is ignored, since
+    /// a stale list must not be able to pin something by reordering it.
+    pub fn reorder_pins(&self, paths: &[String]) -> Result<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        for (index, path) in paths.iter().enumerate() {
+            tx.execute(
+                "UPDATE repo_pref SET pinned_pos = ?2
+                 WHERE path = ?1 AND pinned_at IS NOT NULL",
+                params![path, index as i64],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -404,4 +531,132 @@ pub fn now_secs() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pinned paths, in the order the sidebar would draw them.
+    fn pin_order(cache: &Cache) -> Vec<String> {
+        cache
+            .repo_prefs()
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.pinned_at.is_some())
+            .map(|p| p.path)
+            .collect()
+    }
+
+    #[test]
+    fn a_new_pin_goes_to_the_end_of_the_group() {
+        let cache = Cache::in_memory().unwrap();
+        for path in ["a", "b", "c"] {
+            cache.set_repo_pinned(path, true).unwrap();
+        }
+        assert_eq!(pin_order(&cache), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn reordering_writes_the_list_it_is_given() {
+        let cache = Cache::in_memory().unwrap();
+        for path in ["a", "b", "c"] {
+            cache.set_repo_pinned(path, true).unwrap();
+        }
+        cache
+            .reorder_pins(&["c".into(), "a".into(), "b".into()])
+            .unwrap();
+        assert_eq!(pin_order(&cache), ["c", "a", "b"]);
+    }
+
+    #[test]
+    fn a_stale_list_cannot_pin_by_reordering() {
+        let cache = Cache::in_memory().unwrap();
+        cache.set_repo_pinned("a", true).unwrap();
+        // "b" was unpinned in another window while this list was on screen.
+        cache.reorder_pins(&["b".into(), "a".into()]).unwrap();
+        assert_eq!(pin_order(&cache), ["a"]);
+    }
+
+    #[test]
+    fn unpinning_the_middle_row_leaves_the_rest_in_order() {
+        let cache = Cache::in_memory().unwrap();
+        for path in ["a", "b", "c"] {
+            cache.set_repo_pinned(path, true).unwrap();
+        }
+        cache.set_repo_pinned("b", false).unwrap();
+        assert_eq!(pin_order(&cache), ["a", "c"]);
+        // Positions are not compacted, so the next pin has to clear the highest
+        // one rather than the count.
+        cache.set_repo_pinned("d", true).unwrap();
+        assert_eq!(pin_order(&cache), ["a", "c", "d"]);
+    }
+
+    #[test]
+    fn unpinning_and_unhiding_leave_no_row_behind() {
+        let cache = Cache::in_memory().unwrap();
+        cache.set_repo_pinned("a", true).unwrap();
+        cache.set_repo_hidden("a", true).unwrap();
+        cache.set_repo_pinned("a", false).unwrap();
+        {
+            let conn = cache.conn.lock();
+            // Still hidden, so the row is still holding something.
+            assert!(has_prefs(&conn, "a").unwrap());
+        }
+        cache.set_repo_hidden("a", false).unwrap();
+        let conn = cache.conn.lock();
+        assert!(!has_prefs(&conn, "a").unwrap());
+    }
+
+    #[test]
+    fn an_older_database_keeps_the_order_it_was_showing() {
+        // repo_pref as it shipped: no pinned_pos, and the group ordered by the
+        // moment each pin was made.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE repo_pref (
+                 path      TEXT PRIMARY KEY,
+                 hidden    INTEGER NOT NULL DEFAULT 0,
+                 pinned_at INTEGER
+             );
+             INSERT INTO repo_pref (path, hidden, pinned_at) VALUES
+                 ('third', 0, 300), ('first', 0, 100), ('second', 0, 200),
+                 ('hidden-only', 1, NULL);",
+        )
+        .unwrap();
+
+        let cache = Cache::from_connection(conn).unwrap();
+        assert_eq!(pin_order(&cache), ["first", "second", "third"]);
+
+        // And the upgraded rows can be reordered like any other.
+        cache
+            .reorder_pins(&["second".into(), "third".into(), "first".into()])
+            .unwrap();
+        assert_eq!(pin_order(&cache), ["second", "third", "first"]);
+    }
+
+    #[test]
+    fn pins_made_in_the_same_second_get_distinct_positions() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE repo_pref (
+                 path      TEXT PRIMARY KEY,
+                 hidden    INTEGER NOT NULL DEFAULT 0,
+                 pinned_at INTEGER
+             );
+             INSERT INTO repo_pref (path, hidden, pinned_at) VALUES
+                 ('b', 0, 100), ('a', 0, 100), ('c', 0, 100);",
+        )
+        .unwrap();
+
+        let cache = Cache::from_connection(conn).unwrap();
+        let positions: Vec<i64> = cache
+            .repo_prefs()
+            .unwrap()
+            .into_iter()
+            .filter_map(|p| p.pinned_pos)
+            .collect();
+        assert_eq!(positions, [0, 1, 2]);
+        assert_eq!(pin_order(&cache), ["a", "b", "c"]);
+    }
 }

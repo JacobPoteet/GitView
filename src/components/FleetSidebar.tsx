@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { attentionScore, isClean, unpushed, type RepoPref, type RepoState } from "../lib/types";
 
 interface Props {
@@ -11,6 +11,8 @@ interface Props {
   onQuery: (value: string) => void;
   onSelect: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
+  /** The pinned group in its new order, whole rather than as a move. */
+  onReorderPins: (paths: string[]) => void;
   onHide: (path: string, hidden: boolean) => void;
   /** Only offered on a row that has one. The fleet view exists so a repository
    *  can be acted on without opening it, and that has to include ending its
@@ -121,6 +123,34 @@ function Chips({ repo }: { repo: RepoState }) {
   );
 }
 
+function GripIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <circle cx="6" cy="4" r="1.15" />
+      <circle cx="10" cy="4" r="1.15" />
+      <circle cx="6" cy="8" r="1.15" />
+      <circle cx="10" cy="8" r="1.15" />
+      <circle cx="6" cy="12" r="1.15" />
+      <circle cx="10" cy="12" r="1.15" />
+    </svg>
+  );
+}
+
+/**
+ * The pinned group with one row moved to where it was dropped.
+ *
+ * `target` is that row's index in the order as drawn, so dragging downwards
+ * lands the row after the one under the cursor and dragging upwards lands it
+ * before, which is where the insertion line was.
+ */
+function moveTo(order: string[], path: string, target: number): string[] {
+  const from = order.indexOf(path);
+  if (from === -1 || from === target) return order;
+  const next = order.filter((p) => p !== path);
+  next.splice(target, 0, path);
+  return next;
+}
+
 function CloseIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -129,34 +159,98 @@ function CloseIcon() {
   );
 }
 
+/** How a row is taking part in a drag, which is what draws the insertion line. */
+type DragRole = "none" | "source" | "before" | "after";
+
 function Row({
   repo,
   selected,
   live,
   pinned,
   hidden,
+  orderable,
+  drag,
   onSelect,
   onPin,
   onHide,
   onCloseShell,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onMove,
 }: {
   repo: RepoState;
   selected: boolean;
   live: boolean;
   pinned: boolean;
   hidden: boolean;
+  /** False on every row outside the pinned group, which has no order to set. */
+  orderable: boolean;
+  drag: DragRole;
   onSelect: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
   onHide: (path: string, hidden: boolean) => void;
   onCloseShell: (path: string) => void;
+  onDragStart: (path: string) => void;
+  onDragOver: (path: string) => void;
+  onDrop: (path: string) => void;
+  onDragEnd: () => void;
+  onMove: (path: string, delta: number) => void;
 }) {
   const state = repo.error ? "error" : live ? "live" : isClean(repo) ? "clean" : "attention";
+  const wrap = useRef<HTMLDivElement>(null);
 
   // The row and its two controls are siblings rather than nested buttons, which
   // the browser refuses to nest and the keyboard cannot reach.
   return (
-    <div className={`repo-row-wrap${selected ? " selected" : ""}${hidden ? " muted" : ""}`}>
-      <button className="repo-row" onClick={() => onSelect(repo.path)} title={repo.path}>
+    <div
+      ref={wrap}
+      className={
+        `repo-row-wrap${selected ? " selected" : ""}${hidden ? " muted" : ""}` +
+        (drag === "source" ? " dragging" : "") +
+        (drag === "before" ? " drop-before" : "") +
+        (drag === "after" ? " drop-after" : "")
+      }
+      onDragOver={
+        orderable
+          ? (e) => {
+              // Without this the drop is refused and the row springs back.
+              e.preventDefault();
+              onDragOver(repo.path);
+            }
+          : undefined
+      }
+      onDrop={
+        orderable
+          ? (e) => {
+              e.preventDefault();
+              onDrop(repo.path);
+            }
+          : undefined
+      }
+    >
+      <button
+        className="repo-row"
+        onClick={() => onSelect(repo.path)}
+        title={repo.path}
+        onKeyDown={
+          orderable
+            ? (e) => {
+                // Dragging is a mouse gesture and this list is reachable by
+                // keyboard, so the order has to be too.
+                if (!e.altKey) return;
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  onMove(repo.path, -1);
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  onMove(repo.path, 1);
+                }
+              }
+            : undefined
+        }
+      >
         <span className="repo-row-top">
           <span className={`dot ${state}`} />
           <span className="repo-name">{repo.name}</span>
@@ -172,6 +266,26 @@ function Row({
       </button>
 
       <span className="row-actions">
+        {orderable && (
+          // The handle is what carries `draggable`, not the row: Chromium will
+          // not start a parent's drag from inside a button, so a draggable
+          // wrapper is only draggable by its padding.
+          <span
+            className="row-action grip"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = "move";
+              // Firefox and WebView2 both want the drag to carry something.
+              e.dataTransfer.setData("text/plain", repo.path);
+              if (wrap.current) e.dataTransfer.setDragImage(wrap.current, 12, 18);
+              onDragStart(repo.path);
+            }}
+            onDragEnd={onDragEnd}
+            title="Drag to reorder, or Alt+Up and Alt+Down on the row"
+          >
+            <GripIcon />
+          </span>
+        )}
         {live && (
           <button
             className="row-action live"
@@ -210,11 +324,14 @@ export default function FleetSidebar({
   onQuery,
   onSelect,
   onPin,
+  onReorderPins,
   onHide,
   onCloseShell,
   onManageRoots,
 }: Props) {
   const [showHidden, setShowHidden] = useState(false);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -229,13 +346,21 @@ export default function FleetSidebar({
     const hidden = filtered.filter((r) => prefs.get(r.path)?.hidden);
     const visible = filtered.filter((r) => !prefs.get(r.path)?.hidden);
 
-    // Pin order is the order they were pinned. A pinned repository holds its
-    // place whether or not it is the loudest one today, which is the point.
+    // Pin order is whatever the user arranged it to be, and the order they were
+    // pinned in until they arrange it. A pinned repository holds its place
+    // whether or not it is the loudest one today, which is the point.
     const pinned = visible
       .filter((r) => prefs.get(r.path)?.pinnedAt != null)
-      .sort(
-        (a, b) => (prefs.get(a.path)?.pinnedAt ?? 0) - (prefs.get(b.path)?.pinnedAt ?? 0),
-      );
+      .sort((a, b) => {
+        const left = prefs.get(a.path);
+        const right = prefs.get(b.path);
+        return (
+          (left?.pinnedPos ?? Number.MAX_SAFE_INTEGER) -
+            (right?.pinnedPos ?? Number.MAX_SAFE_INTEGER) ||
+          (left?.pinnedAt ?? 0) - (right?.pinnedAt ?? 0) ||
+          a.name.localeCompare(b.name)
+        );
+      });
 
     const rest = visible
       .filter((r) => prefs.get(r.path)?.pinnedAt == null)
@@ -249,7 +374,37 @@ export default function FleetSidebar({
     };
   }, [repos, prefs, query]);
 
-  const render = (repo: RepoState) => (
+  const pinOrder = groups.pinned.map((repo) => repo.path);
+
+  // A filter draws a subset of the pinned group, and an order written from a
+  // subset would leave the rows it could not see holding stale positions. So
+  // the group is only orderable when all of it is on screen.
+  const orderable = query.trim() === "" && pinOrder.length > 1;
+
+  const commitDrop = (target: string) => {
+    const next = dragging ? moveTo(pinOrder, dragging, pinOrder.indexOf(target)) : pinOrder;
+    setDragging(null);
+    setOver(null);
+    if (next !== pinOrder) onReorderPins(next);
+  };
+
+  const move = (path: string, delta: number) => {
+    const from = pinOrder.indexOf(path);
+    const to = from + delta;
+    if (from === -1 || to < 0 || to >= pinOrder.length) return;
+    const next = [...pinOrder];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    onReorderPins(next);
+  };
+
+  function roleFor(path: string): DragRole {
+    if (!dragging || !orderable) return "none";
+    if (dragging === path) return "source";
+    if (over !== path) return "none";
+    return pinOrder.indexOf(dragging) < pinOrder.indexOf(path) ? "after" : "before";
+  }
+
+  const renderRow = (repo: RepoState, inPinnedGroup: boolean) => (
     <Row
       key={repo.path}
       repo={repo}
@@ -257,12 +412,26 @@ export default function FleetSidebar({
       live={liveSessions.has(repo.path)}
       pinned={prefs.get(repo.path)?.pinnedAt != null}
       hidden={prefs.get(repo.path)?.hidden === true}
+      orderable={inPinnedGroup && orderable}
+      drag={inPinnedGroup ? roleFor(repo.path) : "none"}
       onSelect={onSelect}
       onPin={onPin}
       onHide={onHide}
       onCloseShell={onCloseShell}
+      onDragStart={setDragging}
+      onDragOver={setOver}
+      onDrop={commitDrop}
+      onDragEnd={() => {
+        setDragging(null);
+        setOver(null);
+      }}
+      onMove={move}
     />
   );
+
+  // A one-argument form, because `.map(render)` would otherwise hand the index
+  // in as the second parameter and make every row after the first orderable.
+  const render = (repo: RepoState) => renderRow(repo, false);
 
   return (
     <aside className="sidebar">
@@ -317,8 +486,9 @@ export default function FleetSidebar({
           <>
             <div className="group-label">
               Pinned <span className="count">{groups.pinned.length}</span>
+              {orderable && <span className="group-hint">drag to reorder</span>}
             </div>
-            {groups.pinned.map(render)}
+            {groups.pinned.map((repo) => renderRow(repo, true))}
           </>
         )}
 
