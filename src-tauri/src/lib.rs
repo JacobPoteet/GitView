@@ -342,6 +342,26 @@ async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Writes an issue body out and hands back the path `gh issue create` will
+/// read it from.
+///
+/// The one part of opening an issue that cannot be typed, for the reason a hunk
+/// cannot be: a newline at a prompt submits the line. Everything else about the
+/// issue is on the command, and the command goes into the repository's shell,
+/// so GitHub is still written by typing.
+#[tauri::command]
+async fn github_issue_body(
+    owner_repo: String,
+    title: String,
+    body: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        github::write_issue_body(&owner_repo, &title, &body)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Whether a newer GitView has been released.
 ///
 /// One `gh release view`, out of sight for the same reason the inbox sweep is:
@@ -495,6 +515,7 @@ pub fn run() {
             task_delete,
             github_cached,
             github_refresh,
+            github_issue_body,
             update_check,
             git_run,
             pty_open,

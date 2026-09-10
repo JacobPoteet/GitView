@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { DiffTarget, FileChange, RepoState } from "../lib/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { isUntracked, type DiffTarget, type FileChange, type RepoState } from "../lib/types";
 import { commitCommand, quote, type ShellKind } from "../lib/shell";
 
 interface Props {
@@ -12,6 +12,17 @@ interface Props {
   open: DiffTarget | null;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
+  /**
+   * Throwing work away, which the pane asks for rather than does.
+   *
+   * Everything else here types its command and lets the shell answer for it.
+   * This one cannot be taken back by reading the scrollback, so it goes through
+   * the app's confirmation first, and the app owns that.
+   *
+   * `all` says the rows are the whole unstaged working tree, which is what the
+   * command it builds then names instead of listing them.
+   */
+  onDiscard: (rows: FileChange[], all: boolean) => void;
 }
 
 /**
@@ -32,6 +43,19 @@ const MARK: Record<FileChange["state"], string> = {
   typechange: "T",
   conflicted: "U",
 };
+
+/**
+ * What a right-click on a row offers.
+ *
+ * `null` when nothing is up. Held by the pane rather than by the row so only
+ * one can be open, and positioned in viewport coordinates because the list
+ * scrolls under it.
+ */
+interface Menu {
+  change: FileChange;
+  x: number;
+  y: number;
+}
 
 function splitPath(path: string): { dir: string; file: string } {
   const cut = path.lastIndexOf("/");
@@ -57,6 +81,7 @@ function Row({
   shell,
   onCommand,
   onOpenDiff,
+  onMenu,
 }: {
   change: FileChange;
   open: boolean;
@@ -64,6 +89,7 @@ function Row({
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
+  onMenu: (menu: Menu) => void;
 }) {
   const arg = quote(change.path, shell);
   // Unstaging is `restore --staged`, not `reset HEAD`, because it says what it
@@ -72,7 +98,13 @@ function Row({
   const { dir, file } = splitPath(change.path);
 
   return (
-    <div className={`change-row ${change.state}${open ? " open" : ""}`}>
+    <div
+      className={`change-row ${change.state}${open ? " open" : ""}`}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onMenu({ change, x: event.clientX, y: event.clientY });
+      }}
+    >
       <button
         className="change-open"
         onClick={() => onOpenDiff(change.path, change.staged)}
@@ -122,6 +154,8 @@ function Section({
   shell,
   onCommand,
   onOpenDiff,
+  onMenu,
+  onDiscardAll,
 }: {
   label: string;
   rows: FileChange[];
@@ -132,6 +166,9 @@ function Section({
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
+  onMenu: (menu: Menu) => void;
+  /** Set on the one section whose rows can be thrown away outright. */
+  onDiscardAll?: () => void;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -139,6 +176,16 @@ function Section({
       <div className="change-section-head">
         <span>{label}</span>
         <span className="count">{rows.length}</span>
+        {onDiscardAll && (
+          <button
+            className="change-discard-all"
+            disabled={disabled}
+            onClick={onDiscardAll}
+            title={`Throw away all ${rows.length} unstaged ${rows.length === 1 ? "change" : "changes"}`}
+          >
+            <TrashIcon />
+          </button>
+        )}
         <button
           className="change-bulk"
           disabled={disabled}
@@ -157,9 +204,25 @@ function Section({
           shell={shell}
           onCommand={onCommand}
           onOpenDiff={onOpenDiff}
+          onMenu={onMenu}
         />
       ))}
     </div>
+  );
+}
+
+/** GitKraken's affordance, and the one people go looking for. */
+function TrashIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8M6.8 7v4M9.2 7v4"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -171,14 +234,44 @@ export default function ChangesPane({
   open,
   onCommand,
   onOpenDiff,
+  onDiscard,
 }: Props) {
   const [message, setMessage] = useState("");
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // A message belongs to the repository it was written for. Carrying a draft to
   // the next project offers to commit one repository's words into another.
   useEffect(() => {
     setMessage("");
+    setMenu(null);
   }, [repo?.path]);
+
+  // Anything that is not the menu closes the menu: a click elsewhere, Escape,
+  // the list scrolling out from under it, another right-click. `mousedown` on
+  // the window rather than a click on a backdrop, so the click that dismisses
+  // it also reaches whatever it was aimed at.
+  useEffect(() => {
+    if (!menu) return;
+    function dismiss(event: Event) {
+      if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
+      setMenu(null);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenu(null);
+    }
+    window.addEventListener("mousedown", dismiss);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", dismiss);
+    // Capture, because the list that scrolls is not the window.
+    window.addEventListener("scroll", dismiss, true);
+    return () => {
+      window.removeEventListener("mousedown", dismiss);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+    };
+  }, [menu]);
 
   const { staged, unstaged, conflicted } = useMemo(() => {
     return {
@@ -231,6 +324,7 @@ export default function ChangesPane({
           shell={shell}
           onCommand={onCommand}
           onOpenDiff={onOpenDiff}
+          onMenu={setMenu}
         />
         <Section
           label="Changed"
@@ -242,6 +336,11 @@ export default function ChangesPane({
           shell={shell}
           onCommand={onCommand}
           onOpenDiff={onOpenDiff}
+          onMenu={setMenu}
+          /* Only this section. Staged work can be unstaged back into it before
+             it is thrown away, and a conflict has no single command that ends
+             it, so neither gets a control that would have to guess. */
+          onDiscardAll={() => onDiscard(unstaged, true)}
         />
       </div>
 
@@ -261,6 +360,7 @@ export default function ChangesPane({
             shell={shell}
             onCommand={onCommand}
             onOpenDiff={onOpenDiff}
+            onMenu={setMenu}
           />
         </div>
       )}
@@ -304,6 +404,53 @@ export default function ChangesPane({
           </button>
         </div>
       </div>
+
+      {menu && (
+        <div
+          className="row-menu"
+          ref={menuRef}
+          /* Viewport coordinates, and pulled back inside the window from the
+             right and the bottom, since a row near either edge is where a
+             right-click most often lands in a 300 px column. */
+          style={{
+            left: Math.min(menu.x, window.innerWidth - 190),
+            top: Math.min(menu.y, window.innerHeight - 96),
+          }}
+        >
+          <button
+            disabled={disabled || menu.change.state === "conflicted"}
+            onClick={() => {
+              const arg = quote(menu.change.path, shell);
+              onCommand(
+                menu.change.staged ? `git restore --staged -- ${arg}` : `git add -- ${arg}`,
+                false,
+              );
+              setMenu(null);
+            }}
+          >
+            {menu.change.staged ? "Unstage" : "Stage"}
+          </button>
+          <button
+            className="danger"
+            disabled={disabled || menu.change.staged || menu.change.state === "conflicted"}
+            title={
+              menu.change.staged
+                ? "Unstage it first. Discarding staged work would throw away two decisions at once."
+                : menu.change.state === "conflicted"
+                  ? "Resolve this one in the shell first."
+                  : isUntracked(menu.change)
+                    ? "git clean -f on this file. It is not in git, so nothing brings it back."
+                    : "git restore on this file, back to what the index holds."
+            }
+            onClick={() => {
+              onDiscard([menu.change], false);
+              setMenu(null);
+            }}
+          >
+            Discard changes
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

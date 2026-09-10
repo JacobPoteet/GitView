@@ -54,6 +54,68 @@ export function commitCommand(message: string, kind: ShellKind, amend = false): 
 }
 
 /**
+ * Throwing away work that was never committed.
+ *
+ * Two commands, because git has two: a tracked file goes back to what the index
+ * holds through `git restore`, and an untracked one is not in the index to go
+ * back to, so it is `git clean` or nothing. Returning both rather than joining
+ * them with a separator keeps each line something the confirmation can print
+ * and the shell can echo on its own.
+ *
+ * `all` says `paths` is the whole unstaged working tree, so the commands say
+ * `.` rather than listing it: that is what a person types, and it stays true if
+ * something changed between the dialog opening and the line running. `git clean`
+ * then takes `-d` too, since a directory holding only new files is itself new.
+ */
+export function discardCommands(
+  paths: { path: string; untracked: boolean }[],
+  kind: ShellKind,
+  all = false,
+): string[] {
+  const commands: string[] = [];
+  if (all) {
+    if (paths.some((p) => !p.untracked)) commands.push("git restore -- .");
+    if (paths.some((p) => p.untracked)) commands.push("git clean -fd");
+    return commands;
+  }
+  const tracked = paths.filter((p) => !p.untracked).map((p) => quote(p.path, kind));
+  const untracked = paths.filter((p) => p.untracked).map((p) => quote(p.path, kind));
+  if (tracked.length > 0) commands.push(`git restore -- ${tracked.join(" ")}`);
+  if (untracked.length > 0) commands.push(`git clean -f -- ${untracked.join(" ")}`);
+  return commands;
+}
+
+/**
+ * `gh issue create`, as one line.
+ *
+ * The inbox reads GitHub out of sight because a fleet-wide read has nowhere to
+ * type. Opening an issue is aimed at one repository, so it has a prompt, and it
+ * uses it. `--repo` is on the line even though the shell is already in that
+ * folder: the line is meant to be readable on its own afterwards.
+ *
+ * `bodyFile` is set when the body has a newline in it, since a newline typed at
+ * a prompt submits the command. A one-line body is quoted inline instead, which
+ * keeps the common case to one readable argument.
+ */
+export function issueCreateCommand(
+  ownerRepo: string,
+  title: string,
+  body: string,
+  bodyFile: string | null,
+  kind: ShellKind,
+): string {
+  const parts = ["gh", "issue", "create", "--repo", quote(ownerRepo, kind), "--title", quote(title, kind)];
+  if (bodyFile) {
+    parts.push("--body-file", quote(bodyFile, kind));
+  } else {
+    // `--body ''` rather than no flag at all: without it gh opens an editor and
+    // the shell sits there holding a prompt nobody asked it to hold.
+    parts.push("--body", quote(body, kind));
+  }
+  return parts.join(" ");
+}
+
+/**
  * Opening a URL the shell just announced.
  *
  * A dev server prints its address and GitView notices; the browser still gets

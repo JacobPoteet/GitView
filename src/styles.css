@@ -502,6 +502,36 @@ input {
   min-height: 0;
 }
 
+/* ------------------------------------------------- the column, split in two */
+/* The inbox, the diff and the history share the main column with the terminal
+   rather than covering it. They used to be `inset: 0` overlays, which is what
+   made clicking a commit in the history print `git show` into a shell nobody
+   could see until they closed the history.
+
+   The branch strip is what pays for the room. It is the one thing in the column
+   that answers a question you are not asking while a pane is open, and hiding
+   it rather than unmounting it keeps its ResizeObserver from being handed a 0x0
+   container on the way back. The terminal keeps a floor either way, so its own
+   observer never sees one either, which was the whole point of the overlay. */
+
+.main.split > .graph {
+  display: none;
+}
+
+.main.split > .terminal-pane {
+  flex: none;
+  /* A third of the column, and never less than a prompt plus a few lines of
+     whatever the pane just printed into it. */
+  height: clamp(132px, 34%, 100%);
+  border-top: 1px solid var(--line);
+}
+
+/* A closed shell has no scrollback to keep in sight, so it shrinks to the
+   button that reopens it and the pane above takes the rest. */
+.main.split > .terminal-pane.closed {
+  height: auto;
+}
+
 .repo-head {
   display: flex;
   align-items: center;
@@ -841,10 +871,21 @@ input {
   animation: rise 0.16s var(--ease);
 }
 
+/* Every dialog and every pane closes the same way: the X in the top right that
+   the history pane has always had. A dialog that also has a Cancel keeps it,
+   since cancelling a choice is a different act from closing a report. */
 .confirm h2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   padding: 14px 16px 0;
+}
+
+.confirm h2 .pane-close {
+  /* Level with the title's cap height rather than its line box. */
+  margin-top: -1px;
 }
 
 .confirm p {
@@ -1114,10 +1155,18 @@ input {
     0 0 0 4px oklch(74% 0.135 242 / 0.16);
 }
 
-.graph-ref {
+/* HEAD and a branch name land on the same commit most of the time, so they
+   share one row above the node instead of one covering the other. */
+.graph-refs {
   position: absolute;
   bottom: 100%;
   margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.graph-ref {
   padding: 0 5px;
   border-radius: 4px;
   border: 1px solid var(--line-strong);
@@ -1129,6 +1178,39 @@ input {
   max-width: 118px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Green, which already means "this one is live" on a sidebar dot, and which is
+   the only token left: amber is attention, red is a failed command, accent is
+   the branch's own rail and blue is the base's. The node it sits over gets the
+   same ring, so the pair reads as one mark. */
+.graph-ref.head {
+  border-color: color-mix(in oklch, var(--green) 55%, transparent);
+  background: color-mix(in oklch, var(--green) 18%, var(--bg-raised));
+  color: var(--green);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.graph-node.head .graph-dot {
+  box-shadow:
+    inset 0 0 0 2px var(--green),
+    0 0 0 3px color-mix(in oklch, var(--green) 22%, transparent);
+}
+
+/* A trunk node is 12 px where every other one is 18, and the ring would sit
+   inside the gap that keeps the rail readable. It grows to match instead. */
+.graph-node.trunk.head .graph-dot,
+.graph-node.fork.head .graph-dot {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0;
+  background: color-mix(in oklch, var(--green) 20%, var(--bg));
+}
+
+.graph-node.ours.tip.head .graph-dot,
+.graph-node.theirs.tip.head .graph-dot {
+  background: var(--green);
 }
 
 .graph-caption {
@@ -1361,6 +1443,35 @@ input {
   text-transform: none;
 }
 
+/* The trash can sits ahead of `stage all`, faint until hovered and red once it
+   is: it is the only control in the pane a scrollback cannot undo. It still
+   asks before it types anything. */
+.change-discard-all {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.change-discard-all:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--red) 16%, transparent);
+  color: var(--red);
+}
+
+.change-discard-all:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* With the trash can present it already took the auto margin. */
+.change-discard-all + .change-bulk {
+  margin-left: 0;
+}
+
 .change-bulk {
   margin-left: auto;
   font-family: var(--font-mono);
@@ -1379,6 +1490,49 @@ input {
 }
 
 .change-bulk:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The right-click menu on a changed file.
+   Fixed rather than absolute: the list under it scrolls, and a menu that
+   scrolled with it would be pointing at a different row by the time it was
+   read. It closes on the next mousedown anywhere else, so the click that
+   dismisses it still reaches what it was aimed at. */
+.row-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 176px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px oklch(6% 0.01 268 / 0.55);
+  animation: rise 0.1s var(--ease);
+}
+
+.row-menu button {
+  padding: 5px 9px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.row-menu button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.row-menu button.danger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--red) 16%, transparent);
+  color: var(--red);
+}
+
+.row-menu button:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -2020,15 +2174,13 @@ input {
 }
 
 /* ------------------------------------------------------------------ inbox */
-/* Fleet-wide pull requests and issues, over the main column rather than in a
-   fourth one: the grid is full at 296 + 1fr + 300, and an overlay leaves the
-   terminal at its own size so its ResizeObserver never sees a 0x0 container.
-   The session behind this pane keeps running, which is the point. */
+/* Fleet-wide pull requests and issues, sharing the main column rather than
+   taking a fourth one: the grid is full at 296 + 1fr + 300. See `.main.split`
+   for why it sits above the terminal instead of over it. */
 
 .inbox-pane {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -2185,6 +2337,122 @@ input {
   padding: 2px 7px;
 }
 
+/* Two questions about one list, in the same segmented control the diff pane
+   uses to switch sides of the index. */
+.inbox-modes {
+  flex: none;
+  display: flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 5px;
+  background: var(--bg-inset);
+}
+
+.inbox-modes button {
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.inbox-modes button:hover {
+  color: var(--text);
+}
+
+.inbox-modes button.on {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* The new-issue form. It sits at the head of the list rather than in a modal:
+   it is about one repository and the list behind it is the reason you are
+   opening an issue, so covering it would hide the thing being answered. */
+.inbox-compose {
+  margin: 10px 0 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  animation: rise 0.14s var(--ease);
+}
+
+.inbox-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inbox-field > span {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.inbox-field .text-input {
+  margin-top: 0;
+}
+
+.inbox-field select,
+.inbox-field textarea {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+
+.inbox-field select {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.inbox-field textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.inbox-field select:focus,
+.inbox-field textarea:focus {
+  border-color: var(--accent-line);
+}
+
+/* The line as it will be typed, which is the point of doing this here at all
+   rather than posting it out of sight. */
+.inbox-command {
+  padding: 7px 9px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  max-height: 74px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.inbox-compose-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-compose-actions .inbox-when {
+  flex: 1;
+  min-width: 0;
+}
+
 .inbox-notice {
   margin: 10px 0 4px;
   padding: 10px 12px;
@@ -2276,15 +2544,12 @@ input {
 }
 
 /* ------------------------------------------------------------------- diff */
-/* One file, unified, over the main column. An overlay for the reason the inbox
-   is one: the grid is full at 296 + 1fr + 300, and an overlay leaves the
-   terminal at its own size, so the shell behind it keeps running at the width
-   it had rather than being remounted into a 0x0 container. */
+/* One file, unified, in the main column with the terminal under it, for the
+   reason the inbox is: the grid is full at 296 + 1fr + 300. See `.main.split`. */
 
 .diff-pane {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -2534,15 +2799,14 @@ input {
 }
 
 /* ---------------------------------------------------------------- history */
-/* The whole DAG, over the main column like the inbox and the diff. Canvas rails
+/* The whole DAG, in the main column like the inbox and the diff. Canvas rails
    under plain DOM rows, and only the rows on screen exist: a node per commit in
    SVG stops scrolling smoothly in the low thousands, which is why the branch
    graph caps itself at 88 and this pane waited for Phase 3. */
 
 .history-pane {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);

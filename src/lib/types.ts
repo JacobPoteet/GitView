@@ -70,6 +70,14 @@ export interface GraphCommit {
 export interface BranchGraph {
   path: string;
   head: string | null;
+  /**
+   * The commit HEAD points at, in full.
+   *
+   * The strip marks its node. Without it there is nothing on screen that says
+   * where you are standing once the branch is level with its base, and nothing
+   * at all when HEAD is detached somewhere behind the tip.
+   */
+  headId: string | null;
   detached: boolean;
   base: string | null;
   baseKind: "remote-default" | "default" | "upstream" | "none";
@@ -87,6 +95,17 @@ export interface FileChange {
   path: string;
   state: "new" | "modified" | "deleted" | "renamed" | "typechange" | "conflicted";
   staged: boolean;
+}
+
+/**
+ * Whether git has never had a copy of this file.
+ *
+ * The one thing discarding has to know, because it decides between `git restore`
+ * and `git clean`, and those make different promises. A `new` row on the staged
+ * side is an add git already holds; on the working side it is untracked.
+ */
+export function isUntracked(change: FileChange): boolean {
+  return !change.staged && change.state === "new";
 }
 
 /**

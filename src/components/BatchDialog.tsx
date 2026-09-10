@@ -124,6 +124,9 @@ export default function BatchDialog({
         <div className="confirm wide" onMouseDown={(e) => e.stopPropagation()}>
           <h2>
             {verb} {picked.size} of {candidates.length} repositories
+            <button className="pane-close" onClick={onClose} title="Close (Escape)">
+              ✕
+            </button>
           </h2>
           <p>{BLURB[kind]}</p>
 
@@ -213,6 +216,13 @@ export default function BatchDialog({
             ? `${verbFor[run.kind]}ing ${run.done + 1} of ${run.rows.length}`
             : `${verbFor[run.kind]} finished · ${tally.join(", ")}`}
           {run.cancelled && " · stopped"}
+          {/* A run still going keeps its dialog: this is the only place the
+              commands it is about to type are named. */}
+          {!run.running && (
+            <button className="pane-close" onClick={onClose} title="Close (Escape)">
+              ✕
+            </button>
+          )}
         </h2>
         <p>
           Every command it ran is here with its exit code and its output, which is what a shell would
@@ -273,13 +283,9 @@ export default function BatchDialog({
           <button className="btn" onClick={() => onCopy(transcriptText(run))}>
             Copy transcript
           </button>
-          {run.running ? (
-            <button className="btn" onClick={onCancel}>
+          {run.running && (
+            <button className="btn accent" onClick={onCancel}>
               Stop after this one
-            </button>
-          ) : (
-            <button className="btn accent" onClick={onClose}>
-              Close
             </button>
           )}
         </div>
