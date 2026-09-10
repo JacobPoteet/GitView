@@ -1,6 +1,6 @@
 [package]
 name = "gitview"
-version = "0.2.0"
+version = "0.3.0"
 description = "A fleet-first git client"
 authors = ["Jacob Poteet"]
 edition = "2021"
