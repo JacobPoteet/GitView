@@ -616,7 +616,9 @@ export default function TerminalPane({
 
   if (!open) {
     return (
-      <div className="terminal-pane">
+      // `closed` so a pane sharing the column does not give a third of it to a
+      // button. There is no scrollback here to keep in sight.
+      <div className="terminal-pane closed">
         <div className="pane-tab-bar">
           <span>shell</span>
           <span style={{ color: "var(--line-strong)" }}>·</span>

@@ -46,6 +46,12 @@ pub struct BranchGraph {
     pub path: String,
     /// The branch HEAD is on, or a short id when detached.
     pub head: Option<String>,
+    /// The commit HEAD points at, in full.
+    ///
+    /// The strip marks it. Without it there is no way to see where you are
+    /// standing when the branch is level with its base and every node on screen
+    /// is shared history, or when HEAD is detached behind the tip.
+    pub head_id: Option<String>,
     pub detached: bool,
     /// The branch being compared against, as it should be shown.
     pub base: Option<String>,
@@ -74,6 +80,7 @@ impl BranchGraph {
         Self {
             path: path.to_string_lossy().to_string(),
             head: None,
+            head_id: None,
             detached: false,
             base: None,
             base_kind: "none".to_string(),
@@ -118,6 +125,7 @@ pub fn read(path: &Path) -> BranchGraph {
     graph.head = head_branch
         .clone()
         .or_else(|| Some(short_id(&head_oid.to_string())));
+    graph.head_id = Some(head_oid.to_string());
 
     let names = ref_names(&repo);
 
@@ -453,5 +461,30 @@ mod tests {
         assert_eq!(graph.ours.len(), 1);
         assert_eq!(graph.ours[0].summary, "three");
         assert!(graph.theirs.is_empty());
+    }
+
+    /// The strip marks the commit you are standing on, and it can only do that
+    /// if the id it is matching against is the one HEAD resolves to.
+    #[test]
+    fn head_id_is_the_commit_head_resolves_to() {
+        let fixture = Fixture::new("head-id");
+        let first = fixture.commit("refs/heads/main", "one", &[]);
+        let second = fixture.commit("refs/heads/main", "two", &[first]);
+        // `git init` leaves HEAD on whatever the default branch name is, which
+        // is not necessarily the one these commits went to.
+        fixture
+            .repo
+            .set_head("refs/heads/main")
+            .expect("checkout main");
+
+        let graph = read(&fixture.dir);
+        assert_eq!(graph.head_id.as_deref(), Some(second.to_string().as_str()));
+
+        // Detached behind the tip is the case the old picture could not answer
+        // at all: nothing on the strip said which node you were on.
+        fixture.repo.set_head_detached(first).expect("detach");
+        let behind = read(&fixture.dir);
+        assert!(behind.detached);
+        assert_eq!(behind.head_id.as_deref(), Some(first.to_string().as_str()));
     }
 }

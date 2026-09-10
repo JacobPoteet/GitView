@@ -21,7 +21,7 @@ import UpdateDialog from "./components/UpdateDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
-import { openUrlCommand, shellKind } from "./lib/shell";
+import { discardCommands, openUrlCommand, shellKind } from "./lib/shell";
 import {
   fetchPlan,
   isSkip,
@@ -35,6 +35,7 @@ import {
   type BatchRun,
 } from "./lib/batch";
 import {
+  isUntracked,
   relativeTime,
   type AppInfo,
   type BranchGraph as Graph,
@@ -52,7 +53,11 @@ import {
 interface Confirmation {
   title: string;
   body: string;
-  /** Shown verbatim when the action is a command. Omitted when it is not. */
+  /**
+   * Shown verbatim when the action is a command. Omitted when it is not, and
+   * newline-separated when the action takes more than one — a discard holding
+   * both a tracked and an untracked file needs `git restore` and `git clean`.
+   */
   command?: string;
   confirmLabel: string;
   onConfirm: () => void;
@@ -108,9 +113,9 @@ export default function App() {
   /**
    * The file the diff pane is showing, or nothing.
    *
-   * Held here rather than in the changes column because the pane it opens is an
-   * overlay on the main column, which the column does not own, and because the
-   * side has to be able to follow a file that has just been staged.
+   * Held here rather than in the changes column because the pane it opens
+   * belongs to the main column, which the changes column does not own, and
+   * because the side has to be able to follow a file that has just been staged.
    */
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   /**
@@ -164,6 +169,8 @@ export default function App() {
   const [pendingCommand, setPendingCommand] = useState<{
     path: string;
     command: string;
+    /** Shift was held, so it is left at the prompt rather than run. */
+    typeOnly: boolean;
   } | null>(null);
   /** The launch check against the latest GitHub release, and its dialog. */
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
@@ -458,9 +465,9 @@ export default function App() {
 
   useEffect(() => {
     if (!pendingCommand || !live.has(pendingCommand.path)) return;
-    sendCommand(pendingCommand.path, pendingCommand.command).catch((err) =>
-      setNote(String(err)),
-    );
+    const { path, command, typeOnly } = pendingCommand;
+    const sent = typeOnly ? api.ptyWrite(path, command) : sendCommand(path, command);
+    sent.catch((err) => setNote(String(err)));
     setPendingCommand(null);
   }, [pendingCommand, live, setNote]);
 
@@ -620,6 +627,56 @@ export default function App() {
       else await sendCommand(selectedPath, command);
     },
     [selectedPath],
+  );
+
+  /**
+   * Throwing away work that was never committed.
+   *
+   * The one action in the changes pane a scrollback cannot undo, so it is the
+   * one that asks first. What it asks with is the command itself, the way Prune
+   * does: `git restore` for anything git already has a copy of, `git clean` for
+   * anything it does not, and both when the selection holds both.
+   *
+   * `all` swaps the named paths for `.`, because that is what a person types,
+   * and because the pane's bulk control means the working tree rather than the
+   * twelve rows that happen to be on screen.
+   */
+  const askDiscard = useCallback(
+    (rows: FileChange[], all: boolean) => {
+      if (rows.length === 0) return;
+      const targets = rows.map((row) => ({ path: row.path, untracked: isUntracked(row) }));
+      const commands = discardCommands(targets, shell, all);
+      if (commands.length === 0) return;
+
+      // A restore and a clean are different promises, and the dialog has to
+      // make whichever one applies. `git clean` does not put a file back; it
+      // takes it away, and there is nowhere it goes.
+      const gone = targets.filter((t) => t.untracked).length;
+      const kept = targets.length - gone;
+      const what =
+        gone === 0
+          ? "The working tree goes back to what the index holds."
+          : kept === 0
+            ? gone === 1
+              ? "It is untracked, so there is no copy in git to put back. The file is removed."
+              : `All ${gone} are untracked, so there is no copy in git to put back. The files are removed.`
+            : `The ${kept === 1 ? "tracked one goes" : `${kept} tracked ones go`} back to what the index holds. The other ${gone === 1 ? "one is untracked and is" : `${gone} are untracked and are`} removed outright, because git has no copy to put back.`;
+
+      setConfirmation({
+        title: all
+          ? `Discard ${rows.length} unstaged ${rows.length === 1 ? "change" : "changes"}`
+          : `Discard ${rows[0].path}`,
+        body: `${what} None of this has been committed, so there is no reflog to find it in afterwards.`,
+        command: commands.join("\n"),
+        confirmLabel: all ? `Discard all ${rows.length}` : "Discard",
+        onConfirm: async () => {
+          // One at a time and in order: `git clean` has to see the working tree
+          // `git restore` left, and both belong in the scrollback anyway.
+          for (const command of commands) await emit(command, false);
+        },
+      });
+    },
+    [shell, emit],
   );
 
   /**
@@ -1140,6 +1197,73 @@ export default function App() {
   );
   const shellReady = selected != null && live.has(selected.path);
 
+  /**
+   * The pane sharing the main column with the terminal, or nothing.
+   *
+   * One at a time, and never on top of the shell. These three used to be
+   * `position: absolute; inset: 0` over the whole column, which meant clicking
+   * a commit in the history printed `git show` into a terminal nobody could see
+   * until they closed the history. They are in flow now: the branch strip goes,
+   * the terminal keeps the bottom of the column, and what a click prints is
+   * readable while the pane that caused it is still open.
+   *
+   * The precedence is the old paint order. The inbox went in last and drew on
+   * top, so the inbox still wins.
+   */
+  const pane = inboxOpen ? (
+    <InboxPane
+      inbox={inbox}
+      gh={info?.gh ?? null}
+      repos={repos}
+      selectedPath={selectedPath}
+      shell={shell}
+      refreshing={inboxReading}
+      onRefresh={refreshInbox}
+      onClose={() => setInboxOpen(false)}
+      onSelect={(path) => {
+        setSelectedPath(path);
+        setInboxOpen(false);
+      }}
+      onCommand={(path, command, typeOnly = false) => {
+        // The command lands in that repository's shell, which means selecting
+        // it first: a session belongs to a repository. The command waits for
+        // that shell rather than for a timer.
+        setSelectedPath(path);
+        setInboxOpen(false);
+        setPendingCommand({ path, command, typeOnly });
+      }}
+      onCopy={async (text) => {
+        const copied = await copyText(text);
+        setNote(copied ? `Copied ${text}` : "The clipboard refused the copy.");
+      }}
+      onError={setNote}
+    />
+  ) : historyOpen && selected ? (
+    <HistoryPane
+      repoPath={selected.path}
+      repoName={selected.name}
+      disabled={!shellReady}
+      squashed={squashed}
+      onClose={() => setHistoryOpen(false)}
+      onCommand={emit}
+      onError={setNote}
+    />
+  ) : diffTarget ? (
+    <DiffPane
+      target={diffTarget}
+      sides={diffSides}
+      disabled={!shellReady}
+      shell={shell}
+      /* `changes` is replaced whenever the working tree is re-read, which is
+         exactly when a diff can have changed under the pane. */
+      reloadKey={changes}
+      onSide={(staged) => setDiffTarget({ ...diffTarget, staged })}
+      onClose={() => setDiffTarget(null)}
+      onCommand={emit}
+      onError={setNote}
+    />
+  ) : null;
+
   return (
     <div className="app">
       {/* The fleet and the tasks share the left rail. Tasks belong to whichever
@@ -1173,7 +1297,7 @@ export default function App() {
         />
       </div>
 
-      <main className="main">
+      <main className={`main${pane ? " split" : ""}`}>
         {selected ? (
           <>
             <header className="repo-head">
@@ -1278,6 +1402,11 @@ gh pr view ${branchPr.number} --web`}
               onCommand={emit}
             />
 
+            {/* Between the strip and the shell. `.main.split` hides the strip,
+                so the pane takes that height and the rest from the terminal,
+                which keeps a floor rather than being covered over. */}
+            {pane}
+
             <TerminalPane
               repoPath={selected.path}
               open={closedShell !== selected.path}
@@ -1298,65 +1427,19 @@ gh pr view ${branchPr.number} --web`}
             </TerminalPane>
           </>
         ) : (
-          <div className="terminal-pane">
-            <div className="pane-tab-bar">terminal</div>
-            <p className="empty">
-              {repos.length === 0 && scanning
-                ? "Scanning the roots…"
-                : "Pick a repository on the left, or press Ctrl+K."}
-            </p>
-          </div>
-        )}
-        {diffTarget && (
-          <DiffPane
-            target={diffTarget}
-            sides={diffSides}
-            disabled={!shellReady}
-            shell={shell}
-            /* `changes` is replaced whenever the working tree is re-read, which
-               is exactly when a diff can have changed under the pane. */
-            reloadKey={changes}
-            onSide={(staged) => setDiffTarget({ ...diffTarget, staged })}
-            onClose={() => setDiffTarget(null)}
-            onCommand={emit}
-            onError={setNote}
-          />
-        )}
-        {historyOpen && selected && (
-          <HistoryPane
-            repoPath={selected.path}
-            repoName={selected.name}
-            disabled={!shellReady}
-            squashed={squashed}
-            onClose={() => setHistoryOpen(false)}
-            onCommand={emit}
-            onError={setNote}
-          />
-        )}
-        {inboxOpen && (
-          <InboxPane
-            inbox={inbox}
-            gh={info?.gh ?? null}
-            refreshing={inboxReading}
-            onRefresh={refreshInbox}
-            onClose={() => setInboxOpen(false)}
-            onSelect={(path) => {
-              setSelectedPath(path);
-              setInboxOpen(false);
-            }}
-            onCommand={(path, command) => {
-              // The command lands in that repository's shell, which means
-              // selecting it first: a session belongs to a repository. The
-              // command waits for that shell rather than for a timer.
-              setSelectedPath(path);
-              setInboxOpen(false);
-              setPendingCommand({ path, command });
-            }}
-            onCopy={async (text) => {
-              const copied = await copyText(text);
-              setNote(copied ? `Copied ${text}` : "The clipboard refused the copy.");
-            }}
-          />
+          /* Nothing selected means there is no shell to keep visible, so the
+             pane gets the column outright rather than splitting it with a
+             placeholder. The inbox is the one that opens from here. */
+          pane ?? (
+            <div className="terminal-pane">
+              <div className="pane-tab-bar">terminal</div>
+              <p className="empty">
+                {repos.length === 0 && scanning
+                  ? "Scanning the roots…"
+                  : "Pick a repository on the left, or press Ctrl+K."}
+              </p>
+            </div>
+          )
         )}
       </main>
 
@@ -1368,6 +1451,7 @@ gh pr view ${branchPr.number} --web`}
         open={diffTarget}
         onCommand={emit}
         onOpenDiff={openDiff}
+        onDiscard={askDiscard}
       />
 
       <div className="status-bar">
@@ -1486,7 +1570,17 @@ gh pr view ${branchPr.number} --web`}
               saveTask();
             }}
           >
-            <h2>Keep this command as a task</h2>
+            <h2>
+              Keep this command as a task
+              <button
+                type="button"
+                className="pane-close"
+                onClick={() => setPendingTask(null)}
+                title="Close (Escape)"
+              >
+                ✕
+              </button>
+            </h2>
             <p>
               It joins this repository's list above anything discovery found, and running it types
               the same line you just typed. Nothing is written into the repository: the task lives
@@ -1532,7 +1626,16 @@ gh pr view ${branchPr.number} --web`}
       {confirmation && (
         <div className="confirm-backdrop" onMouseDown={() => setConfirmation(null)}>
           <div className="confirm" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>{confirmation.title}</h2>
+            <h2>
+              {confirmation.title}
+              <button
+                className="pane-close"
+                onClick={() => setConfirmation(null)}
+                title="Close (Escape)"
+              >
+                ✕
+              </button>
+            </h2>
             <p>{confirmation.body}</p>
             {confirmation.command && <pre>{confirmation.command}</pre>}
             <div className="confirm-actions">

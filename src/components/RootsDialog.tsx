@@ -57,7 +57,12 @@ export default function RootsDialog({ roots, onChange, onClose }: Props) {
   return (
     <div className="confirm-backdrop" onMouseDown={onClose}>
       <div className="confirm roots" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>Watched folders</h2>
+        <h2>
+          Watched folders
+          <button className="pane-close" onClick={onClose} title="Close (Escape)">
+            ✕
+          </button>
+        </h2>
         <p>
           Every folder here is scanned one level deep. Add the folder your projects sit in, or a
           single project when it lives somewhere else.
@@ -93,11 +98,8 @@ export default function RootsDialog({ roots, onChange, onClose }: Props) {
         {error && <p className="root-error">{error}</p>}
 
         <div className="confirm-actions">
-          <button className="btn" onClick={browse} disabled={busy}>
+          <button className="btn accent" onClick={browse} disabled={busy}>
             Browse…
-          </button>
-          <button className="btn accent" onClick={onClose}>
-            Done
           </button>
         </div>
       </div>

@@ -491,6 +491,62 @@ fn collect(
     }
 }
 
+/// How long a written issue body is left on disk. The same day a hunk patch
+/// gets, for the same reason: shift-click leaves the line unrun at a prompt.
+const BODY_KEEP_SECS: u64 = 86_400;
+
+/// Writes an issue body out and hands back the path `--body-file` wants.
+///
+/// A body has paragraphs in it and a newline typed at a prompt submits the
+/// line, so the body is the one argument here nobody can type. `git apply
+/// --cached` already settled the shape of that answer: the argument becomes a
+/// file under GitView's own data folder, never inside the repository, and the
+/// command stays a line somebody can read before it runs and run again after.
+/// A single-line body needs none of this and gets quoted inline instead.
+pub fn write_issue_body(owner_repo: &str, title: &str, body: &str) -> Result<String, String> {
+    let dir = crate::cache::data_dir().join("issues");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    sweep(&dir);
+
+    let stem: String = format!("{owner_repo}-{title}")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(90)
+        .collect();
+    let path = dir.join(format!("{stem}.md"));
+
+    // LF. This is markdown on its way to GitHub, which is where every other
+    // issue on the repository was written.
+    std::fs::write(&path, body.replace("\r\n", "\n")).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Drops the bodies nobody is going to submit any more. A failure here leaves a
+/// file behind, which is a file; the write that follows is the point.
+fn sweep(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .and_then(|t| now.duration_since(t).map_err(std::io::Error::other))
+            .map(|age| age.as_secs() > BODY_KEEP_SECS)
+            .unwrap_or(false);
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

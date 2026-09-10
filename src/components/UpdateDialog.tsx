@@ -39,7 +39,12 @@ export default function UpdateDialog({
   return (
     <div className="confirm-backdrop" onMouseDown={onClose}>
       <div className="confirm update" onMouseDown={(event) => event.stopPropagation()}>
-        <h2>GitView {release.version}</h2>
+        <h2>
+          GitView {release.version}
+          <button className="pane-close" onClick={onClose} title="Close (Escape)">
+            ✕
+          </button>
+        </h2>
         <p>
           You are on {check.current}. Released{" "}
           {Number.isNaN(published) ? "recently" : relativeTime(Math.floor(published / 1000))}
@@ -91,9 +96,6 @@ export default function UpdateDialog({
               Copy the command
             </button>
           )}
-          <button className="btn" onClick={onClose}>
-            Later
-          </button>
           {command && (
             <button
               className="btn accent"

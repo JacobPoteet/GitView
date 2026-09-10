@@ -40,11 +40,11 @@ jobs:
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Building $tag"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ steps.target.outputs.tag }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -133,7 +133,7 @@ jobs:
           gh release upload $tag $installer.FullName --clobber
 
       - name: Keep the installer on the run as well
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: GitView-${{ steps.target.outputs.tag }}-windows
           path: src-tauri/target/release/bundle/nsis/*-setup.exe

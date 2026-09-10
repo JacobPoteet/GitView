@@ -59,6 +59,13 @@ export const api = {
   githubCached: () => invoke<Inbox | null>("github_cached"),
   /** One GraphQL request for the whole fleet, through the gh CLI. */
   githubRefresh: () => invoke<Inbox>("github_refresh"),
+  /**
+   * Writes a new issue's body out under GitView's data folder and hands back
+   * the path, which is the argument the typed `gh issue create` needs. Only a
+   * body with a newline in it goes through here; a one-liner is quoted inline.
+   */
+  githubIssueBody: (ownerRepo: string, title: string, body: string) =>
+    invoke<string>("github_issue_body", { ownerRepo, title, body }),
 
   /** The latest release, read through gh. One call, at launch. */
   updateCheck: () => invoke<UpdateCheck>("update_check"),

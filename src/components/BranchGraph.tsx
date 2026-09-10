@@ -57,6 +57,8 @@ interface Placed {
   y: number;
   lane: "trunk" | "fork" | "theirs" | "ours";
   tip: boolean;
+  /** The commit HEAD is on. Marked wherever it lands, including on the trunk. */
+  head: boolean;
 }
 
 export default function BranchGraph({ graph, collapsed, squashed, onToggle, onCommand }: Props) {
@@ -209,13 +211,20 @@ function Node({
   const command = `git --no-pager show --stat ${commit.short}`;
   return (
     <button
-      className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${commit.isMerge ? " merge" : ""}`}
+      className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}`}
       style={{ left: node.x, top: node.y }}
       onClick={(event) => onCommand(command, event.shiftKey)}
-      title={`${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\n${command}\nShift-click to type it without running it.`}
+      title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\n${command}\nShift-click to type it without running it.`}
     >
       <span className="graph-dot" />
-      {commit.refs.length > 0 && <span className="graph-ref">{commit.refs[0]}</span>}
+      {/* One row above the node rather than two absolute badges stacked on each
+          other, so HEAD and a branch name on the same commit both stay read. */}
+      {(node.head || commit.refs.length > 0) && (
+        <span className="graph-refs">
+          {node.head && <span className="graph-ref head">HEAD</span>}
+          {commit.refs.length > 0 && <span className="graph-ref">{commit.refs[0]}</span>}
+        </span>
+      )}
       {captions && (
         <span className="graph-caption">
           <span className="sha">{commit.short}</span>
@@ -259,6 +268,10 @@ function build(graph: Graph | null, available: number) {
   // put the pair's supposed parting at a commit only one of them can reach.
   const trunk = graph.unrelated ? [] : graph.trunk.slice(-room);
   const x = (column: number) => PAD_X + column * layout.gap;
+  // Which node you are standing on. The tip of `ours` most of the time, but a
+  // repository level with its base has no `ours` and a detached HEAD can be any
+  // node on screen, and those are the two cases the strip could not answer.
+  const isHead = (commit: GraphCommit) => commit.id === graph.headId;
 
   const nodes: Placed[] = [];
 
@@ -272,6 +285,7 @@ function build(graph: Graph | null, available: number) {
       // the answer to "when did these two part".
       lane: last && (graph.ours.length > 0 || graph.theirs.length > 0) ? "fork" : "trunk",
       tip: false,
+      head: isHead(commit),
     });
   });
 
@@ -283,6 +297,7 @@ function build(graph: Graph | null, available: number) {
       y: layout.top,
       lane: "theirs",
       tip: i === graph.theirs.length - 1,
+      head: isHead(commit),
     });
   });
   graph.ours.forEach((commit, i) => {
@@ -292,6 +307,7 @@ function build(graph: Graph | null, available: number) {
       y: layout.bottom,
       lane: "ours",
       tip: i === graph.ours.length - 1,
+      head: isHead(commit),
     });
   });
 
