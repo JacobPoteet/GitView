@@ -10,6 +10,7 @@ pub mod fleet;
 pub mod github;
 pub mod gitops;
 pub mod graph;
+pub mod history;
 pub mod pty;
 pub mod settings;
 pub mod tasks;
@@ -28,6 +29,7 @@ use fleet::{FileChange, RepoState};
 use github::{GhStatus, Inbox};
 use gitops::GitOutcome;
 use graph::BranchGraph;
+use history::History;
 use pty::PtyManager;
 use tasks::Task;
 use update::UpdateCheck;
@@ -183,6 +185,21 @@ async fn repo_graph(path: String) -> Result<BranchGraph, String> {
     tauri::async_runtime::spawn_blocking(move || graph::read(&PathBuf::from(&path)))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// The whole DAG, a page at a time.
+///
+/// Lanes are packed in the backend because the assignment depends on every
+/// commit newer than the one being drawn, so a page starting in the middle
+/// could not work them out from what it holds. The walk runs from the top each
+/// time and only the window is turned into rows.
+#[tauri::command]
+async fn repo_history(path: String, offset: usize, limit: usize) -> Result<History, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        history::read(&PathBuf::from(&path), offset, limit)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 // ------------------------------------------------------------ preferences
@@ -449,6 +466,7 @@ pub fn run() {
             fleet_scan,
             repo_refresh,
             repo_graph,
+            repo_history,
             repo_changes,
             repo_diff,
             diff_hunk_patch,

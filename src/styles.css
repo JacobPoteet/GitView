@@ -24,6 +24,17 @@
   --accent-line: oklch(70% 0.185 292 / 0.42);
 
   --green: oklch(76% 0.155 155);
+  /* Lane colours for the commit history. Its lanes carry no meaning, so these
+     only have to keep two neighbouring lines apart, and they deliberately skip
+     the hues that already mean something here: amber is attention and red is a
+     failed command, and a trunk that lands in either reads as a warning. Even
+     lightness and chroma, so no lane looks more important than the next. */
+  --lane-1: oklch(72% 0.150 292);
+  --lane-2: oklch(72% 0.130 242);
+  --lane-3: oklch(72% 0.140 155);
+  --lane-4: oklch(72% 0.140 330);
+  --lane-5: oklch(72% 0.110 196);
+  --lane-6: oklch(72% 0.130 108);
   --amber: oklch(82% 0.145 80);
   --red: oklch(68% 0.185 24);
   --blue: oklch(74% 0.135 242);
@@ -2520,4 +2531,169 @@ input {
 
 .diff-note code {
   color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------- history */
+/* The whole DAG, over the main column like the inbox and the diff. Canvas rails
+   under plain DOM rows, and only the rows on screen exist: a node per commit in
+   SVG stops scrolling smoothly in the low thousands, which is why the branch
+   graph caps itself at 88 and this pane waited for Phase 3. */
+
+.history-pane {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: fade 0.12s var(--ease);
+}
+
+.history-pane .tab-path {
+  flex: 1;
+  color: var(--text-dim);
+}
+
+.history-pane .pane-close {
+  margin-left: 0;
+}
+
+.history-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-note {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--amber) 16%, transparent);
+  color: var(--amber);
+}
+
+.history-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Sticky rather than tall. It covers the viewport and is redrawn on scroll, so
+   forty thousand commits never allocate a forty-thousand-row bitmap. */
+.history-canvas {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  float: left;
+  margin-bottom: -100000px;
+  pointer-events: none;
+}
+
+.history-rows {
+  position: relative;
+}
+
+.history-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 0;
+  text-align: left;
+  font-size: 12px;
+  border-radius: 0;
+}
+
+.history-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.history-row:disabled {
+  cursor: default;
+}
+
+/* Empty. It reserves the width the canvas is drawing into, so the text starts
+   clear of the rails whatever the lane count is. */
+.history-lanes {
+  flex: none;
+}
+
+.history-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.history-row:hover .history-summary {
+  color: var(--text);
+}
+
+.history-author,
+.history-when,
+.history-sha {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.history-author {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-when {
+  width: 62px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-sha {
+  width: 56px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.history-ref {
+  flex: none;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  line-height: 16px;
+  border: 1px solid transparent;
+}
+
+.history-ref.head {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.history-ref.local {
+  background: var(--bg-raised);
+  border-color: var(--line-strong);
+  color: var(--text-dim);
+}
+
+.history-ref.remote {
+  background: color-mix(in oklch, var(--blue) 12%, transparent);
+  color: var(--blue);
+}
+
+.history-ref.tag {
+  background: color-mix(in oklch, var(--amber) 14%, transparent);
+  color: var(--amber);
 }

@@ -4,6 +4,7 @@ import type {
   BranchGraph,
   FileChange,
   FileDiff,
+  History,
   GitOutcome,
   Inbox,
   RepoPref,
@@ -27,6 +28,9 @@ export const api = {
   repoTasks: (path: string) => invoke<Task[]>("repo_tasks", { path }),
   repoGraph: (path: string) => invoke<BranchGraph>("repo_graph", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
+  /** One page of the whole DAG. Lanes come packed, see history.rs. */
+  repoHistory: (path: string, offset: number, limit: number) =>
+    invoke<History>("repo_history", { path, offset, limit }),
   /** One file, on one side of the index. Read per file, not per working tree. */
   repoDiff: (path: string, file: string, staged: boolean) =>
     invoke<FileDiff>("repo_diff", { path, file, staged }),
