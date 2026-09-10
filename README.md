@@ -92,10 +92,6 @@ npm run dev
 `npm run tauri build -- --no-bundle` produces just the executable, which is faster when you only
 want to check that it compiles.
 
-Pushing a `v*` tag builds the same installer on CI and attaches it to the GitHub release. The
-workflow refuses to run if the tag disagrees with the version in `tauri.conf.json`, `package.json`
-or `Cargo.toml`, because the installer is named from the first of those.
-
 The scanner can be checked without opening a window:
 
 ```bash
@@ -106,6 +102,60 @@ cargo run --example scan -- F:\GitHub
 That prints one line per repository with the timings, which is the fastest way to see whether a
 large project is dragging the sweep.
 
+## Releasing it
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the NSIS installer and
+attaches it to the GitHub release. CI does not: it runs on pushes to `main`, which a tag push does
+not match, and it builds `--no-bundle` so the gate stays fast.
+
+**The version lives in four files, and the tag has to agree with all of them.**
+
+| File | Why it matters |
+| --- | --- |
+| `src-tauri/tauri.conf.json` | the installer's filename and its Add/Remove Programs entry |
+| `package.json` | the frontend package |
+| `src-tauri/Cargo.toml` | the crate |
+| `src-tauri/Cargo.lock` | follows `Cargo.toml`; `cargo` rewrites it, so commit it |
+
+The release workflow re-reads the first three and refuses to build when any disagrees with the tag.
+Without that check, tagging `v0.2.0` without bumping would publish a `v0.2.0` release containing a
+file called `GitView_0.1.0_x64-setup.exe`.
+
+Steps:
+
+```bash
+# 1. Bump the version in all three files to the one you are about to tag.
+# 2. Open a PR with that bump so CI gates it, and merge it.
+
+# 3. Tag the commit that has the bumps, not the one before it.
+git checkout main
+git pull --ff-only
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow then re-checks the versions, runs `cargo test`, builds the installer, creates the
+release with generated notes if it does not exist yet, and uploads the asset with `--clobber` so a
+re-run replaces it instead of failing.
+
+### When the tag is already in the wrong place
+
+This is the common mistake: tag first, bump second. The guard fails with
+`Tag does not match the tree`, and `workflow_dispatch` will not rescue you, because it checks out
+that same tag and hits the same guard. Move the tag onto the commit that has the bumps.
+
+```bash
+git tag -f v0.2.0            # on the commit that has the bumps
+git push --force origin v0.2.0
+```
+
+Force-moving a tag is safe while nothing has been published under it. Once a release has an
+installer attached, cut a new version instead, because anyone who downloaded the old one has a file
+whose name no longer matches what the tag points at.
+
+`workflow_dispatch` is for the other failure: the tag is right and the build broke. Run the
+workflow by hand against the existing tag and it fills the release in without re-pushing anything.
+
 ## How it is built
 
 | Layer | Choice |
@@ -115,6 +165,7 @@ large project is dragging the sweep.
 | Terminal | `portable-pty` over ConPTY, `@xterm/xterm` with the WebGL renderer |
 | Repository reads | libgit2 through `git2`, in process |
 | Network git | `git.exe` as a subprocess |
+| GitHub reads | `gh` as a subprocess, so no token is ever GitView's to hold |
 | Cache | SQLite through `rusqlite` |
 
 Reads and writes are split on purpose. Credential helpers, the Windows Credential Manager, SSH
@@ -129,8 +180,8 @@ times per repository per refresh is slow enough to feel.
 | 0 | Fleet view, terminal, task discovery, sync and prune, palette | Built |
 | 0.5 | Pinning and hiding, watched folders, the branch graph, staging and commit | Built |
 | 1 | Command blocks via OSC 133, saving a block as a task, ports, copying a failure | Built |
-| 1 | Sync and prune across several repositories with a transcript, dragging to reorder pins | Designed |
-| 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Designed |
+| 1 | Sync and prune across several repositories with a transcript, dragging to reorder pins | Built |
+| 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Built |
 | 3 | Diff, hunk staging, commit graph | Designed |
 | 4 | Worktree lanes and a local API for agents | Designed |
 
@@ -142,7 +193,7 @@ data folder. A `cmd.exe` session gets a working shell and no blocks.
 
 The wiki is the source of truth and lives outside this repository. It covers the architecture, each
 feature, the interface, and a decision log recording why each choice was made and what was ruled
-out. This repository keeps only `README.md`, `CLAUDE.md`, the licence and the CI workflow.
+out. This repository keeps only `README.md`, `CLAUDE.md`, the licence and the two workflows.
 
 ## Licence
 
