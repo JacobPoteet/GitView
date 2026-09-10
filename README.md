@@ -136,7 +136,7 @@ file called `GitView_0.1.0_x64-setup.exe`.
 Steps:
 
 ```bash
-# 1. Bump the version in all three files to the one you are about to tag.
+# 1. Bump the version in the three files above, then let cargo rewrite Cargo.lock.
 # 2. Open a PR with that bump so CI gates it, and merge it.
 
 # 3. Tag the commit that has the bumps, not the one before it.
