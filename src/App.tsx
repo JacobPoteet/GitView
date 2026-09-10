@@ -13,17 +13,28 @@ import BranchGraph from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
 import RootsDialog from "./components/RootsDialog";
+import BatchDialog from "./components/BatchDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
 import { openUrlCommand, shellKind } from "./lib/shell";
+import {
+  fetchPlan,
+  isSkip,
+  newRun,
+  pruneCommand,
+  runRepo,
+  verbFor,
+  type BatchKind,
+  type BatchRow,
+  type BatchRun,
+} from "./lib/batch";
 import {
   relativeTime,
   type AppInfo,
   type BranchGraph as Graph,
   type CommandBlock,
   type FileChange,
-  type GitOutcome,
   type RepoPref,
   type RepoState,
   type Task,
@@ -38,16 +49,15 @@ interface Confirmation {
   onConfirm: () => void;
 }
 
-/** One repository that did not fetch, with everything git said about it. */
-interface FetchFailure {
-  name: string;
-  path: string;
-  outcome: GitOutcome;
-}
-
-interface FetchReport {
-  ok: number;
-  failures: FetchFailure[];
+/**
+ * The line in the status bar.
+ *
+ * Most of them are just text. A batch leaves one that opens its transcript, so
+ * the report is a click away rather than a modal that interrupted the work.
+ */
+interface Note {
+  text: string;
+  onClick?: () => void;
 }
 
 /** A command on its way into the task list, waiting to be named. */
@@ -93,10 +103,22 @@ export default function App() {
   const [closedShell, setClosedShell] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const [fetchReport, setFetchReport] = useState<FetchReport | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
+  /** The last batch, running or finished, and whether its transcript is up. */
+  const [batch, setBatch] = useState<BatchRun | null>(null);
+  const [batchKind, setBatchKind] = useState<BatchKind>("sync");
+  const [batchOpen, setBatchOpen] = useState(false);
+  /** Bumped to remount the dialog, which is what clears a stale selection. */
+  const [batchEpoch, setBatchEpoch] = useState(0);
+  // Read between repositories, so stopping never interrupts a command that has
+  // already started. A ref rather than state: the loop has to see the change.
+  const batchStopped = useRef(false);
+  // Fetch-all is one palette keystroke and the palette opens over the dialog,
+  // so a second batch can be started on top of a running one. Whichever ran
+  // last owns the transcript, and the older loop stops writing to it.
+  const batchToken = useRef(0);
   const [info, setInfo] = useState<AppInfo | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNoteState] = useState<Note | null>(null);
+  const setNote = useCallback((text: string) => setNoteState({ text }), []);
   const [blocks, setBlocks] = useState<CommandBlock[]>([]);
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
@@ -275,21 +297,23 @@ export default function App() {
       if (event.key === "Escape") {
         setConfirmation(null);
         setRootsOpen(false);
-        setReportOpen(false);
         setPendingTask(null);
+        // A batch that is still running keeps its dialog: closing it would hide
+        // the only place the commands it is about to run are reported.
+        setBatchOpen((open) => (open && batch?.running === true ? open : false));
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
     // see attachCustomKeyEventHandler in TerminalPane.
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [batch?.running]);
 
   const noteTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (!note) return;
     window.clearTimeout(noteTimer.current);
-    noteTimer.current = window.setTimeout(() => setNote(null), 6000);
+    noteTimer.current = window.setTimeout(() => setNoteState(null), 6000);
   }, [note]);
 
   const refreshRepo = useCallback(
@@ -327,6 +351,25 @@ export default function App() {
     },
     [loadPrefs],
   );
+
+  /**
+   * The pinned group's new order, applied here before it is written.
+   *
+   * Waiting for the write and a re-read would let the dragged row snap back to
+   * where it was for a frame, and the positions being written are exactly the
+   * ones set here, so there is nothing to read back.
+   */
+  const reorderPins = useCallback(async (paths: string[]) => {
+    setPrefs((current) => {
+      const next = new Map(current);
+      paths.forEach((path, index) => {
+        const pref = next.get(path);
+        if (pref) next.set(path, { ...pref, pinnedPos: index });
+      });
+      return next;
+    });
+    await api.repoReorderPins(paths).catch((err) => setNote(String(err)));
+  }, [setNote]);
 
   const setHidden = useCallback(
     async (path: string, hidden: boolean) => {
@@ -458,11 +501,9 @@ export default function App() {
     });
   }, []);
 
+  // Typed at a prompt, so it is one PowerShell line. A batch runs the same two
+  // commands as two separate invocations, see `lib/batch.ts`.
   const syncCommand = "git fetch --prune; git pull --ff-only";
-
-  function pruneCommand(repo: RepoState): string {
-    return `git branch -d ${repo.mergedBranches.join(" ")}`;
-  }
 
   function pruneConfirmation(repo: RepoState): Confirmation {
     const command = pruneCommand(repo);
@@ -476,49 +517,117 @@ export default function App() {
   }
 
   /**
+   * A repository the fleet-wide actions are allowed to touch.
+   *
+   * A hidden repository is one the user has said they are not thinking about,
+   * so it stays out of a sweep as well as out of the list.
+   */
+  const batchCandidates = useMemo(
+    () => repos.filter((repo) => !prefs.get(repo.path)?.hidden),
+    [repos, prefs],
+  );
+
+  /**
+   * Runs a batch, one repository at a time, keeping a transcript as it goes.
+   *
+   * Sequential on purpose: twelve concurrent fetches would finish sooner and
+   * arrive as twelve interleaved reports, and the point of the transcript is
+   * that it reads in the order the work happened. Stopping is offered instead,
+   * and it takes effect between repositories.
+   */
+  const runBatch = useCallback(
+    async (kind: BatchKind, paths: string[]) => {
+      const targets = paths
+        .map((path) => repos.find((repo) => repo.path === path))
+        .filter((repo): repo is RepoState => repo != null);
+      if (targets.length === 0) return;
+
+      batchStopped.current = false;
+      const token = (batchToken.current += 1);
+      setBatch(newRun(kind, targets));
+
+      const patch = (path: string, change: (row: BatchRow) => BatchRow) => {
+        if (batchToken.current !== token) return;
+        setBatch((current) =>
+          current
+            ? {
+                ...current,
+                rows: current.rows.map((row) => (row.path === path ? change(row) : row)),
+              }
+            : current,
+        );
+      };
+
+      let failures = 0;
+      let acted = 0;
+      for (const repo of targets) {
+        if (batchStopped.current || batchToken.current !== token) break;
+        patch(repo.path, (row) => ({ ...row, state: "running" }));
+
+        const result = await runRepo(kind, repo, upsert);
+        if (result.failed) failures += 1;
+        else if (result.steps.some((step) => step.outcome)) acted += 1;
+
+        patch(repo.path, (row) => ({
+          ...row,
+          state: "done",
+          steps: result.steps,
+          headline: result.headline,
+          failed: result.failed,
+        }));
+        if (batchToken.current === token) {
+          setBatch((current) => (current ? { ...current, done: current.done + 1 } : current));
+        }
+      }
+
+      if (batchToken.current !== token) return;
+      const stopped = batchStopped.current;
+      setBatch((current) =>
+        current ? { ...current, running: false, cancelled: stopped } : current,
+      );
+      setNoteState({
+        text:
+          `${verbFor[kind]} ran in ${acted} ${acted === 1 ? "repository" : "repositories"}` +
+          (failures > 0 ? `, ${failures} failed` : "") +
+          (stopped ? ", then stopped" : "") +
+          ".",
+        onClick: () => setBatchOpen(true),
+      });
+    },
+    [repos, upsert],
+  );
+
+  /**
    * The one operation allowed to run out of sight, so the one that has to be
    * honest about failing.
    *
-   * `git fetch` reports most of what goes wrong through its exit status rather
-   * than by throwing, so catching the promise was never going to see an expired
-   * credential or a remote that has moved. Both halves are read here, and the
-   * count in the note is the count that actually succeeded.
+   * No dialog and no picking: the value of this action is that it is one
+   * keystroke over the whole fleet. The transcript is written anyway, and the
+   * note in the status bar opens it.
    */
-  async function fetchAll() {
-    setFetchReport(null);
+  const fetchAll = useCallback(() => {
+    setBatchKind("fetch");
     setNote("Fetching every repository…");
-    // A hidden repository is one the user has said they are not thinking about,
-    // so it stays out of the fleet-wide sweep too.
-    const targets = repos.filter(
-      (r) => !r.error && r.remoteUrl && !prefs.get(r.path)?.hidden,
+    return runBatch(
+      "fetch",
+      batchCandidates.filter((repo) => !isSkip(fetchPlan(repo))).map((repo) => repo.path),
     );
+  }, [batchCandidates, runBatch]);
 
-    const failures: FetchFailure[] = [];
-    let ok = 0;
-
-    for (const repo of targets) {
-      const outcome = await api
-        .gitRun(repo.path, ["fetch", "--prune", "--quiet"])
-        .catch(
-          (err): GitOutcome => ({
-            code: -1,
-            stdout: "",
-            stderr: String(err),
-            command: "git fetch --prune --quiet",
-          }),
-        );
-      if (outcome.code === 0) ok += 1;
-      else failures.push({ name: repo.name, path: repo.path, outcome });
-      refreshRepo(repo.path);
-    }
-
-    setFetchReport(failures.length > 0 ? { ok, failures } : null);
-    setNote(
-      failures.length === 0
-        ? `Fetched ${ok} repositories.`
-        : `Fetched ${ok}, ${failures.length} failed.`,
-    );
-  }
+  /**
+   * Opens a fresh pick stage.
+   *
+   * The epoch is what remounts the dialog. Ctrl+K reaches the palette over an
+   * open transcript, so asking for a prune while a finished sync was still on
+   * screen left the dialog mounted and holding the sixteen repositories the
+   * sync had selected.
+   */
+  const openBatch = useCallback((kind: BatchKind) => {
+    setBatchKind(kind);
+    setBatch(null);
+    setBatchEpoch((n) => n + 1);
+    setBatchOpen(true);
+  }, []);
 
   const paletteItems = useMemo<PaletteItem[]>(() => {
     const items: PaletteItem[] = [];
@@ -631,6 +740,24 @@ export default function App() {
       run: fetchAll,
     });
     items.push({
+      id: "action:batch-sync",
+      label: "Sync several repositories",
+      kind: "fleet",
+      hint: "fetch and fast-forward, with a transcript",
+      run: () => openBatch("sync"),
+    });
+    const prunable = batchCandidates.filter((repo) => repo.mergedBranches.length > 0);
+    if (prunable.length > 0) {
+      const branches = prunable.reduce((sum, repo) => sum + repo.mergedBranches.length, 0);
+      items.push({
+        id: "action:batch-prune",
+        label: `Prune merged branches across ${prunable.length} repositories`,
+        kind: "fleet",
+        hint: `${branches} branches, named before anything runs`,
+        run: () => openBatch("prune"),
+      });
+    }
+    items.push({
       id: "action:rescan",
       label: "Rescan the fleet",
       kind: "fleet",
@@ -660,6 +787,9 @@ export default function App() {
     askCloseShell,
     askSaveTask,
     copyBlock,
+    batchCandidates,
+    openBatch,
+    fetchAll,
   ]);
 
   const dirty = selected ? selected.staged + selected.modified : 0;
@@ -685,6 +815,7 @@ export default function App() {
           onQuery={setQuery}
           onSelect={setSelectedPath}
           onPin={setPinned}
+          onReorderPins={reorderPins}
           onHide={setHidden}
           onCloseShell={askCloseShell}
           onManageRoots={() => setRootsOpen(true)}
@@ -809,17 +940,17 @@ export default function App() {
           </button>
         )}
         {note &&
-          (fetchReport ? (
+          (note.onClick ? (
             <button
               className="status-link"
               style={{ color: "var(--amber)" }}
-              onClick={() => setReportOpen(true)}
-              title="What git said about each one"
+              onClick={note.onClick}
+              title="Every command it ran, and what git said"
             >
-              {note}
+              {note.text}
             </button>
           ) : (
-            <span style={{ color: "var(--amber)" }}>{note}</span>
+            <span style={{ color: "var(--amber)" }}>{note.text}</span>
           ))}
         <span className="spacer" />
         {info?.gitVersion && <span>{info.gitVersion}</span>}
@@ -855,43 +986,26 @@ export default function App() {
         />
       )}
 
-      {reportOpen && fetchReport && (
-        <div className="confirm-backdrop" onMouseDown={() => setReportOpen(false)}>
-          <div className="confirm wide" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>
-              {fetchReport.failures.length} of {fetchReport.ok + fetchReport.failures.length} did
-              not fetch
-            </h2>
-            <p>
-              Every other action types its command where you can read the output. Fetch-all is the
-              exception, so this is where its output goes. Running the same command in that
-              repository's shell is the way to see more.
-            </p>
-            <div className="report-list">
-              {fetchReport.failures.map((failure) => (
-                <div key={failure.path} className="report-row">
-                  <button
-                    className="report-name"
-                    onClick={() => {
-                      setSelectedPath(failure.path);
-                      setReportOpen(false);
-                    }}
-                    title={failure.path}
-                  >
-                    {failure.name}
-                  </button>
-                  <span className="report-code">exit {failure.outcome.code}</span>
-                  <pre>{failure.outcome.stderr.trim() || failure.outcome.stdout.trim() || "no output"}</pre>
-                </div>
-              ))}
-            </div>
-            <div className="confirm-actions">
-              <button className="btn" onClick={() => setReportOpen(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+      {batchOpen && (
+        <BatchDialog
+          key={`${batchKind}:${batchEpoch}`}
+          kind={batchKind}
+          candidates={batchCandidates}
+          run={batch}
+          onStart={(paths) => runBatch(batchKind, paths)}
+          onCancel={() => {
+            batchStopped.current = true;
+          }}
+          onSelect={(path) => {
+            setSelectedPath(path);
+            setBatchOpen(false);
+          }}
+          onCopy={async (text) => {
+            const copied = await copyText(text);
+            setNote(copied ? "Copied the transcript." : "The clipboard refused the copy.");
+          }}
+          onClose={() => setBatchOpen(false)}
+        />
       )}
 
       {pendingTask && (
