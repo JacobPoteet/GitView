@@ -29,6 +29,10 @@ const MAX_LINES: usize = 6000;
 /// and the renderer has to lay all of it out before it can clip it.
 const MAX_LINE: usize = 1000;
 
+/// git's own wording for the marker, written here rather than taken from
+/// libgit2, whose content for those origins is the line the marker follows.
+const NO_NEWLINE: &str = "No newline at end of file";
+
 /// One row of a hunk.
 ///
 /// `old` and `new` are the line numbers on each side, absent on the side the
@@ -229,25 +233,32 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
             let Ok(line) = patch.line_in_hunk(h, l) else {
                 continue;
             };
-            let raw = String::from_utf8_lossy(line.content());
-            let text = raw.trim_end_matches(['\n', '\r']);
-            let clipped = text.chars().count() > MAX_LINE;
-            let text: String = if clipped {
-                text.chars().take(MAX_LINE).collect()
-            } else {
-                text.to_string()
-            };
-            // libgit2 reports the end-of-file markers as their own origins.
-            // `>` and `<` are an added or deleted final line with no newline;
-            // they are the added and deleted line, so they fold into `+` and
-            // `-`. `=` is the "no newline" note itself and stays a row of its
-            // own, because a patch rebuilt from these has to emit it again.
+            // libgit2 reports "no newline at end of file" as three origins of
+            // its own: `=` when neither side has the newline, `>` when the old
+            // side had it, `<` when the new side gained it. None of the three
+            // is a line of content, and folding `>` into `+` counted the marker
+            // as an addition and drew it as one. All three become the marker
+            // row, which a patch rebuilt from these rows has to emit anyway.
             let origin = match line.origin() {
-                '+' | '>' => '+',
-                '-' | '<' => '-',
-                '=' => '\\',
+                '+' => '+',
+                '-' => '-',
+                '=' | '>' | '<' => '\\',
                 other => other,
             };
+
+            let (text, clipped) = if origin == '\\' {
+                (NO_NEWLINE.to_string(), false)
+            } else {
+                let raw = String::from_utf8_lossy(line.content());
+                let text = raw.trim_end_matches(['\n', '\r']);
+                let clipped = text.chars().count() > MAX_LINE;
+                if clipped {
+                    (text.chars().take(MAX_LINE).collect(), true)
+                } else {
+                    (text.to_string(), false)
+                }
+            };
+
             match origin {
                 '+' => out.additions += 1,
                 '-' => out.deletions += 1,
@@ -435,5 +446,33 @@ mod tests {
         assert!(unstaged.error.is_none(), "{:?}", unstaged.error);
         assert!(unstaged.empty);
         assert!(unstaged.hunks.is_empty());
+    }
+
+    /// libgit2 reports "no newline at end of file" as its own origin, and there
+    /// are three of them: `=` when neither side has the newline, `>` when the
+    /// old side had it, `<` when the new side gained it. None of the three is a
+    /// line of content. Folding `>` into `+` counted the marker as an addition
+    /// and drew it as one.
+    #[test]
+    fn the_no_newline_marker_is_not_a_changed_line() {
+        let fixture = Fixture::new("eofnl");
+        fixture.write("a.txt", "one\ntwo\n");
+        fixture.stage("a.txt");
+        fixture.commit("first");
+
+        // Same two lines, and the trailing newline taken off.
+        fixture.write("a.txt", "one\ntwo");
+
+        let diff = read_file(&fixture.dir, "a.txt", false);
+
+        assert!(diff.error.is_none(), "{:?}", diff.error);
+        assert_eq!(diff.additions, 1, "one line changed, not two");
+        assert_eq!(diff.deletions, 1);
+        assert_eq!(added(&diff), vec!["two"]);
+        let markers: Vec<char> = diff.hunks[0].lines.iter().map(|l| l.origin).collect();
+        assert!(
+            markers.contains(&'\\'),
+            "the marker keeps a row of its own, got {markers:?}"
+        );
     }
 }

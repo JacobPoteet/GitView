@@ -1,0 +1,17 @@
+Count the no-newline marker as a marker, not as a line
+
+libgit2 reports "no newline at end of file" as three origins of its own: `=`
+when neither side has the trailing newline, `>` when the old side had it, `<`
+when the new side gained it. The first pass folded `>` into `+` and `<` into
+`-`, on the reading that they were the added and deleted final line.
+
+They are not lines of content. A file whose last line lost its newline counted
+two additions where git counts one, and drew the marker as a line of code. All
+three are the marker row now, which is what git prints and what a patch rebuilt
+from these rows has to emit.
+
+Found while working out what hunk staging would need from these rows, which is
+the same question. The text comes from here rather than from libgit2, whose
+content for those origins is the line the marker follows.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
