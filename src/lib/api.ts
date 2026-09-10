@@ -3,6 +3,7 @@ import type {
   AppInfo,
   BranchGraph,
   FileChange,
+  FileDiff,
   GitOutcome,
   Inbox,
   RepoPref,
@@ -26,6 +27,9 @@ export const api = {
   repoTasks: (path: string) => invoke<Task[]>("repo_tasks", { path }),
   repoGraph: (path: string) => invoke<BranchGraph>("repo_graph", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
+  /** One file, on one side of the index. Read per file, not per working tree. */
+  repoDiff: (path: string, file: string, staged: boolean) =>
+    invoke<FileDiff>("repo_diff", { path, file, staged }),
 
   repoPrefs: () => invoke<RepoPref[]>("repo_prefs"),
   repoSetHidden: (path: string, hidden: boolean) =>
@@ -48,6 +52,18 @@ export const api = {
 
   /** The latest release, read through gh. One call, at launch. */
   updateCheck: () => invoke<UpdateCheck>("update_check"),
+
+  /**
+   * Writes one hunk out as a patch under GitView's data folder and hands back
+   * the path, which is the argument the typed `git apply` needs.
+   */
+  diffHunkPatch: (
+    path: string,
+    file: string,
+    staged: boolean,
+    hunkIndex: number,
+    header: string,
+  ) => invoke<string>("diff_hunk_patch", { path, file, staged, hunkIndex, header }),
 
   gitRun: (path: string, args: string[]) =>
     invoke<GitOutcome>("git_run", { path, args }),

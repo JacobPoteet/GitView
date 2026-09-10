@@ -12,6 +12,7 @@ import TaskList from "./components/TaskList";
 import BranchGraph from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
+import DiffPane from "./components/DiffPane";
 import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
@@ -36,6 +37,7 @@ import {
   type AppInfo,
   type BranchGraph as Graph,
   type CommandBlock,
+  type DiffTarget,
   type FileChange,
   type Inbox,
   type RepoPref,
@@ -92,6 +94,14 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [changes, setChanges] = useState<FileChange[]>([]);
   const [graph, setGraph] = useState<Graph | null>(null);
+  /**
+   * The file the diff pane is showing, or nothing.
+   *
+   * Held here rather than in the changes column because the pane it opens is an
+   * overlay on the main column, which the column does not own, and because the
+   * side has to be able to follow a file that has just been staged.
+   */
+  const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   const [graphCollapsed, setGraphCollapsed] = useState(
     () => localStorage.getItem(GRAPH_KEY) === "1",
   );
@@ -280,6 +290,52 @@ export default function App() {
     };
   }, [selectedPath]);
 
+  /**
+   * Keep the diff pane pointed at something that still exists.
+   *
+   * Staging a file from inside the pane is the ordinary case: the row it was
+   * opened from disappears from Changed and reappears under Staged one refresh
+   * later. Closing the pane there would mean it shut itself every time it was
+   * used, so the side follows the file, and only a file that has left the
+   * working tree entirely closes it.
+   */
+  useEffect(() => {
+    if (!diffTarget) return;
+    if (diffTarget.repoPath !== selectedPath) {
+      setDiffTarget(null);
+      return;
+    }
+    const sides = changes.filter((c) => c.path === diffTarget.file);
+    if (sides.length === 0) {
+      setDiffTarget(null);
+      return;
+    }
+    if (!sides.some((c) => c.staged === diffTarget.staged)) {
+      setDiffTarget({ ...diffTarget, staged: sides[0].staged });
+    }
+  }, [changes, diffTarget, selectedPath]);
+
+  const openDiff = useCallback(
+    (file: string, staged: boolean) => {
+      if (!selectedPath) return;
+      setDiffTarget((current) =>
+        current && current.file === file && current.staged === staged
+          ? null
+          : { repoPath: selectedPath, file, staged },
+      );
+    },
+    [selectedPath],
+  );
+
+  /** Which sides of the open file the working tree has, for the pane's tabs. */
+  const diffSides = useMemo(() => {
+    const rows = diffTarget ? changes.filter((c) => c.path === diffTarget.file) : [];
+    return {
+      staged: rows.some((c) => c.staged),
+      unstaged: rows.some((c) => !c.staged),
+    };
+  }, [changes, diffTarget]);
+
   // The graph is cheap enough to read fresh, and it has to move the moment HEAD
   // does. Keying on the branch and its counts rather than on `scannedAt` keeps a
   // refresh that changed nothing from redrawing the strip.
@@ -332,6 +388,7 @@ export default function App() {
         setBatchOpen((open) => (open && batch?.running === true ? open : false));
         setInboxOpen(false);
         setUpdateOpen(false);
+        setDiffTarget(null);
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -1145,6 +1202,21 @@ gh pr view ${branchPr.number} --web`}
             </p>
           </div>
         )}
+        {diffTarget && (
+          <DiffPane
+            target={diffTarget}
+            sides={diffSides}
+            disabled={!shellReady}
+            shell={shell}
+            /* `changes` is replaced whenever the working tree is re-read, which
+               is exactly when a diff can have changed under the pane. */
+            reloadKey={changes}
+            onSide={(staged) => setDiffTarget({ ...diffTarget, staged })}
+            onClose={() => setDiffTarget(null)}
+            onCommand={emit}
+            onError={setNote}
+          />
+        )}
         {inboxOpen && (
           <InboxPane
             inbox={inbox}
@@ -1177,7 +1249,9 @@ gh pr view ${branchPr.number} --web`}
         changes={changes}
         disabled={!shellReady}
         shell={shell}
+        open={diffTarget}
         onCommand={emit}
+        onOpenDiff={openDiff}
       />
 
       <div className="status-bar">

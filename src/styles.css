@@ -1372,23 +1372,34 @@ input {
   cursor: default;
 }
 
+/* Two controls, not one: the name opens the diff and the verb types the
+   command. The row is the container that lights up for either. */
 .change-row {
   display: flex;
   align-items: center;
-  gap: 7px;
   width: 100%;
-  text-align: left;
-  padding: 4px 7px;
   border-radius: 6px;
   transition: background 0.12s var(--ease);
 }
 
-.change-row:hover:not(:disabled) {
+.change-row:hover {
   background: var(--bg-hover);
 }
 
-.change-row:disabled {
-  cursor: default;
+/* The file the diff pane is showing. It stays lit while the pane is up, so the
+   column says which of sixteen rows the overlay belongs to. */
+.change-row.open {
+  background: var(--accent-soft);
+}
+
+.change-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+  padding: 4px 2px 4px 7px;
 }
 
 .change-mark {
@@ -1452,17 +1463,24 @@ input {
   color: var(--text);
 }
 
+/* Invisible until the row is under the cursor. The verb is an action, and a
+   list of sixteen files reads as a list rather than as sixteen buttons. */
 .change-verb {
-  margin-left: auto;
   flex: none;
+  padding: 4px 7px;
   font-family: var(--font-mono);
   font-size: 10px;
   color: transparent;
   transition: color 0.12s var(--ease);
 }
 
-.change-row:hover:not(:disabled) .change-verb {
+.change-row:hover .change-verb:not(:disabled),
+.change-verb:focus-visible {
   color: var(--accent);
+}
+
+.change-verb:disabled {
+  cursor: default;
 }
 
 /* ------------------------------------------------------------------ commit */
@@ -2244,4 +2262,262 @@ input {
 
 .head-pr:hover {
   background: var(--bg-active);
+}
+
+/* ------------------------------------------------------------------- diff */
+/* One file, unified, over the main column. An overlay for the reason the inbox
+   is one: the grid is full at 296 + 1fr + 300, and an overlay leaves the
+   terminal at its own size, so the shell behind it keeps running at the width
+   it had rather than being remounted into a 0x0 container. */
+
+.diff-pane {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: fade 0.12s var(--ease);
+}
+
+.diff-pane .tab-path {
+  flex: 1;
+  color: var(--text-dim);
+}
+
+.diff-pane .pane-close {
+  margin-left: 0;
+}
+
+.diff-sides {
+  flex: none;
+  display: flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 5px;
+  background: var(--bg-inset);
+}
+
+.diff-sides button {
+  padding: 1px 7px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.diff-sides button:hover {
+  color: var(--text);
+}
+
+.diff-sides button.on {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.diff-tally {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.diff-tally .add {
+  color: var(--green);
+}
+
+.diff-tally .del {
+  color: var(--red);
+}
+
+.diff-stage {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 4px;
+  color: var(--accent);
+  transition: background 0.12s var(--ease);
+}
+
+.diff-stage:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.diff-stage:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* One scroller for both axes. A long line scrolls the whole file sideways
+   rather than each row on its own, which is what keeps the gutters aligned. */
+.diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 24px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+/* The scroll width belongs to the file, not to each hunk. With `min-width` on
+   the hunks, a hunk holding a 600-character line was 4163 px wide and its short
+   neighbours were 884, so scrolling right to read the long one took the short
+   ones off the left edge of the pane entirely. */
+.diff-hunks {
+  min-width: min-content;
+}
+
+/* The band spans the whole scroll width; its text does not. `position: sticky`
+   on the band itself buys nothing, because the band already starts at offset
+   zero of a container several thousand pixels wide, so scrolling right carries
+   the words off the left edge. The inner run is what sticks. */
+.diff-hunk-head {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.diff-hunk-head .stick {
+  flex: none;
+  position: sticky;
+  left: 0;
+  display: inline-flex;
+  gap: 10px;
+  max-width: 100%;
+  padding: 0 12px;
+}
+
+/* Pushed to the far end of a band that can be several thousand pixels wide,
+   then pulled back to the right edge of the scrollport. It lands in the same
+   place whether the file is scrolled sideways or not. */
+.hunk-apply {
+  flex: none;
+  margin-left: auto;
+  position: sticky;
+  right: 8px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.diff-hunk:hover .hunk-apply:not(:disabled),
+.hunk-apply:focus-visible {
+  color: var(--accent);
+}
+
+.hunk-apply:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.hunk-apply:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.diff-hunk-head .range {
+  color: var(--accent);
+}
+
+.diff-hunk-head .context {
+  color: var(--text-dim);
+  white-space: pre;
+}
+
+.diff-line {
+  display: flex;
+  white-space: pre;
+}
+
+/* A fixed width, so the two gutters stay a straight edge whatever the numbers
+   run to, and sticky, so they survive a line scrolled sideways.
+   Dimmed by colour rather than by `opacity`: opacity applies to the element's
+   own background too, so a 600-character line showed through the numbers it
+   was supposed to be scrolling behind. */
+.diff-line .ln {
+  flex: none;
+  width: 44px;
+  padding-right: 8px;
+  text-align: right;
+  color: color-mix(in oklch, var(--text-faint) 70%, transparent);
+  user-select: none;
+  position: sticky;
+  left: 0;
+  background: inherit;
+}
+
+.diff-line .ln + .ln {
+  left: 44px;
+}
+
+.diff-line .sign {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  position: sticky;
+  left: 88px;
+  background: inherit;
+}
+
+.diff-line .text {
+  flex: 1;
+  padding-right: 16px;
+}
+
+.diff-line.context {
+  background: var(--bg);
+  color: var(--text-dim);
+}
+
+.diff-line.add {
+  background: color-mix(in oklch, var(--green) 12%, var(--bg));
+  color: var(--text);
+}
+
+.diff-line.add .sign {
+  color: var(--green);
+}
+
+.diff-line.del {
+  background: color-mix(in oklch, var(--red) 12%, var(--bg));
+  color: var(--text);
+}
+
+.diff-line.del .sign {
+  color: var(--red);
+}
+
+.diff-line.note {
+  background: var(--bg);
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.diff-line .clipped {
+  color: var(--amber);
+  font-style: italic;
+}
+
+.diff-rename {
+  padding: 8px 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.diff-note {
+  padding: 12px;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: center;
+}
+
+.diff-note code {
+  color: var(--text-dim);
 }

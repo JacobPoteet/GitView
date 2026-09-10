@@ -89,6 +89,56 @@ export interface FileChange {
   staged: boolean;
 }
 
+/**
+ * One row of a hunk.
+ *
+ * `old` and `new` are the line numbers on each side, absent on the side the
+ * line does not exist on. A `\` row is git's "No newline at end of file".
+ */
+export interface DiffLine {
+  origin: " " | "+" | "-" | "\\";
+  old: number | null;
+  new: number | null;
+  text: string;
+  /** The line was longer than the backend's cap; this is the front of it. */
+  clipped: boolean;
+}
+
+export interface DiffHunk {
+  /** The `@@ -a,b +c,d @@` line, with the function context git puts after it. */
+  header: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+/** One file's diff, on one side of the index. */
+export interface FileDiff {
+  path: string;
+  /** Where a rename came from. Null for everything else. */
+  oldPath: string | null;
+  staged: boolean;
+  status: FileChange["state"];
+  binary: boolean;
+  additions: number;
+  deletions: number;
+  hunks: DiffHunk[];
+  /** The read stopped at the backend's line cap. */
+  truncated: boolean;
+  /** Nothing on this side, which a row can outlive its diff by a moment. */
+  empty: boolean;
+  error: string | null;
+}
+
+/** Which file the diff pane is showing, and from which side. */
+export interface DiffTarget {
+  repoPath: string;
+  file: string;
+  staged: boolean;
+}
+
 /** What one sweep did, including any preferences that followed a renamed folder. */
 export interface ScanReport {
   scanned: number;

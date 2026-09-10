@@ -5,6 +5,7 @@
 //! through `gitops`, and the terminal lives in `pty`.
 
 pub mod cache;
+pub mod diff;
 pub mod fleet;
 pub mod github;
 pub mod gitops;
@@ -22,6 +23,7 @@ use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
 use cache::{Adoption, Cache, RepoPref};
+use diff::FileDiff;
 use fleet::{FileChange, RepoState};
 use github::{GhStatus, Inbox};
 use gitops::GitOutcome;
@@ -120,6 +122,44 @@ async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
     tauri::async_runtime::spawn_blocking(move || fleet::read_changes(&PathBuf::from(&path)))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// One file's diff, on one side of the index.
+///
+/// Read on demand, per file, rather than for the whole working tree: the pane
+/// shows one file at a time and sixteen changed files is an ordinary afternoon
+/// here. The side is passed in because a file staged and then edited again has
+/// two diffs, and the changes column already lists it twice for that reason.
+#[tauri::command]
+async fn repo_diff(path: String, file: String, staged: bool) -> Result<FileDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        diff::read_file(&PathBuf::from(&path), &file, staged)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Writes one hunk out as a patch and hands back the path.
+///
+/// Staging a hunk is the only action here whose argument cannot be typed, since
+/// the argument is the hunk. The patch file is that argument: it lands under
+/// GitView's own data folder, never in the repository, and the frontend types
+/// `git apply --cached` against it at the prompt like every other action. What
+/// ran is on screen and the file it ran on is still there to read.
+#[tauri::command]
+async fn diff_hunk_patch(
+    path: String,
+    file: String,
+    staged: bool,
+    hunk_index: usize,
+    header: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = diff::hunk_patch(&PathBuf::from(&path), &file, staged, hunk_index, &header)?;
+        diff::write_patch(&path, &file, staged, hunk_index, &text)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// One repository, read fresh. The frontend calls this after the terminal goes
@@ -410,6 +450,8 @@ pub fn run() {
             repo_refresh,
             repo_graph,
             repo_changes,
+            repo_diff,
+            diff_hunk_patch,
             repo_prefs,
             repo_set_hidden,
             repo_set_pinned,

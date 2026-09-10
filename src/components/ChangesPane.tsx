@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FileChange, RepoState } from "../lib/types";
+import type { DiffTarget, FileChange, RepoState } from "../lib/types";
 import { commitCommand, quote, type ShellKind } from "../lib/shell";
 
 interface Props {
@@ -8,7 +8,10 @@ interface Props {
   /** No live shell means nothing here has anywhere to run. */
   disabled: boolean;
   shell: ShellKind;
+  /** The file the diff pane is showing, so its row reads as selected. */
+  open: DiffTarget | null;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onOpenDiff: (file: string, staged: boolean) => void;
 }
 
 /**
@@ -37,16 +40,30 @@ function splitPath(path: string): { dir: string; file: string } {
     : { dir: path.slice(0, cut + 1), file: path.slice(cut + 1) };
 }
 
+/**
+ * The row is two controls, not one.
+ *
+ * Reading a file and staging it are separate acts and always were. Until the
+ * diff pane existed there was nowhere to read one, so the whole row typed
+ * `git add` and the verb at the end was a label. Now the name opens the diff
+ * and the verb is the button that types the command, which is the arrangement
+ * the rest of the app already uses: the part you click to look at something,
+ * and the part that names what it runs.
+ */
 function Row({
   change,
+  open,
   disabled,
   shell,
   onCommand,
+  onOpenDiff,
 }: {
   change: FileChange;
+  open: boolean;
   disabled: boolean;
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onOpenDiff: (file: string, staged: boolean) => void;
 }) {
   const arg = quote(change.path, shell);
   // Unstaging is `restore --staged`, not `reset HEAD`, because it says what it
@@ -55,32 +72,43 @@ function Row({
   const { dir, file } = splitPath(change.path);
 
   return (
-    <button
-      className={`change-row ${change.state}`}
-      disabled={disabled || change.state === "conflicted"}
-      onClick={(event) => onCommand(command, event.shiftKey)}
-      title={
-        change.state === "conflicted"
-          ? `${change.path}\n\nResolve this one in the shell first.`
-          : `${change.path}\n\n${command}\nShift-click to type it without running it.`
-      }
-    >
-      <span className={`change-mark ${change.state}`}>{MARK[change.state]}</span>
-      <span className="change-path">
-        {/* The folders truncate from the left, so the end of the path survives
-            in a narrow column. That takes `direction: rtl`, which then reorders
-            the trailing slash to the front and renders `src/lib/` as `/src/lib`.
-            `bdi` isolates the run as its own left-to-right paragraph, which
-            keeps the order while the outer span still clips at the start. */}
-        {dir && (
-          <span className="dir">
-            <bdi>{dir}</bdi>
-          </span>
-        )}
-        <span className="file">{file}</span>
-      </span>
-      <span className="change-verb">{change.staged ? "unstage" : "stage"}</span>
-    </button>
+    <div className={`change-row ${change.state}${open ? " open" : ""}`}>
+      <button
+        className="change-open"
+        onClick={() => onOpenDiff(change.path, change.staged)}
+        title={`${change.path}\n\nOpen the diff`}
+      >
+        <span className={`change-mark ${change.state}`}>{MARK[change.state]}</span>
+        <span className="change-path">
+          {/* The folders truncate from the left, so the end of the path survives
+              in a narrow column. That takes `direction: rtl`, which then
+              reorders the trailing slash to the front and renders `src/lib/` as
+              `/src/lib`. `bdi` isolates the run as its own left-to-right
+              paragraph, which keeps the order while the outer span still clips
+              at the start. */}
+          {dir && (
+            <span className="dir">
+              <bdi>{dir}</bdi>
+            </span>
+          )}
+          <span className="file">{file}</span>
+        </span>
+      </button>
+      {/* A conflicted file has no single command that resolves it, so it keeps
+          the diff and loses the verb rather than offering a button that lies. */}
+      <button
+        className="change-verb"
+        disabled={disabled || change.state === "conflicted"}
+        onClick={(event) => onCommand(command, event.shiftKey)}
+        title={
+          change.state === "conflicted"
+            ? "Resolve this one in the shell first."
+            : `${command}\nShift-click to type it without running it.`
+        }
+      >
+        {change.state === "conflicted" ? "" : change.staged ? "unstage" : "stage"}
+      </button>
+    </div>
   );
 }
 
@@ -89,17 +117,21 @@ function Section({
   rows,
   bulk,
   bulkLabel,
+  open,
   disabled,
   shell,
   onCommand,
+  onOpenDiff,
 }: {
   label: string;
   rows: FileChange[];
   bulk: string;
   bulkLabel: string;
+  open: DiffTarget | null;
   disabled: boolean;
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onOpenDiff: (file: string, staged: boolean) => void;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -120,16 +152,26 @@ function Section({
         <Row
           key={`${change.staged ? "s" : "w"}:${change.path}`}
           change={change}
+          open={open?.file === change.path && open.staged === change.staged}
           disabled={disabled}
           shell={shell}
           onCommand={onCommand}
+          onOpenDiff={onOpenDiff}
         />
       ))}
     </div>
   );
 }
 
-export default function ChangesPane({ repo, changes, disabled, shell, onCommand }: Props) {
+export default function ChangesPane({
+  repo,
+  changes,
+  disabled,
+  shell,
+  open,
+  onCommand,
+  onOpenDiff,
+}: Props) {
   const [message, setMessage] = useState("");
 
   // A message belongs to the repository it was written for. Carrying a draft to
@@ -184,18 +226,22 @@ export default function ChangesPane({ repo, changes, disabled, shell, onCommand 
           rows={conflicted}
           bulk="git status"
           bulkLabel="status"
+          open={open}
           disabled={disabled}
           shell={shell}
           onCommand={onCommand}
+          onOpenDiff={onOpenDiff}
         />
         <Section
           label="Changed"
           rows={unstaged}
           bulk="git add -A"
           bulkLabel="stage all"
+          open={open}
           disabled={disabled}
           shell={shell}
           onCommand={onCommand}
+          onOpenDiff={onOpenDiff}
         />
       </div>
 
@@ -210,9 +256,11 @@ export default function ChangesPane({ repo, changes, disabled, shell, onCommand 
             rows={staged}
             bulk="git restore --staged ."
             bulkLabel="unstage all"
+            open={open}
             disabled={disabled}
             shell={shell}
             onCommand={onCommand}
+            onOpenDiff={onOpenDiff}
           />
         </div>
       )}
