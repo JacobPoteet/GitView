@@ -4,6 +4,7 @@ import type {
   BranchGraph,
   FileChange,
   GitOutcome,
+  Inbox,
   RepoPref,
   RepoState,
   ScanReport,
@@ -38,6 +39,11 @@ export const api = {
   taskSave: (repoPath: string, name: string, command: string) =>
     invoke<Task>("task_save", { repoPath, name, command }),
   taskDelete: (id: string) => invoke<void>("task_delete", { id }),
+
+  /** The inbox as last read, so the pane paints before gh is asked anything. */
+  githubCached: () => invoke<Inbox | null>("github_cached"),
+  /** One GraphQL request for the whole fleet, through the gh CLI. */
+  githubRefresh: () => invoke<Inbox>("github_refresh"),
 
   gitRun: (path: string, args: string[]) =>
     invoke<GitOutcome>("git_run", { path, args }),

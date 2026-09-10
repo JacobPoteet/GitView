@@ -58,6 +58,7 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
 | `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
+| `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |
 | `src-tauri/src/pty.rs` | Terminal sessions, and the base64 that hands the shell its prompt hook |
 | `src-tauri/src/shell_integration.ps1` | The OSC 133 hook. Source, not an asset: `include_str!` puts it in the binary |
 | `src-tauri/src/tasks.rs` | Task discovery across manifests |
@@ -68,10 +69,12 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 
 | Rule | Why |
 | --- | --- |
-| Repository reads go through `git2`, network operations go through `git.exe` | Credential helpers and SSH agents work for free through the CLI. Reimplementing auth is where other GUIs collect "cannot push" reports |
+| Repository reads go through `git2`, network operations go through `git.exe`, GitHub goes through `gh` | Credential helpers and SSH agents work for free through the CLI. Reimplementing auth is where other GUIs collect "cannot push" reports. The same argument covers the API: `gh api graphql` means GitView never sources, stores or redacts a token, and there is no HTTP client in the binary to add one with |
 | A terminal session is never closed on a view change | Closing it would kill a dev server every time the user looked at another project |
 | Every action names the command it runs | The GUI accelerates a habit of typing git rather than hiding it. Shift-click types instead of running |
 | No generated commit messages, no agent panel, no account, no telemetry | These are the features that made the tool being replaced feel bloated |
+| GitHub is read out of sight, but written by typing | A fleet-wide read has nowhere to type, the same as fetch-all. A merge does: `gh pr merge` gets typed into that repository's shell like every other action |
+| A command aimed at a repository waits for its session, never for a timer | `sendCommand` writes to the PTY directly, so a command sent while the shell is still starting is lost with an unhandled rejection. Select the repository, then send when `live` reports it |
 | Numbers in the wiki are measurements | If a note states a timing or a count, it was measured. Mark a target as a target |
 | A preference is never stored in `RepoState` | That struct is scanner output, cached as a blob and rewritten every sweep. Pins and hides live in `repo_pref` and `task_pref`, and the frontend merges them |
 | A schema change reaches an installed database by `ALTER TABLE` | The one on this machine holds pins and saved tasks somebody set. `add_column_if_missing` checks `PRAGMA table_info` rather than catching an error whose message would also cover a real failure, and a new column that replaces an old sort key is backfilled from it so the upgrade changes nothing on screen |

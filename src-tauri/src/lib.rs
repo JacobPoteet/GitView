@@ -6,6 +6,7 @@
 
 pub mod cache;
 pub mod fleet;
+pub mod github;
 pub mod gitops;
 pub mod graph;
 pub mod pty;
@@ -21,6 +22,7 @@ use tauri::{Manager, State};
 
 use cache::{Adoption, Cache, RepoPref};
 use fleet::{FileChange, RepoState};
+use github::{GhStatus, Inbox};
 use gitops::GitOutcome;
 use graph::BranchGraph;
 use pty::PtyManager;
@@ -51,6 +53,9 @@ pub struct AppInfo {
     /// Whether this shell gets OSC 133 marks, which is what makes command
     /// blocks possible. A shell without them is not broken, it just has none.
     shell_integration: bool,
+    /// Whether `gh` is on PATH and logged in, which is what the inbox needs.
+    /// Reported rather than assumed, the same way shell integration is.
+    gh: GhStatus,
     data_dir: String,
     roots: Vec<String>,
 }
@@ -229,6 +234,41 @@ fn task_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state.cache.delete_task(&id).map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------- github
+
+/// The inbox as it was last read. Paints before `gh` has been asked anything.
+#[tauri::command]
+fn github_cached(state: State<'_, AppState>) -> Option<Inbox> {
+    state.cache.inbox()
+}
+
+/// One GraphQL request for the whole fleet.
+///
+/// The targets are built here rather than in the frontend so the query is
+/// assembled from what the scanner parsed out of each origin URL.
+#[tauri::command]
+async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
+    let cache = state.cache.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let targets: Vec<(String, String, String)> = cache
+            .all_repos()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|repo| repo.owner_repo.map(|owner| (repo.path, repo.name, owner)))
+            .collect();
+
+        let inbox = github::fetch(&targets, cache::now_secs());
+        // A failed sweep leaves the last good one in place, so the pane does not
+        // empty itself because a laptop was off the network.
+        if inbox.error.is_none() {
+            let _ = cache.put_inbox(&inbox);
+        }
+        inbox
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------- git
 
 #[tauri::command]
@@ -328,6 +368,7 @@ fn app_info(state: State<'_, AppState>) -> AppInfo {
     let shell = pty::default_shell();
     AppInfo {
         git_version: gitops::version(),
+        gh: github::status(),
         shell_integration: pty::is_powershell(&shell),
         shell,
         data_dir: cache::data_dir().to_string_lossy().to_string(),
@@ -363,6 +404,8 @@ pub fn run() {
             repo_tasks,
             task_save,
             task_delete,
+            github_cached,
+            github_refresh,
             git_run,
             pty_open,
             pty_write,
