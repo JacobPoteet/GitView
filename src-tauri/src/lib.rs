@@ -139,6 +139,29 @@ async fn repo_diff(path: String, file: String, staged: bool) -> Result<FileDiff,
     .map_err(|e| e.to_string())
 }
 
+/// Writes one hunk out as a patch and hands back the path.
+///
+/// Staging a hunk is the only action here whose argument cannot be typed, since
+/// the argument is the hunk. The patch file is that argument: it lands under
+/// GitView's own data folder, never in the repository, and the frontend types
+/// `git apply --cached` against it at the prompt like every other action. What
+/// ran is on screen and the file it ran on is still there to read.
+#[tauri::command]
+async fn diff_hunk_patch(
+    path: String,
+    file: String,
+    staged: bool,
+    hunk_index: usize,
+    header: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = diff::hunk_patch(&PathBuf::from(&path), &file, staged, hunk_index, &header)?;
+        diff::write_patch(&path, &file, staged, hunk_index, &text)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// One repository, read fresh. The frontend calls this after the terminal goes
 /// quiet, which is how a commit typed by hand reaches the sidebar.
 #[tauri::command]
@@ -428,6 +451,7 @@ pub fn run() {
             repo_graph,
             repo_changes,
             repo_diff,
+            diff_hunk_patch,
             repo_prefs,
             repo_set_hidden,
             repo_set_pinned,

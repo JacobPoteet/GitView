@@ -2357,7 +2357,11 @@ input {
   line-height: 1.55;
 }
 
-.diff-hunk {
+/* The scroll width belongs to the file, not to each hunk. With `min-width` on
+   the hunks, a hunk holding a 600-character line was 4163 px wide and its short
+   neighbours were 884, so scrolling right to read the long one took the short
+   ones off the left edge of the pane entirely. */
+.diff-hunks {
   min-width: min-content;
 }
 
@@ -2366,6 +2370,8 @@ input {
    zero of a container several thousand pixels wide, so scrolling right carries
    the words off the left edge. The inner run is what sticks. */
 .diff-hunk-head {
+  display: flex;
+  align-items: center;
   padding: 3px 0;
   background: var(--bg-raised);
   border-top: 1px solid var(--line);
@@ -2375,12 +2381,44 @@ input {
 }
 
 .diff-hunk-head .stick {
+  flex: none;
   position: sticky;
   left: 0;
   display: inline-flex;
   gap: 10px;
   max-width: 100%;
   padding: 0 12px;
+}
+
+/* Pushed to the far end of a band that can be several thousand pixels wide,
+   then pulled back to the right edge of the scrollport. It lands in the same
+   place whether the file is scrolled sideways or not. */
+.hunk-apply {
+  flex: none;
+  margin-left: auto;
+  position: sticky;
+  right: 8px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.diff-hunk:hover .hunk-apply:not(:disabled),
+.hunk-apply:focus-visible {
+  color: var(--accent);
+}
+
+.hunk-apply:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.hunk-apply:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .diff-hunk-head .range {

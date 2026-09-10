@@ -53,6 +53,18 @@ export const api = {
   /** The latest release, read through gh. One call, at launch. */
   updateCheck: () => invoke<UpdateCheck>("update_check"),
 
+  /**
+   * Writes one hunk out as a patch under GitView's data folder and hands back
+   * the path, which is the argument the typed `git apply` needs.
+   */
+  diffHunkPatch: (
+    path: string,
+    file: string,
+    staged: boolean,
+    hunkIndex: number,
+    header: string,
+  ) => invoke<string>("diff_hunk_patch", { path, file, staged, hunkIndex, header }),
+
   gitRun: (path: string, args: string[]) =>
     invoke<GitOutcome>("git_run", { path, args }),
 

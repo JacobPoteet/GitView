@@ -19,6 +19,8 @@ interface Props {
   onSide: (staged: boolean) => void;
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
+  /** Where a refused patch goes. The status bar, like every other refusal. */
+  onError: (message: string) => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export default function DiffPane({
   onSide,
   onClose,
   onCommand,
+  onError,
 }: Props) {
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [reading, setReading] = useState(true);
@@ -97,6 +100,31 @@ export default function DiffPane({
     ? `git restore --staged -- ${arg}`
     : `git add -- ${arg}`;
   const verb = target.staged ? "unstage" : "stage";
+
+  /**
+   * One hunk, staged or unstaged.
+   *
+   * The only action in this app whose argument cannot be typed, because the
+   * argument is the hunk. So the hunk becomes a file: the backend writes it out
+   * as a patch under GitView's own data folder, and what gets typed at the
+   * prompt is `git apply --cached` against that path. The command is readable,
+   * re-runnable, and the file it names is still there afterwards.
+   */
+  async function applyHunk(index: number, header: string, typeOnly: boolean) {
+    try {
+      const patch = await api.diffHunkPatch(
+        target.repoPath,
+        target.file,
+        target.staged,
+        index,
+        header,
+      );
+      const reverse = target.staged ? "--reverse " : "";
+      onCommand(`git apply --cached ${reverse}${quote(patch, shell)}`, typeOnly);
+    } catch (err) {
+      onError(String(err));
+    }
+  }
 
   return (
     <section className="diff-pane">
@@ -175,32 +203,69 @@ export default function DiffPane({
           </p>
         )}
 
-        {diff?.hunks.map((hunk, index) => {
-          const { range, context } = splitHeader(hunk.header);
-          return (
-            <div className="diff-hunk" key={`${hunk.oldStart}:${hunk.newStart}:${index}`}>
-              <div className="diff-hunk-head">
-                {/* The band is as wide as the widest line in the file. This
+        {/* One wrapper around every hunk, and it is what sets the scroll width.
+            Per-hunk `min-width` gave each hunk its own, so scrolling right to
+            read a 600-character line carried the short hunks off the left edge
+            and out of the pane. */}
+        <div className="diff-hunks">
+          {diff?.hunks.map((hunk, index) => {
+            const { range, context } = splitHeader(hunk.header);
+            return (
+              <div
+                className="diff-hunk"
+                key={`${hunk.oldStart}:${hunk.newStart}:${index}`}
+              >
+                <div className="diff-hunk-head">
+                  {/* The band is as wide as the widest line in the file. This
                     span is what stays on screen when one is scrolled. */}
-                <span className="stick">
-                  <span className="range">{range}</span>
-                  {context && <span className="context">{context}</span>}
-                </span>
-              </div>
-              {hunk.lines.map((line, row) => (
-                <div className={`diff-line ${TONE[line.origin] ?? "context"}`} key={row}>
-                  <span className="ln">{line.old ?? ""}</span>
-                  <span className="ln">{line.new ?? ""}</span>
-                  <span className="sign">{line.origin === "\\" ? "\\" : line.origin}</span>
-                  <span className="text">
-                    {line.text}
-                    {line.clipped && <span className="clipped"> … line clipped</span>}
+                  <span className="stick">
+                    <span className="range">{range}</span>
+                    {context && <span className="context">{context}</span>}
                   </span>
+                  {/* Sticky to the other edge, so it is where the eye expects a
+                    button however far the file has been scrolled sideways. */}
+                  <button
+                    className="hunk-apply"
+                    disabled={disabled}
+                    onClick={(event) =>
+                      applyHunk(index, hunk.header, event.shiftKey)
+                    }
+                    title={
+                      disabled
+                        ? "No shell open for this repository."
+                        : `git apply --cached ${target.staged ? "--reverse " : ""}<patch>
+
+GitView writes this hunk out as a patch under its own data folder, never into
+the repository, and types the command that applies it. The prompt shows the
+path it wrote.
+Shift-click to type it without running it.`
+                    }
+                  >
+                    {verb} hunk
+                  </button>
                 </div>
-              ))}
-            </div>
-          );
-        })}
+                {hunk.lines.map((line, row) => (
+                  <div
+                    className={`diff-line ${TONE[line.origin] ?? "context"}`}
+                    key={row}
+                  >
+                    <span className="ln">{line.old ?? ""}</span>
+                    <span className="ln">{line.new ?? ""}</span>
+                    <span className="sign">
+                      {line.origin === "\\" ? "\\" : line.origin}
+                    </span>
+                    <span className="text">
+                      {line.text}
+                      {line.clipped && (
+                        <span className="clipped"> … line clipped</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
 
         {diff?.truncated && (
           <p className="diff-note">

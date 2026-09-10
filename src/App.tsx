@@ -1214,6 +1214,7 @@ gh pr view ${branchPr.number} --web`}
             onSide={(staged) => setDiffTarget({ ...diffTarget, staged })}
             onClose={() => setDiffTarget(null)}
             onCommand={emit}
+            onError={setNote}
           />
         )}
         {inboxOpen && (

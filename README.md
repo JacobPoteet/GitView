@@ -7,7 +7,7 @@ run and build commands for each project sit next to the repository that needs th
 
 > [!NOTE]
 > The fleet scanner, the persistent terminal, task discovery, the branch graph, command blocks, the
-> GitHub inbox and the diff view work. Hunk staging and the full commit history are designed but not
+> GitHub inbox, the diff view and hunk staging work. The full commit history is designed but not
 > built. See [Status](#status).
 
 ## Why
@@ -59,6 +59,10 @@ Three rules shape the whole app:
   opens over the terminal, unified, on whichever side of the index that row belongs to. A file
   staged and then edited again has both, and the pane says which one you are reading. The shell
   behind it keeps running.
+- **A hunk at a time.** Each hunk has a button that stages it on its own. A hunk is the one argument
+  nobody can type at a prompt, so GitView writes it out as a patch under its own data folder and
+  types `git apply --cached` against that path, which is what `git add -p` does underneath. The
+  command is in the scrollback and the patch is still on disk to read.
 - **Updates that name their command.** GitView asks GitHub for its own latest release once per
   launch. When there is a newer one the status bar says so, and the dialog hands you the
   `gh release download` line to run at the prompt, like every other action here.
@@ -186,8 +190,8 @@ times per repository per refresh is slow enough to feel.
 | 1 | Command blocks via OSC 133, saving a block as a task, ports, copying a failure | Built |
 | 1 | Sync and prune across several repositories with a transcript, dragging to reorder pins | Built |
 | 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Built |
-| 3 | The diff pane: one file, unified, on either side of the index | Built |
-| 3 | Hunk staging, the full commit graph | Designed |
+| 3 | The diff pane, and staging one hunk of it through a typed `git apply` | Built |
+| 3 | The full commit graph | Designed |
 | 4 | Worktree lanes and a local API for agents | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and
