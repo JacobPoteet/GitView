@@ -102,8 +102,46 @@ export interface GitOutcome {
   command: string;
 }
 
+/** Whether `gh` is on PATH and logged in, which is all the inbox needs. */
+export interface GhStatus {
+  version: string | null;
+  loggedIn: boolean;
+}
+
+/** One pull request or issue, flattened out of the fleet-wide GraphQL query. */
+export interface InboxItem {
+  kind: "pr" | "issue";
+  repoPath: string;
+  repoName: string;
+  ownerRepo: string;
+  number: number;
+  title: string;
+  url: string;
+  updatedAt: string;
+  author: string;
+  draft: boolean;
+  /** PRs only, so the header can match it against HEAD. */
+  headRef: string | null;
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  /** The check rollup on the head commit. */
+  checks: "SUCCESS" | "FAILURE" | "PENDING" | "ERROR" | "EXPECTED" | null;
+  mine: boolean;
+  reviewRequested: boolean;
+  assigned: boolean;
+}
+
+export interface Inbox {
+  viewer: string | null;
+  items: InboxItem[];
+  fetchedAt: number;
+  /** Repositories the query could not resolve. They drop out of the sweep. */
+  unresolved: string[];
+  error: string | null;
+}
+
 export interface AppInfo {
   gitVersion: string | null;
+  gh: GhStatus;
   shell: string;
   /** Whether this shell emits OSC 133 marks, so blocks are possible at all. */
   shellIntegration: boolean;

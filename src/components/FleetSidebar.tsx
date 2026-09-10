@@ -1,9 +1,21 @@
 import { useMemo, useRef, useState } from "react";
 import { attentionScore, isClean, unpushed, type RepoPref, type RepoState } from "../lib/types";
 
+/** What the inbox knows about one repository, merged in the way prefs are. */
+export interface RepoGithub {
+  open: number;
+  failing: boolean;
+}
+
 interface Props {
   repos: RepoState[];
   prefs: Map<string, RepoPref>;
+  /** Empty until the inbox has been read. */
+  github: Map<string, RepoGithub>;
+  /** Pull requests and issues wanting something from this person. */
+  inboxWaiting: number;
+  /** Null when gh is absent, which is when there is no inbox to open. */
+  onOpenInbox: (() => void) | null;
   selectedPath: string | null;
   liveSessions: Set<string>;
   query: string;
@@ -73,7 +85,7 @@ function HideIcon({ hidden }: { hidden: boolean }) {
   );
 }
 
-function Chips({ repo }: { repo: RepoState }) {
+function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
   const dirty = repo.staged + repo.modified;
   const local = unpushed(repo);
   const base = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
@@ -117,6 +129,21 @@ function Chips({ repo }: { repo: RepoState }) {
       {repo.localBranchCount > 1 && (
         <span className="chip branches" title={`${repo.localBranchCount} local branches`}>
           ⑂{repo.localBranchCount}
+        </span>
+      )}
+      {/* GitHub state, which the scan cannot see. Absent until the inbox has
+          been read once, so a row never claims zero open pull requests. */}
+      {github && github.open > 0 && (
+        <span
+          className={`chip pr${github.failing ? " failing" : ""}`}
+          title={
+            github.failing
+              ? `${github.open} open pull requests, checks failing on one`
+              : `${github.open} open pull requests`
+          }
+        >
+          ⇅{github.open}
+          {github.failing && "!"}
         </span>
       )}
     </span>
@@ -168,6 +195,7 @@ function Row({
   live,
   pinned,
   hidden,
+  github,
   orderable,
   drag,
   onSelect,
@@ -185,6 +213,7 @@ function Row({
   live: boolean;
   pinned: boolean;
   hidden: boolean;
+  github?: RepoGithub;
   /** False on every row outside the pinned group, which has no order to set. */
   orderable: boolean;
   drag: DragRole;
@@ -254,7 +283,7 @@ function Row({
         <span className="repo-row-top">
           <span className={`dot ${state}`} />
           <span className="repo-name">{repo.name}</span>
-          <Chips repo={repo} />
+          <Chips repo={repo} github={github} />
         </span>
         <span className="repo-row-bottom">
           <span className="branch">
@@ -322,6 +351,9 @@ export default function FleetSidebar({
   query,
   scanning,
   onQuery,
+  github,
+  inboxWaiting,
+  onOpenInbox,
   onSelect,
   onPin,
   onReorderPins,
@@ -412,6 +444,7 @@ export default function FleetSidebar({
       live={liveSessions.has(repo.path)}
       pinned={prefs.get(repo.path)?.pinnedAt != null}
       hidden={prefs.get(repo.path)?.hidden === true}
+      github={github.get(repo.path)}
       orderable={inPinnedGroup && orderable}
       drag={inPinnedGroup ? roleFor(repo.path) : "none"}
       onSelect={onSelect}
@@ -450,6 +483,31 @@ export default function FleetSidebar({
           </svg>
           GitView
         </span>
+        {/* The inbox belongs here rather than in the repository header: it is a
+            question about the whole fleet, and the header only exists once one
+            repository is open, which is the moment you least need it. */}
+        {onOpenInbox && (
+          <button
+            className={`icon-btn${inboxWaiting > 0 ? " badged" : ""}`}
+            onClick={onOpenInbox}
+            title={
+              inboxWaiting > 0
+                ? `GitHub inbox: ${inboxWaiting} waiting on you`
+                : "GitHub inbox: pull requests and issues across the fleet"
+            }
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path
+                d="M1.8 8.5h3l1 1.7h4.4l1-1.7h3M1.8 8.5 3.4 3.2A1 1 0 0 1 4.4 2.5h7.2a1 1 0 0 1 1 .7l1.6 5.3v3.3a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1V8.5Z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {inboxWaiting > 0 && <span className="badge-count">{inboxWaiting}</span>}
+          </button>
+        )}
         <button className="icon-btn" onClick={onManageRoots} title="Folders GitView watches">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />

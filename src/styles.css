@@ -483,6 +483,7 @@ input {
 /* ------------------------------------------------------------------ main */
 
 .main {
+  position: relative;
   grid-area: main;
   display: flex;
   flex-direction: column;
@@ -1956,4 +1957,260 @@ input {
 
 .text-input:focus {
   border-color: var(--accent-line);
+}
+
+/* ------------------------------------------------------------------ inbox */
+/* Fleet-wide pull requests and issues, over the main column rather than in a
+   fourth one: the grid is full at 296 + 1fr + 300, and an overlay leaves the
+   terminal at its own size so its ResizeObserver never sees a 0x0 container.
+   The session behind this pane keeps running, which is the point. */
+
+.inbox-pane {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: fade 0.12s var(--ease);
+}
+
+.inbox-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 16px;
+}
+
+.inbox-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.inbox-row:hover {
+  background: var(--bg-hover);
+}
+
+.inbox-main {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  padding: 7px 8px;
+}
+
+.inbox-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.inbox-kind {
+  flex: none;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--bg);
+}
+
+.inbox-kind.pr {
+  background: var(--accent);
+}
+
+.inbox-kind.issue {
+  background: var(--text-faint);
+}
+
+.inbox-number {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.inbox-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  padding-left: 26px;
+}
+
+.inbox-repo {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.inbox-when {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.inbox-badge {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+}
+
+.inbox-badge.approved {
+  color: var(--green);
+  border-color: color-mix(in oklch, var(--green) 45%, transparent);
+}
+
+.inbox-badge.changes {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
+}
+
+.inbox-badge.review {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.inbox-badge.draft {
+  color: var(--text-faint);
+}
+
+.inbox-checks {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inbox-checks.ok {
+  color: var(--green);
+}
+
+.inbox-checks.bad {
+  color: var(--red);
+}
+
+.inbox-checks.pending {
+  color: var(--amber);
+}
+
+/* The actions sit over the row's right edge like the sidebar's do, so a wide
+   title is not permanently short by the width of three buttons. */
+.inbox-actions {
+  position: absolute;
+  right: 6px;
+  display: none;
+  gap: 4px;
+  padding-left: 18px;
+  background: linear-gradient(90deg, transparent, var(--bg-hover) 30%);
+}
+
+.inbox-row:hover .inbox-actions,
+.inbox-row:focus-within .inbox-actions {
+  display: flex;
+}
+
+.btn.tiny {
+  font-size: 10.5px;
+  padding: 2px 7px;
+}
+
+.inbox-notice {
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.inbox-notice p {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.inbox-notice p + p {
+  margin-top: 5px;
+}
+
+.inbox-notice pre {
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inbox-unresolved {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Open pull requests on a sidebar row. The scan cannot see these. */
+.chip.pr {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chip.pr.failing {
+  color: var(--red);
+  background: color-mix(in oklch, var(--red) 16%, transparent);
+}
+
+/* The inbox button carries a count when something wants a reply. */
+.icon-btn.badged {
+  color: var(--accent);
+}
+
+.icon-btn {
+  position: relative;
+}
+
+.badge-count {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+}
+
+/* The pull request for the branch on screen, when the inbox has found one. */
+.head-pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.head-pr:hover {
+  background: var(--bg-active);
 }

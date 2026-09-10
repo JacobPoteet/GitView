@@ -14,6 +14,7 @@ import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
 import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
+import InboxPane from "./components/InboxPane";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
@@ -35,6 +36,7 @@ import {
   type BranchGraph as Graph,
   type CommandBlock,
   type FileChange,
+  type Inbox,
   type RepoPref,
   type RepoState,
   type Task,
@@ -120,6 +122,21 @@ export default function App() {
   const [note, setNoteState] = useState<Note | null>(null);
   const setNote = useCallback((text: string) => setNoteState({ text }), []);
   const [blocks, setBlocks] = useState<CommandBlock[]>([]);
+  const [inbox, setInbox] = useState<Inbox | null>(null);
+  /**
+   * A command waiting for its repository's shell to exist.
+   *
+   * An inbox row can act on a repository that is not open, and `sendCommand`
+   * writes to the PTY directly, so firing it after a fixed delay loses the
+   * command whenever spawning the shell takes longer than the guess. This waits
+   * for the session to report itself live instead.
+   */
+  const [pendingCommand, setPendingCommand] = useState<{
+    path: string;
+    command: string;
+  } | null>(null);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxReading, setInboxReading] = useState(false);
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
@@ -192,9 +209,16 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const [cached, appInfo] = await Promise.all([api.fleetCached(), api.appInfo()]);
+        const [cached, appInfo, storedInbox] = await Promise.all([
+          api.fleetCached(),
+          api.appInfo(),
+          // Cached like the fleet rows, so the pane has something before gh is
+          // asked anything.
+          api.githubCached().catch(() => null),
+        ]);
         if (cancelled) return;
         setRepos(cached);
+        setInbox(storedInbox);
         setInfo(appInfo);
         setRoots(appInfo.roots);
         await loadPrefs();
@@ -301,6 +325,7 @@ export default function App() {
         // A batch that is still running keeps its dialog: closing it would hide
         // the only place the commands it is about to run are reported.
         setBatchOpen((open) => (open && batch?.running === true ? open : false));
+        setInboxOpen(false);
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -308,6 +333,14 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [batch?.running]);
+
+  useEffect(() => {
+    if (!pendingCommand || !live.has(pendingCommand.path)) return;
+    sendCommand(pendingCommand.path, pendingCommand.command).catch((err) =>
+      setNote(String(err)),
+    );
+    setPendingCommand(null);
+  }, [pendingCommand, live, setNote]);
 
   const noteTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -622,6 +655,44 @@ export default function App() {
    * screen left the dialog mounted and holding the sixteen repositories the
    * sync had selected.
    */
+  /**
+   * One GraphQL request for the whole fleet, through the gh CLI.
+   *
+   * A failed read keeps the last good list on screen rather than emptying the
+   * pane, because the usual reason is a laptop that was off the network.
+   */
+  const refreshInbox = useCallback(async () => {
+    setInboxReading(true);
+    try {
+      const next = await api.githubRefresh();
+      setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
+      if (next.error) setNote(next.error);
+      else if (next.unresolved.length > 0) {
+        setNote(`Read the inbox. ${next.unresolved.length} did not resolve.`);
+      }
+    } catch (err) {
+      setNote(String(err));
+    } finally {
+      setInboxReading(false);
+    }
+  }, [setNote]);
+
+  /**
+   * One read on launch when the cached copy has gone stale.
+   *
+   * Without it the sidebar badge stays at whatever it was when the app last
+   * closed, which is a number that looks live and is not. Ten minutes because
+   * the query costs one point out of five thousand an hour.
+   */
+  const inboxLaunched = useRef(false);
+  useEffect(() => {
+    if (inboxLaunched.current) return;
+    if (!info?.gh.version || !info.gh.loggedIn) return;
+    inboxLaunched.current = true;
+    const age = inbox ? Math.floor(Date.now() / 1000) - inbox.fetchedAt : Infinity;
+    if (age > 600) refreshInbox();
+  }, [info, inbox, refreshInbox]);
+
   const openBatch = useCallback((kind: BatchKind) => {
     setBatchKind(kind);
     setBatch(null);
@@ -757,6 +828,30 @@ export default function App() {
         run: () => openBatch("prune"),
       });
     }
+    if (info?.gh.version) {
+      const waiting = (inbox?.items ?? []).filter(
+        (item) => item.reviewRequested || item.assigned,
+      ).length;
+      items.push({
+        id: "action:inbox",
+        label: "GitHub inbox",
+        kind: "fleet",
+        hint: waiting > 0 ? `${waiting} waiting on you` : "pull requests and issues, fleet-wide",
+        run: () => setInboxOpen(true),
+      });
+      for (const item of inbox?.items ?? []) {
+        items.push({
+          id: `gh:${item.ownerRepo}:${item.kind}${item.number}`,
+          label: `${item.repoName} #${item.number} ${item.title}`,
+          kind: item.kind === "pr" ? "git" : "task",
+          hint: item.kind === "pr" ? "pull request" : "issue",
+          run: () => {
+            setSelectedPath(item.repoPath);
+            setInboxOpen(true);
+          },
+        });
+      }
+    }
     items.push({
       id: "action:rescan",
       label: "Rescan the fleet",
@@ -790,7 +885,52 @@ export default function App() {
     batchCandidates,
     openBatch,
     fetchAll,
+    inbox,
+    info,
   ]);
+
+  /** Items that want something from this person, which is what a badge means. */
+  const inboxWaiting = useMemo(
+    () =>
+      (inbox?.items ?? []).filter((item) => item.reviewRequested || item.assigned).length,
+    [inbox],
+  );
+
+  /**
+   * Open pull requests per repository, for the sidebar chip.
+   *
+   * Built from the inbox rather than stored on `RepoState`, which is scanner
+   * output and cannot see GitHub. Same merge the preferences get.
+   */
+  const repoGithub = useMemo(() => {
+    const map = new Map<string, { open: number; failing: boolean }>();
+    for (const item of inbox?.items ?? []) {
+      if (item.kind !== "pr") continue;
+      const row = map.get(item.repoPath) ?? { open: 0, failing: false };
+      row.open += 1;
+      if (item.checks === "FAILURE" || item.checks === "ERROR") row.failing = true;
+      map.set(item.repoPath, row);
+    }
+    return map;
+  }, [inbox]);
+
+  /**
+   * The open pull request for the branch that is checked out, when there is one.
+   *
+   * Matched on `headRef` rather than looked up, because the inbox has already
+   * been read and this is the one row of it that belongs to what is on screen.
+   */
+  const branchPr = useMemo(() => {
+    if (!selected?.branch) return null;
+    return (
+      (inbox?.items ?? []).find(
+        (item) =>
+          item.kind === "pr" &&
+          item.repoPath === selected.path &&
+          item.headRef === selected.branch,
+      ) ?? null
+    );
+  }, [inbox, selected]);
 
   const dirty = selected ? selected.staged + selected.modified : 0;
   const hiddenCount = useMemo(
@@ -808,6 +948,9 @@ export default function App() {
         <FleetSidebar
           repos={repos}
           prefs={prefs}
+          github={repoGithub}
+          inboxWaiting={inboxWaiting}
+          onOpenInbox={info?.gh.version ? () => setInboxOpen(true) : null}
           selectedPath={selectedPath}
           liveSessions={live}
           query={query}
@@ -835,6 +978,41 @@ export default function App() {
             <header className="repo-head">
               <div className="repo-title">
                 <h1>{selected.name}</h1>
+                {branchPr && (
+                  <button
+                    className="head-pr"
+                    title={`${branchPr.title}
+
+gh pr view ${branchPr.number} --web`}
+                    onClick={() => setInboxOpen(true)}
+                  >
+                    PR #{branchPr.number}
+                    {branchPr.draft && <span className="inbox-badge draft">draft</span>}
+                    {branchPr.reviewDecision === "APPROVED" && (
+                      <span className="inbox-badge approved">approved</span>
+                    )}
+                    {branchPr.reviewDecision === "CHANGES_REQUESTED" && (
+                      <span className="inbox-badge changes">changes</span>
+                    )}
+                    {branchPr.checks && (
+                      <span
+                        className={`inbox-checks ${
+                          branchPr.checks === "SUCCESS"
+                            ? "ok"
+                            : branchPr.checks === "FAILURE" || branchPr.checks === "ERROR"
+                              ? "bad"
+                              : "pending"
+                        }`}
+                      >
+                        {branchPr.checks === "SUCCESS"
+                          ? "✓"
+                          : branchPr.checks === "FAILURE" || branchPr.checks === "ERROR"
+                            ? "✕"
+                            : "•"}
+                      </span>
+                    )}
+                  </button>
+                )}
                 <span className="path">
                   {selected.branch ?? "no commits"}
                   {selected.ahead > 0 && ` ↑${selected.ahead}`}
@@ -915,6 +1093,31 @@ export default function App() {
             </p>
           </div>
         )}
+        {inboxOpen && (
+          <InboxPane
+            inbox={inbox}
+            gh={info?.gh ?? null}
+            refreshing={inboxReading}
+            onRefresh={refreshInbox}
+            onClose={() => setInboxOpen(false)}
+            onSelect={(path) => {
+              setSelectedPath(path);
+              setInboxOpen(false);
+            }}
+            onCommand={(path, command) => {
+              // The command lands in that repository's shell, which means
+              // selecting it first: a session belongs to a repository. The
+              // command waits for that shell rather than for a timer.
+              setSelectedPath(path);
+              setInboxOpen(false);
+              setPendingCommand({ path, command });
+            }}
+            onCopy={async (text) => {
+              const copied = await copyText(text);
+              setNote(copied ? `Copied ${text}` : "The clipboard refused the copy.");
+            }}
+          />
+        )}
       </main>
 
       <ChangesPane
@@ -953,6 +1156,19 @@ export default function App() {
             <span style={{ color: "var(--amber)" }}>{note.text}</span>
           ))}
         <span className="spacer" />
+        {info && (
+          <span
+            title={
+              info.gh.version
+                ? info.gh.loggedIn
+                  ? `${info.gh.version}, logged in. The inbox reads GitHub through it, so GitView never holds a token.`
+                  : `${info.gh.version}, not logged in. Run gh auth login.`
+                : "gh is not on PATH, so there is no inbox."
+            }
+          >
+            {info.gh.version ? (info.gh.loggedIn ? "gh" : "gh · no auth") : "no gh"}
+          </span>
+        )}
         {info?.gitVersion && <span>{info.gitVersion}</span>}
         {info && (
           <span

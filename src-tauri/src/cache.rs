@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::fleet::RepoState;
+use crate::github::Inbox;
 use crate::tasks::Task;
 
 pub struct Cache {
@@ -160,6 +161,13 @@ impl Cache {
                 created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS saved_task_repo ON saved_task (repo_path);
+
+            -- The GitHub inbox, cached as one blob so the pane paints on
+            -- launch the way the fleet list does. One row, id 1.
+            CREATE TABLE IF NOT EXISTS github_inbox (
+                id   INTEGER PRIMARY KEY CHECK (id = 1),
+                json TEXT NOT NULL
+            );
 
             CREATE TABLE IF NOT EXISTS setting (
                 key   TEXT PRIMARY KEY,
@@ -497,6 +505,31 @@ impl Cache {
         let conn = self.conn.lock();
         conn.execute("DELETE FROM saved_task WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // -------------------------------------------------------------- github
+
+    /// The last inbox that came back, so the pane has something to draw before
+    /// `gh` has been asked anything.
+    pub fn put_inbox(&self, inbox: &Inbox) -> Result<()> {
+        let json = serde_json::to_string(inbox)?;
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO github_inbox (id, json) VALUES (1, ?1)
+             ON CONFLICT(id) DO UPDATE SET json = ?1",
+            params![json],
+        )?;
+        Ok(())
+    }
+
+    pub fn inbox(&self) -> Option<Inbox> {
+        let conn = self.conn.lock();
+        let json: String = conn
+            .query_row("SELECT json FROM github_inbox WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .ok()?;
+        serde_json::from_str(&json).ok()
     }
 
     pub fn get_setting(&self, key: &str) -> Option<String> {
