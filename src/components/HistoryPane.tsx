@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { relativeTime, type HistoryRow } from "../lib/types";
+import { relativeTime, type HistoryRow, type Squashed } from "../lib/types";
 
 interface Props {
   repoPath: string;
   repoName: string;
   /** No live shell means a commit has nowhere to be shown. */
   disabled: boolean;
+  /**
+   * Branches that were squash-merged, and the commit each one became.
+   *
+   * A squash leaves no link in the object database, so the branch forks off and
+   * stops and the commit that swallowed it looks like anybody's. These are the
+   * two ends of a join nothing else in the picture can draw.
+   */
+  squashed: Squashed[];
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
   onError: (message: string) => void;
@@ -58,6 +66,7 @@ export default function HistoryPane({
   repoPath,
   repoName,
   disabled,
+  squashed,
   onClose,
   onCommand,
   onError,
@@ -222,6 +231,17 @@ export default function HistoryPane({
 
   const gutter = Math.min(lanes, 16) * LANE + LANE;
 
+  // Both ends of the join, by the two things a row knows about itself: its own
+  // id, and the branch names sitting on it.
+  const swallowed = new Map<string, Squashed[]>();
+  const isTipOf = new Map<string, Squashed>();
+  for (const entry of squashed) {
+    const at = swallowed.get(entry.into) ?? [];
+    at.push(entry);
+    swallowed.set(entry.into, at);
+    isTipOf.set(entry.branch, entry);
+  }
+
   return (
     <section className="history-pane">
       <div className="pane-tab-bar">
@@ -264,6 +284,8 @@ export default function HistoryPane({
               row={row}
               top={(first + offset) * ROW}
               gutter={gutter}
+              swallowed={swallowed.get(row.id) ?? null}
+              tipOf={row.refs.map((r) => isTipOf.get(r.name)).find(Boolean) ?? null}
               disabled={disabled}
               onCommand={onCommand}
             />
@@ -278,12 +300,18 @@ function Row({
   row,
   top,
   gutter,
+  swallowed,
+  tipOf,
   disabled,
   onCommand,
 }: {
   row: HistoryRow;
   top: number;
   gutter: number;
+  /** Branches this commit is, under another name, through a squash. */
+  swallowed: Squashed[] | null;
+  /** Set when this row is the tip of a branch that was squashed onto the trunk. */
+  tipOf: Squashed | null;
   disabled: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
 }) {
@@ -306,7 +334,28 @@ function Row({
           {ref.name}
         </span>
       ))}
+      {swallowed?.map((entry) => (
+        <span
+          key={entry.branch}
+          className="history-ref squashed"
+          title={`This commit is ${entry.branch}, squashed onto ${entry.base}. It rolled up ${entry.commits} ${entry.commits === 1 ? "commit" : "commits"}.
+
+A squash keeps no link to the branch it came from, so the two are joined here by their patch rather than by git.`}
+        >
+          ⤳ {entry.branch}
+        </span>
+      ))}
       <span className="history-summary">{row.summary || "(no message)"}</span>
+      {tipOf && (
+        <span
+          className="history-squashed-into"
+          title={`${tipOf.intoSummary}
+
+This branch ends here because a squash rebuilt its ${tipOf.commits} ${tipOf.commits === 1 ? "commit" : "commits"} as ${tipOf.intoShort} on ${tipOf.base}. Nothing in git links the two.`}
+        >
+          squashed into {tipOf.intoShort}
+        </span>
+      )}
       <span className="history-author">{row.author}</span>
       <span className="history-when">{relativeTime(row.time)}</span>
       <span className="history-sha">{row.short}</span>

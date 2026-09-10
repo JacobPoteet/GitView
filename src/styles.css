@@ -2697,3 +2697,34 @@ input {
   background: color-mix(in oklch, var(--amber) 14%, transparent);
   color: var(--amber);
 }
+
+/* A branch the trunk swallowed through a squash. git records no link between
+   the two, so both ends say so: the commit carries the branch name it is, and
+   the branch tip says which commit it became. Neither is a ref, so neither
+   borrows the ref colours. */
+.history-ref.squashed {
+  background: color-mix(in oklch, var(--lane-4) 14%, transparent);
+  border-color: color-mix(in oklch, var(--lane-4) 40%, transparent);
+  color: var(--lane-4);
+}
+
+.history-squashed-into {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  line-height: 16px;
+  color: var(--text-faint);
+  border: 1px dashed var(--line-strong);
+}
+
+.history-row:hover .history-squashed-into {
+  color: var(--lane-4);
+  border-color: color-mix(in oklch, var(--lane-4) 40%, transparent);
+}
+
+.chip.squashed {
+  background: color-mix(in oklch, var(--lane-4) 16%, transparent);
+  color: var(--lane-4);
+}

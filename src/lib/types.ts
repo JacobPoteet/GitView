@@ -132,6 +132,31 @@ export interface FileDiff {
   error: string | null;
 }
 
+/**
+ * A local branch whose content is already on the trunk under another commit.
+ *
+ * Squash-merging builds a new commit out of a branch and gives it one parent,
+ * so nothing in git links the two. This is the link, found by patch id.
+ */
+export interface Squashed {
+  branch: string;
+  /** The commit on the trunk carrying the same patch. */
+  into: string;
+  intoShort: string;
+  intoSummary: string;
+  /** The ref it was measured against. */
+  base: string;
+  /** Commits on the branch that the squash rolled into one. */
+  commits: number;
+  /** Standing on it, or it is the default branch. Never offer to delete it. */
+  protected: boolean;
+  /**
+   * A remote-tracking ref. Worth drawing the join for, since its stub is in
+   * the picture, and not something `git branch -D` can delete.
+   */
+  remote: boolean;
+}
+
 /** A branch or tag sitting on a commit in the history. */
 export interface HistoryRef {
   name: string;

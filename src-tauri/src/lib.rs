@@ -13,6 +13,7 @@ pub mod graph;
 pub mod history;
 pub mod pty;
 pub mod settings;
+pub mod squash;
 pub mod tasks;
 pub mod update;
 
@@ -31,6 +32,7 @@ use gitops::GitOutcome;
 use graph::BranchGraph;
 use history::History;
 use pty::PtyManager;
+use squash::Squashed;
 use tasks::Task;
 use update::UpdateCheck;
 
@@ -200,6 +202,18 @@ async fn repo_history(path: String, offset: usize, limit: usize) -> Result<Histo
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// Local branches that were squash-merged, and the commit each one became.
+///
+/// Read for the open repository rather than in the sweep: it costs a patch id
+/// per branch plus one per trunk commit since the fork, and the sweep is
+/// measured in milliseconds across the whole fleet.
+#[tauri::command]
+async fn repo_squashed(path: String) -> Result<Vec<Squashed>, String> {
+    tauri::async_runtime::spawn_blocking(move || squash::detect(&PathBuf::from(&path)))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ------------------------------------------------------------ preferences
@@ -467,6 +481,7 @@ pub fn run() {
             repo_refresh,
             repo_graph,
             repo_history,
+            repo_squashed,
             repo_changes,
             repo_diff,
             diff_hunk_patch,
