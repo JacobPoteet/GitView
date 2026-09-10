@@ -6,16 +6,40 @@ Documentation lives in an Obsidian vault outside this repository, not in `docs/`
 `.claude/wiki-path.local`, which is gitignored. Never write the vault path into tracked files, a
 comment, or a commit message. Call it "the wiki".
 
-Read the wiki's `GitView/Decision Log.md` before changing anything architectural. Most choices here
-have a reason recorded there, including the options already ruled out.
+Before changing anything architectural, grep `GitView/Decision Log.md` for the area you are
+touching. Most choices here have a reason recorded there, including the options already ruled out.
+It is one long table and it grows every PR, so search it rather than reading it end to end.
 
-**Every pull request does a pass on `CLAUDE.md` and on the wiki note covering what changed.** Wiki
-edits sit outside the repository, so they happen before the PR opens or they do not happen at all.
-A PR that changes the scanner updates `Architecture/Fleet Scanner.md`; a PR that adds a feature adds
-a note under `Features/` and links it from the index.
+**Every pull request updates the note that owns what changed, and `CLAUDE.md` when a rule moved.**
+Wiki edits sit outside the repository, so they happen before the PR opens or they do not happen at
+all. A PR that changes the scanner updates `Architecture/Fleet Scanner.md`; a PR that adds a feature
+adds a note under `Features/` and links it from the index.
 
-The wiki has its own house style, recorded in its `Wiki Conventions.md`. Follow it. It calls for
-the `stop-slop` skill on every note.
+### One note owns a change, the rest link to it
+
+| Note | Gets |
+| --- | --- |
+| The one that owns the change | the real pass: delete what became false, write what shipped, record what was measured |
+| Any other note that mentions it | one corrected sentence, or a `[[link]]`. No restructuring |
+| `Decision Log` | a row for a choice someone would otherwise re-litigate, and a dead-end row for something tried and reversed. Not a row per commit |
+| `Delivery Phases` and the index | one status entry per phase, not per PR |
+
+Write a finding once, in the note that owns it, and link to it from the others. The ConPTY marker
+findings landed in five notes in one PR, which is four copies to keep true from now on.
+
+### Where the tokens go, and what to skip
+
+| Skip | Instead |
+| --- | --- |
+| Reading a note end to end to change one section | grep for the heading, read that range, edit it |
+| Rewriting prose that is still true | delete what is false and leave the rest |
+| Per-file line counts in `Repo Map` | they go stale on every PR. Refresh them when the version bumps |
+| A "Measured" table for something nobody measured | a number in the wiki is a measurement. No measurement, no table |
+| A new note for a change that fits in an existing one | a note earns its file when it has a reader who would open it on its own |
+
+The wiki has its own house style, recorded in its `Wiki Conventions.md`. Follow it. It calls for the
+`stop-slop` skill, which governs the prose in a note you write or rewrite; load it once in a session
+rather than per note, and skip it for a one-line factual correction.
 
 ## Documents this repository keeps
 
