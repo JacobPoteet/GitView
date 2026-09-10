@@ -63,3 +63,35 @@ export function commitCommand(message: string, kind: ShellKind, amend = false): 
 export function openUrlCommand(url: string, kind: ShellKind): string {
   return kind === "powershell" ? `Start-Process ${quote(url, kind)}` : `open ${quote(url, kind)}`;
 }
+
+/**
+ * Fetching a release's installer and running it, as one line.
+ *
+ * The alternative was `tauri-plugin-updater`, which downloads and swaps the
+ * binary out of sight. That would be the one action in GitView that changes
+ * something on disk without naming what it ran, and it would put an HTTP client
+ * and a signing key into a project that has spent every other decision avoiding
+ * both. `gh` is already on the machine and already authenticated, so the update
+ * is the same shape as every other action here: a command at the prompt, with
+ * the tag it is pulling visible in it.
+ *
+ * `$env:TEMP` is the one thing on the line that must not be quoted, because the
+ * download needs the folder expanded rather than the literal text. `Join-Path`
+ * then hands the same folder to `Start-Process` without needing a second
+ * quoting style for a filename that came from GitHub.
+ */
+export function installUpdateCommand(
+  repo: string,
+  tag: string,
+  asset: string,
+  kind: ShellKind,
+): string {
+  const name = quote(asset, kind);
+  const download = `gh release download ${quote(tag, kind)} --repo ${quote(repo, kind)} --pattern ${name}`;
+  if (kind === "powershell") {
+    return `${download} --dir $env:TEMP --clobber; Start-Process (Join-Path $env:TEMP ${name})`;
+  }
+  // A release carries a Windows installer and nothing else, so the POSIX line
+  // stops at the download rather than pretending it can run what it fetched.
+  return `${download} --dir "\${TMPDIR:-/tmp}" --clobber`;
+}

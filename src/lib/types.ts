@@ -139,6 +139,38 @@ export interface Inbox {
   error: string | null;
 }
 
+/** The latest GitHub release, as `gh release view` reported it. */
+export interface Release {
+  /** `owner/repo`, so the typed command names where this was read from. */
+  repo: string;
+  /** `v0.2.0`, the tag `gh release download` wants. */
+  tag: string;
+  /** `0.2.0`, the tag as a version. */
+  version: string;
+  name: string;
+  url: string;
+  publishedAt: string;
+  /** The release body, capped by the backend. */
+  notes: string;
+  /** The installer on that release, absent while the release build is running. */
+  assetName: string | null;
+  assetSize: number | null;
+}
+
+/**
+ * What the launch check found.
+ *
+ * `error` never reaches a dialog. A machine off the network is not an event, so
+ * the status bar stays quiet and the palette row is the way to ask again.
+ */
+export interface UpdateCheck {
+  current: string;
+  latest: Release | null;
+  available: boolean;
+  checkedAt: number;
+  error: string | null;
+}
+
 export interface AppInfo {
   gitVersion: string | null;
   gh: GhStatus;

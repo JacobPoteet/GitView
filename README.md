@@ -55,6 +55,9 @@ Three rules shape the whole app:
 - **A failing build, in one copy.** The command, its directory, its exit code and its output go to
   the clipboard together, ready to paste into Claude in the next window.
 - **Command palette.** `Ctrl+K` for repositories, tasks and actions.
+- **Updates that name their command.** GitView asks GitHub for its own latest release once per
+  launch. When there is a newer one the status bar says so, and the dialog hands you the
+  `gh release download` line to run at the prompt, like every other action here.
 
 ## Installing it
 
@@ -64,6 +67,9 @@ no elevation.
 
 The installer is not code signed, so SmartScreen will warn on first run. **More info** then **Run
 anyway** is the way past it, and building from source below is the way around it.
+
+After that, GitView tells you when a newer release is out and hands you the command that fetches it.
+That check needs [`gh`](https://cli.github.com) installed and logged in, the same as the inbox.
 
 ## Requirements
 
