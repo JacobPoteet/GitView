@@ -6,9 +6,9 @@ The home screen is the whole fleet at once. The terminal is a primary pane rathe
 run and build commands for each project sit next to the repository that needs them.
 
 > [!NOTE]
-> The fleet scanner, the persistent terminal, task discovery, the branch graph, command blocks, the
-> GitHub inbox, the diff view and hunk staging work. The full commit history is designed but not
-> built. See [Status](#status).
+> Everything through Phase 3 works: the fleet scanner, the persistent terminal, task discovery, the
+> branch graph, command blocks, the GitHub inbox, the diff view, hunk staging and the commit
+> history. Worktree lanes and the local API are designed but not built. See [Status](#status).
 
 ## Why
 
@@ -63,6 +63,10 @@ Three rules shape the whole app:
   nobody can type at a prompt, so GitView writes it out as a patch under its own data folder and
   types `git apply --cached` against that path, which is what `git add -p` does underneath. The
   command is in the scrollback and the patch is still on disk to read.
+- **The whole history, scrolling.** Every commit on every branch, with the lanes drawn on a canvas
+  under rows that only exist while they are on screen. 5,500 commits read in 140 ms a page and
+  scroll at one frame a step. Clicking a commit types `git show --stat` into that repository's
+  shell.
 - **Updates that name their command.** GitView asks GitHub for its own latest release once per
   launch. When there is a newer one the status bar says so, and the dialog hands you the
   `gh release download` line to run at the prompt, like every other action here.
@@ -191,7 +195,7 @@ times per repository per refresh is slow enough to feel.
 | 1 | Sync and prune across several repositories with a transcript, dragging to reorder pins | Built |
 | 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Built |
 | 3 | The diff pane, and staging one hunk of it through a typed `git apply` | Built |
-| 3 | The full commit graph | Designed |
+| 3 | The commit history: canvas rails under virtualised rows, lanes packed in Rust | Built |
 | 4 | Worktree lanes and a local API for agents | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and

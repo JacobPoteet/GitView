@@ -132,6 +132,45 @@ export interface FileDiff {
   error: string | null;
 }
 
+/** A branch or tag sitting on a commit in the history. */
+export interface HistoryRef {
+  name: string;
+  kind: "head" | "local" | "remote" | "tag";
+}
+
+export interface HistoryRow {
+  id: string;
+  short: string;
+  summary: string;
+  author: string;
+  time: number;
+  parents: string[];
+  refs: HistoryRef[];
+  isMerge: boolean;
+  /** The column this commit's node sits in. */
+  lane: number;
+  /**
+   * What to draw between this row and the one under it, as [here, below].
+   * Two equal numbers is a lane passing through; unequal is a line sliding.
+   */
+  edges: [number, number][];
+}
+
+/** One page of the whole DAG, with its lanes already packed by the backend. */
+export interface History {
+  rows: HistoryRow[];
+  offset: number;
+  /** Commits in the whole walk, or the cap when it stopped counting. */
+  total: number;
+  capped: boolean;
+  /** Widest lane index used in this page, plus one. */
+  lanes: number;
+  /** Some commit wanted a seventeenth lane and got the sixteenth. */
+  crowded: boolean;
+  head: string | null;
+  error: string | null;
+}
+
 /** Which file the diff pane is showing, and from which side. */
 export interface DiffTarget {
   repoPath: string;

@@ -58,6 +58,7 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
 | `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index |
+| `src-tauri/src/history.rs` | The whole DAG, a page at a time, with its lanes already packed |
 | `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
 | `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |
 | `src-tauri/src/update.rs` | The launch check against the latest GitHub release, through the same `gh` invocation |
@@ -94,6 +95,8 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | A pane that wants a fourth column is an overlay on the main one | The grid is full at 296 + 1fr + 300. An overlay leaves the terminal mounted at the width it had, so the shell behind it keeps running and its `ResizeObserver` never sees a 0x0 container. The inbox and the diff pane both do this |
 | Staging a hunk types `git apply --cached` against a patch file | It is the one action whose argument nobody can type, since the argument is the hunk. Writing it out under GitView's data folder, never into the repository, makes the argument a path, so the command stays readable and re-runnable and the scrollback still says what happened. `git add -p` does the same underneath. Build the patch from libgit2's bytes rather than from the trimmed display rows, and give a lone hunk a new-side start of its own |
 | A diff is read without a pathspec, and capped at 6000 rows | Rename detection pairs a delete with an add, and a pathspec drops one half of the pair before `find_similar` sees it, so a renamed file arrives as a whole-file delete. The cap stands in for virtualisation: 6000 rows of plain DOM paint in 695 ms, and past it the pane names the `git diff` that has the rest |
+| The commit history packs its lanes in Rust and walks from the top for every page | A lane depends on every commit newer than it, so a page starting in the middle has nothing to work from. Walking oids is cheap and reading a commit's text is not, so the walk runs whole and only the rows asked for are read: 140 ms a page over 5,500 commits, and the same 140 ms whichever page |
+| A lane colour is never `--red` or `--amber` | Those already mean a failed command and a repository wanting attention. A trunk that lands in either reads as a warning it is not, so the history has `--lane-1` to `--lane-6` of its own |
 | A sticky element is dimmed by colour, never by `opacity` | Opacity applies to the element's own background, so a translucent line-number gutter lets a long line scroll straight through it |
 | The output channel belongs to the session, not to a React effect | An effect-owned callback drops everything a shell prints while its pane is off screen, which is most of what a dev server prints. Sessions outlive views, and so does their output |
 
@@ -136,11 +139,13 @@ were visual: a path rendered `/src/lib` because of a bidi reorder, two graph rai
 overlapped, and a commit message that followed the selection into the next repository. Command
 blocks added four, including one that had been dropping terminal output since Phase 0 whenever a
 build finished in a project nobody was looking at. The diff pane added two, both in gutters that
-only misbehave once a line is wider than the pane.
+only misbehave once a line is wider than the pane, and the commit history added two more that
+needed a throwaway repository with six branches to show at all.
 
 Some cases the eleven repositories here do not have. An unrelated history, a branch far ahead with
-no upstream, and a remote that does not resolve each need a throwaway repository; the wiki's
-`Operations/Local Development.md` records how to build them and the two traps in doing so.
+no upstream, a remote that does not resolve, and anything past a couple of hundred commits each need
+a throwaway repository; the wiki's `Operations/Local Development.md` records how to build them, and
+`git fast-import` is how to get thousands of commits in seconds rather than minutes.
 
 To click things from a script, start the app with WebView2 debugging on and drive the page over
 CDP:

@@ -13,6 +13,7 @@ import BranchGraph from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
 import DiffPane from "./components/DiffPane";
+import HistoryPane from "./components/HistoryPane";
 import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
@@ -102,6 +103,13 @@ export default function App() {
    * side has to be able to follow a file that has just been staged.
    */
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
+  /**
+   * Whether the scrolling history is up.
+   *
+   * A boolean rather than a path: it always belongs to whatever is selected,
+   * and it closes with the selection the way the diff pane does.
+   */
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [graphCollapsed, setGraphCollapsed] = useState(
     () => localStorage.getItem(GRAPH_KEY) === "1",
   );
@@ -300,6 +308,10 @@ export default function App() {
    * working tree entirely closes it.
    */
   useEffect(() => {
+    setHistoryOpen(false);
+  }, [selectedPath]);
+
+  useEffect(() => {
     if (!diffTarget) return;
     if (diffTarget.repoPath !== selectedPath) {
       setDiffTarget(null);
@@ -389,6 +401,7 @@ export default function App() {
         setInboxOpen(false);
         setUpdateOpen(false);
         setDiffTarget(null);
+        setHistoryOpen(false);
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -869,6 +882,13 @@ export default function App() {
       }
 
       items.push({
+        id: "action:history",
+        label: `History of ${selected.name}`,
+        kind: "fleet",
+        hint: "every commit on every branch",
+        run: () => setHistoryOpen(true),
+      });
+      items.push({
         id: "action:pin",
         label: `${pinned ? "Unpin" : "Pin"} ${selected.name}`,
         kind: "fleet",
@@ -1155,6 +1175,13 @@ gh pr view ${branchPr.number} --web`}
                 </button>
                 <button
                   className="btn"
+                  title={`Every commit on every branch of ${selected.name}`}
+                  onClick={() => setHistoryOpen(true)}
+                >
+                  History
+                </button>
+                <button
+                  className="btn"
                   title="Re-read this repository"
                   onClick={() => refreshRepo(selected.path)}
                 >
@@ -1213,6 +1240,16 @@ gh pr view ${branchPr.number} --web`}
             reloadKey={changes}
             onSide={(staged) => setDiffTarget({ ...diffTarget, staged })}
             onClose={() => setDiffTarget(null)}
+            onCommand={emit}
+            onError={setNote}
+          />
+        )}
+        {historyOpen && selected && (
+          <HistoryPane
+            repoPath={selected.path}
+            repoName={selected.name}
+            disabled={!shellReady}
+            onClose={() => setHistoryOpen(false)}
             onCommand={emit}
             onError={setNote}
           />
