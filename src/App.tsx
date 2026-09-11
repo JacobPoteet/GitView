@@ -19,6 +19,7 @@ import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane, { itemKey } from "./components/InboxPane";
 import UpdateDialog from "./components/UpdateDialog";
+import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
@@ -85,6 +86,15 @@ interface PendingTask {
 const GRAPH_KEY = "gitview.graph.collapsed";
 
 /**
+ * How long the splash stays up at the least.
+ *
+ * A warm cache is one SQLite read, and a cover that came and went inside a
+ * frame or two would read as a flicker rather than a launch. The word finishes
+ * typing at 600 ms, and this leaves the cursor a beat before the exit.
+ */
+const SPLASH_MIN_MS = 900;
+
+/**
  * A first guess at what to call a command being kept as a task.
  *
  * The runner prefix is the part that carries no information: every script in a
@@ -134,6 +144,15 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(0);
+  /**
+   * Whether the splash has been released.
+   *
+   * A warm cache releases it once the rows are in state: the sweep that
+   * follows updates a list that is already on screen. A cold launch has no
+   * rows, so it holds until the sweep has run, because an empty sidebar
+   * filling row by row is the thing worth covering.
+   */
+  const [booted, setBooted] = useState(false);
   const [live, setLive] = useState<Set<string>>(new Set());
   // The one repository whose shell was closed on purpose, until something else
   // is selected. Anything wider would mean a repository you opened yesterday
@@ -275,7 +294,18 @@ export default function App() {
   // Cache first, so the list is on screen before anything is opened.
   useEffect(() => {
     let cancelled = false;
+    const started = performance.now();
+    let released = false;
+    const release = () => {
+      if (released || cancelled) return;
+      released = true;
+      const remaining = SPLASH_MIN_MS - (performance.now() - started);
+      window.setTimeout(() => {
+        if (!cancelled) setBooted(true);
+      }, Math.max(0, remaining));
+    };
     (async () => {
+      let warm = false;
       try {
         const [cached, appInfo, storedInbox] = await Promise.all([
           api.fleetCached(),
@@ -292,10 +322,15 @@ export default function App() {
         await loadPrefs();
         const liveIds = await api.ptyLive();
         if (!cancelled) setLive(new Set(liveIds));
+        warm = cached.length > 0;
       } catch (err) {
         if (!cancelled) setNote(String(err));
       }
+      // A failed read releases it too: the note it left is in the status bar,
+      // and a cover that never lifts would hide the one line that says why.
+      if (warm) release();
       if (!cancelled) await scan();
+      release();
     })();
     return () => {
       cancelled = true;
@@ -1811,6 +1846,7 @@ gh pr view ${branchPr.number} --web`}
           </div>
         </div>
       )}
+      <Splash done={booted} />
     </div>
   );
 }

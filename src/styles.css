@@ -3131,3 +3131,106 @@ button.inbox-check-name.link:hover {
   background: color-mix(in oklch, var(--lane-4) 16%, transparent);
   color: var(--lane-4);
 }
+
+/* ------------------------------------------------------------------ splash */
+
+/* Over everything, including a dialog that opened on launch, and above the
+   row menu's 70. Fixed rather than a grid cell so the grid beneath keeps its
+   real size the whole time: the terminal's ResizeObserver never sees a cover.
+   The word types once and stays typed; only the hairline keeps moving, so a
+   long cold scan is a cursor and a sweep rather than a name being retyped. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  transition:
+    opacity 220ms var(--ease),
+    transform 220ms var(--ease);
+}
+.splash.exiting {
+  opacity: 0;
+  transform: scale(1.015);
+  pointer-events: none;
+}
+.splash-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+.splash-line {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.splash-chev {
+  color: var(--accent);
+  margin-right: 0.6ch;
+}
+.splash-word {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 0;
+  animation: splash-type 480ms steps(7, end) 120ms forwards;
+}
+.splash-cursor {
+  display: inline-block;
+  width: 0.6ch;
+  height: 1.1em;
+  margin-left: 2px;
+  background: var(--text);
+  animation: splash-blink 1s steps(2, end) infinite;
+}
+.splash-track {
+  position: relative;
+  width: 100%;
+  height: 1px;
+  background: var(--line);
+  overflow: hidden;
+}
+.splash-track::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34%;
+  height: 100%;
+  background: var(--accent);
+  animation: splash-sweep 1.3s var(--ease) infinite;
+}
+@keyframes splash-type {
+  to {
+    width: 7ch;
+  }
+}
+@keyframes splash-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes splash-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-word {
+    animation: none;
+    width: 7ch;
+  }
+  .splash-track::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
