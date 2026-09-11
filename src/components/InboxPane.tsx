@@ -152,6 +152,12 @@ function Desk({
   const command = mergeCommand(item.number, method, !item.deleteBranchOnMerge);
   const passed = item.checkRuns.filter((run) => run.state === "SUCCESS").length;
   const counted = item.checkRuns.filter((run) => checkTone(run.state) !== "off").length;
+  const running = item.checkRuns.some((run) => run.state === "PENDING");
+  const failing = item.checkRuns.some((run) => run.state === "FAILURE");
+  // Actions takes a moment to register a check on a fresh push, and until it
+  // does the rollup is null. A pull request that moved in the last hour with
+  // no rollup is more likely waiting than checkless.
+  const fresh = Date.parse(item.updatedAt) > Date.now() - 3_600_000;
 
   // One button per run, not per job: `--failed` re-runs every failed job in
   // the run, so a matrix with three red cells is one command.
@@ -178,9 +184,18 @@ Typed into ${item.repoName}'s shell.`;
           {" in "}
           {item.changedFiles} {item.changedFiles === 1 ? "file" : "files"}
         </span>
+        {/* `UNSTABLE` is GitHub's word for a merge it would allow with a
+            check that is not green, and a check still running counts. The
+            runs say which. */}
         {item.mergeState === "CLEAN" && <span className="inbox-badge approved">mergeable</span>}
-        {item.mergeState === "UNSTABLE" && (
+        {item.mergeState === "UNSTABLE" && failing && (
           <span className="inbox-badge changes">mergeable, checks failing</span>
+        )}
+        {item.mergeState === "UNSTABLE" && !failing && running && (
+          <span className="inbox-badge draft">mergeable, checks running</span>
+        )}
+        {item.mergeState === "UNSTABLE" && !failing && !running && (
+          <span className="inbox-badge approved">mergeable</span>
         )}
       </div>
 
@@ -208,7 +223,9 @@ Typed into ${item.repoName}'s shell.`;
           })}
         </ul>
       ) : (
-        <p className="inbox-when">No checks on the head commit.</p>
+        <p className="inbox-when">
+          {fresh ? "No checks reported yet. Actions takes a moment to start them." : "No checks on the head commit."}
+        </p>
       )}
 
       <div className="inbox-desk-actions">

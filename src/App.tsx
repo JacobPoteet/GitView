@@ -552,11 +552,14 @@ export default function App() {
   /**
    * The interval read.
    *
-   * Once a minute while a pull request in the list has checks running, or a
-   * merge GitHub is still computing, and otherwise every ten. The whole fleet
-   * reads at cost 8 of 5000 an hour, so the fast rate is affordable, but it is
-   * held to pull requests that moved in the last hour: a stranger's PR whose
-   * checks never ran would otherwise keep the fast rate on for good.
+   * Once a minute while a pull request in the list has checks running, no
+   * checks reported yet, or a merge GitHub is still computing, and otherwise
+   * every ten. The whole fleet reads at cost 8 of 5000 an hour, so the fast
+   * rate is affordable, but it is held to pull requests that moved in the
+   * last hour: a stranger's PR whose checks never ran would otherwise keep
+   * the fast rate on for good. The null rollup counts because Actions takes
+   * a moment to register a check after a push, and the first read after
+   * `gh pr create` lands inside that moment.
    */
   useEffect(() => {
     if (!info?.gh.version || !info.gh.loggedIn) return;
@@ -565,7 +568,10 @@ export default function App() {
       (item) =>
         item.kind === "pr" &&
         Date.parse(item.updatedAt) > hourAgo &&
-        (item.checks === "PENDING" || item.checks === "EXPECTED" || item.mergeable === "UNKNOWN"),
+        (item.checks === null ||
+          item.checks === "PENDING" ||
+          item.checks === "EXPECTED" ||
+          item.mergeable === "UNKNOWN"),
     );
     const every = busy ? 60_000 : 600_000;
     const timer = window.setInterval(() => {
