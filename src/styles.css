@@ -2543,6 +2543,30 @@ button.inbox-check-name.link:hover {
 
 /* The line as it will be typed, which is the point of doing this here at all
    rather than posting it out of sight. */
+/* From and Into side by side: two short branch names do not need a row each. */
+.inbox-field-row {
+  display: flex;
+  gap: 10px;
+}
+
+.inbox-field-row .inbox-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-field .text-input[readonly] {
+  color: var(--text-dim);
+}
+
+.inbox-field-note {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.inbox-field-note.warn {
+  color: var(--amber);
+}
+
 .inbox-command {
   padding: 7px 9px;
   background: var(--bg-inset);
