@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import { issueCreateCommand, type ShellKind } from "../lib/shell";
+import {
+  issueCreateCommand,
+  mergeCommand,
+  openUrlCommand,
+  rerunCommand,
+  type ShellKind,
+} from "../lib/shell";
 import {
   relativeTime,
+  type CheckRun,
   type GhStatus,
   type Inbox,
   type InboxItem,
+  type MergeMethod,
   type RepoState,
 } from "../lib/types";
 
@@ -24,9 +32,20 @@ interface Props {
   onSelect: (path: string) => void;
   /** Types a command into that repository's shell, the way every action does. */
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
+  /**
+   * Merging asks first, the way discarding does: it is remote, and it deletes
+   * a branch. The pane hands the dialog its title, what it is about to do and
+   * the command, and the app owns the dialog.
+   */
+  onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
   onCopy: (text: string) => void;
   /** Where a refused write of the issue body goes. The status bar. */
   onError: (message: string) => void;
+  /**
+   * A row to open the desk under when the pane opens: the header's `PR #n`
+   * button brings you here for that pull request, so it arrives expanded.
+   */
+  openKey: string | null;
 }
 
 /**
@@ -49,19 +68,219 @@ type Mode = "need" | "repo";
 const MODE_KEY = "gitview.inbox.mode";
 const COLLAPSED_KEY = "gitview.inbox.collapsed";
 
+/** The three colours a check can be. Skipped and cancelled read as neither passed nor failed. */
+function checkTone(state: InboxItem["checks"] | CheckRun["state"]): "ok" | "bad" | "pending" | "off" {
+  if (state === "SUCCESS") return "ok";
+  if (state === "FAILURE" || state === "ERROR") return "bad";
+  if (state === "SKIPPED" || state === "CANCELLED") return "off";
+  return "pending";
+}
+
+const CHECK_GLYPH = { ok: "✓", bad: "✕", pending: "•", off: "–" } as const;
+
 function CheckMark({ state }: { state: InboxItem["checks"] }) {
   if (!state) return null;
-  const tone =
-    state === "SUCCESS"
-      ? "ok"
-      : state === "FAILURE" || state === "ERROR"
-        ? "bad"
-        : "pending";
-  const glyph = tone === "ok" ? "✓" : tone === "bad" ? "✕" : "•";
+  const tone = checkTone(state);
   return (
     <span className={`inbox-checks ${tone}`} title={`checks: ${state.toLowerCase()}`}>
-      {glyph}
+      {CHECK_GLYPH[tone]}
     </span>
+  );
+}
+
+const METHOD_KEY = "gitview.inbox.mergeMethod";
+
+/** The merge method last picked for this repository, if the repository still allows it. */
+function storedMethod(item: InboxItem): MergeMethod {
+  let picked: string | null = null;
+  try {
+    picked = localStorage.getItem(`${METHOD_KEY}:${item.ownerRepo}`);
+  } catch {
+    picked = null;
+  }
+  if (picked && item.mergeMethods.includes(picked as MergeMethod)) return picked as MergeMethod;
+  return item.mergeMethods[0] ?? "squash";
+}
+
+/**
+ * Why the Merge button is off, in the words the dialog on GitHub would use.
+ * Null when it is on. `UNSTABLE` is a failing check that is not required, and
+ * `UNKNOWN` is GitHub still computing the merge: both leave the button on and
+ * let the scrollback say what GitHub decided.
+ */
+function mergeBlock(item: InboxItem): string | null {
+  if (item.draft) return "A draft. Mark it ready first.";
+  if (item.mergeable === "CONFLICTING" || item.mergeState === "DIRTY")
+    return `Conflicts with ${item.baseRef ?? "the base branch"}. Resolve them on the branch and push.`;
+  if (item.mergeState === "BLOCKED")
+    return "Blocked by branch protection: a required review or check is missing.";
+  if (item.mergeState === "BEHIND")
+    return `Behind ${item.baseRef ?? "the base branch"}, and the branch protection wants it brought up to date first.`;
+  if (item.mergeMethods.length === 0) return "The repository allows no merge method the token can use.";
+  return null;
+}
+
+/**
+ * The desk under a pull request row: its checks by name, whether GitHub would
+ * let it merge, and the button that merges it. Everything here is the page on
+ * GitHub with the browser left closed, and everything it does gets typed.
+ */
+function Desk({
+  item,
+  shell,
+  onCommand,
+  onMerge,
+}: {
+  item: InboxItem;
+  shell: ShellKind;
+  onCommand: (path: string, command: string, typeOnly?: boolean) => void;
+  onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
+}) {
+  const [method, setMethod] = useState<MergeMethod>(() => storedMethod(item));
+
+  const pick = (next: MergeMethod) => {
+    setMethod(next);
+    try {
+      localStorage.setItem(`${METHOD_KEY}:${item.ownerRepo}`, next);
+    } catch {
+      // A private window. The choice lasts the session.
+    }
+  };
+
+  const block = mergeBlock(item);
+  const command = mergeCommand(item.number, method, !item.deleteBranchOnMerge);
+  const passed = item.checkRuns.filter((run) => run.state === "SUCCESS").length;
+  const counted = item.checkRuns.filter((run) => checkTone(run.state) !== "off").length;
+
+  // One button per run, not per job: `--failed` re-runs every failed job in
+  // the run, so a matrix with three red cells is one command.
+  const failedRuns = [
+    ...new Set(
+      item.checkRuns
+        .filter((run) => run.state === "FAILURE" && run.runId !== null)
+        .map((run) => run.runId as number),
+    ),
+  ];
+
+  const typed = (command: string) => `${command}
+
+Typed into ${item.repoName}'s shell.`;
+
+  return (
+    <div className="inbox-desk">
+      <div className="inbox-desk-line">
+        <span className="inbox-desk-refs">
+          <bdi>{item.headRef}</bdi> → <bdi>{item.baseRef ?? "?"}</bdi>
+        </span>
+        <span className="inbox-desk-size">
+          <span className="add">+{item.additions}</span> <span className="del">−{item.deletions}</span>
+          {" in "}
+          {item.changedFiles} {item.changedFiles === 1 ? "file" : "files"}
+        </span>
+        {item.mergeState === "CLEAN" && <span className="inbox-badge approved">mergeable</span>}
+        {item.mergeState === "UNSTABLE" && (
+          <span className="inbox-badge changes">mergeable, checks failing</span>
+        )}
+      </div>
+
+      {item.checkRuns.length > 0 ? (
+        <ul className="inbox-checklist">
+          {item.checkRuns.map((run, index) => {
+            const tone = checkTone(run.state);
+            return (
+              <li key={`${run.name}${index}`} className={`inbox-check ${tone}`}>
+                <span className={`inbox-checks ${tone}`}>{CHECK_GLYPH[tone]}</span>
+                {run.url ? (
+                  <button
+                    className="inbox-check-name link"
+                    title={typed(openUrlCommand(run.url, shell))}
+                    onClick={() => onCommand(item.repoPath, openUrlCommand(run.url as string, shell))}
+                  >
+                    {run.name}
+                  </button>
+                ) : (
+                  <span className="inbox-check-name">{run.name}</span>
+                )}
+                <span className="inbox-when">{run.state.toLowerCase()}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="inbox-when">No checks on the head commit.</p>
+      )}
+
+      <div className="inbox-desk-actions">
+        <span className="inbox-when">
+          {item.checkRuns.length > 0 && `${passed} of ${counted} passed`}
+          {block && (
+            <>
+              {item.checkRuns.length > 0 && " · "}
+              {block}
+            </>
+          )}
+        </span>
+
+        {failedRuns.map((runId) => (
+          <button
+            key={runId}
+            className="btn tiny"
+            title={typed(rerunCommand(runId))}
+            onClick={(event) => onCommand(item.repoPath, rerunCommand(runId), event.shiftKey)}
+          >
+            Re-run failed
+          </button>
+        ))}
+
+        {item.draft && (
+          <button
+            className="btn tiny"
+            title={typed(`gh pr ready ${item.number}`)}
+            onClick={(event) => onCommand(item.repoPath, `gh pr ready ${item.number}`, event.shiftKey)}
+          >
+            Mark ready
+          </button>
+        )}
+
+        {item.mergeState === "BEHIND" && (
+          <button
+            className="btn tiny"
+            title={typed(`gh pr update-branch ${item.number}`)}
+            onClick={(event) =>
+              onCommand(item.repoPath, `gh pr update-branch ${item.number}`, event.shiftKey)
+            }
+          >
+            Update branch
+          </button>
+        )}
+
+        {item.mergeMethods.length > 1 && (
+          <select
+            className="inbox-method"
+            value={method}
+            title="How the branch lands on the base. Squash is one commit per pull request, which is how this history reads."
+            onChange={(event) => pick(event.target.value as MergeMethod)}
+          >
+            {item.mergeMethods.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <button
+          className="btn tiny accent"
+          disabled={block !== null}
+          title={block ?? `${command}
+
+Asks first, then types it into ${item.repoName}'s shell.`}
+          onClick={() => onMerge(item, method, command)}
+        >
+          {item.deleteBranchOnMerge ? "Merge" : "Merge & delete branch"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -97,15 +316,24 @@ function NeedBadge({ item }: { item: InboxItem }) {
 function Row({
   item,
   showNeed,
+  open,
+  shell,
+  onToggle,
   onSelect,
   onCommand,
+  onMerge,
   onCopy,
 }: {
   item: InboxItem;
   /** Set in repo mode, where nothing above the row says why it is here. */
   showNeed: boolean;
+  /** The desk is showing under this row. PRs only. */
+  open: boolean;
+  shell: ShellKind;
+  onToggle: () => void;
   onSelect: (path: string) => void;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
+  onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
   onCopy: (text: string) => void;
 }) {
   // Every action names the command it runs, so an inbox row types `gh` the way
@@ -114,7 +342,18 @@ function Row({
   const checkout = `gh pr checkout ${item.number}`;
 
   return (
-    <div className="inbox-row">
+    <div className={`inbox-row${open ? " open" : ""}`}>
+      {item.kind === "pr" ? (
+        <button
+          className="inbox-expand"
+          onClick={onToggle}
+          title={open ? "Hide the checks" : "Checks, mergeability, and the merge button"}
+        >
+          {open ? "▾" : "▸"}
+        </button>
+      ) : (
+        <span className="inbox-expand" />
+      )}
       <button
         className="inbox-main"
         onClick={() => onSelect(item.repoPath)}
@@ -159,6 +398,10 @@ function Row({
           Copy link
         </button>
       </span>
+
+      {open && item.kind === "pr" && (
+        <Desk item={item} shell={shell} onCommand={onCommand} onMerge={onMerge} />
+      )}
     </div>
   );
 }
@@ -351,8 +594,10 @@ export default function InboxPane({
   onClose,
   onSelect,
   onCommand,
+  onMerge,
   onCopy,
   onError,
+  openKey,
 }: Props) {
   // By repo to start with. A fleet's inbox is mostly one repository's backlog
   // at a time, and reading it in project order is what somebody opening it asks
@@ -368,6 +613,13 @@ export default function InboxPane({
     }
   });
   const [composing, setComposing] = useState(false);
+  // Which desks are showing. Not persisted: a desk is opened to act on a pull
+  // request, and the next time the pane opens the question is a new one.
+  const [open, setOpen] = useState<Set<string>>(() => new Set(openKey ? [openKey] : []));
+
+  useEffect(() => {
+    if (openKey) setOpen((current) => (current.has(openKey) ? current : new Set(current).add(openKey)));
+  }, [openKey]);
 
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
@@ -508,16 +760,30 @@ export default function InboxPane({
                 {group.hint && <span className="group-hint">{group.hint}</span>}
               </button>
               {!shut &&
-                group.items.map((item) => (
-                  <Row
-                    key={`${item.ownerRepo}#${item.kind}${item.number}`}
-                    item={item}
-                    showNeed={mode === "repo"}
-                    onSelect={onSelect}
-                    onCommand={onCommand}
-                    onCopy={onCopy}
-                  />
-                ))}
+                group.items.map((item) => {
+                  const key = itemKey(item);
+                  return (
+                    <Row
+                      key={key}
+                      item={item}
+                      showNeed={mode === "repo"}
+                      open={open.has(key)}
+                      shell={shell}
+                      onToggle={() =>
+                        setOpen((current) => {
+                          const next = new Set(current);
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
+                          return next;
+                        })
+                      }
+                      onSelect={onSelect}
+                      onCommand={onCommand}
+                      onMerge={onMerge}
+                      onCopy={onCopy}
+                    />
+                  );
+                })}
             </div>
           );
         })}
@@ -531,6 +797,11 @@ export default function InboxPane({
       </div>
     </section>
   );
+}
+
+/** One key per row, stable across refreshes, so an open desk stays open. */
+export function itemKey(item: Pick<InboxItem, "ownerRepo" | "kind" | "number">): string {
+  return `${item.ownerRepo}#${item.kind}${item.number}`;
 }
 
 /** What each row wants from you, which is the question an inbox exists for. */

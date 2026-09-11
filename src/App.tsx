@@ -3,6 +3,7 @@ import FleetSidebar from "./components/FleetSidebar";
 import TerminalPane, {
   blockOutput,
   closeSession,
+  getBlocks,
   revealBlock,
   sendCommand,
   subscribeBlocks,
@@ -16,7 +17,7 @@ import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
 import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
-import InboxPane from "./components/InboxPane";
+import InboxPane, { itemKey } from "./components/InboxPane";
 import UpdateDialog from "./components/UpdateDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
@@ -177,6 +178,16 @@ export default function App() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxReading, setInboxReading] = useState(false);
+  /** A row the inbox opens expanded, when the header's PR button brought you there. */
+  const [inboxFocus, setInboxFocus] = useState<string | null>(null);
+  /**
+   * A typed `gh` write whose exit the inbox is waiting on.
+   *
+   * A merge or a re-run changes what GitHub would answer, and the pane has no
+   * way to know the command finished except the block it left behind in that
+   * shell. `refreshRepo` runs when the shell's output settles and checks here.
+   */
+  const inboxAfter = useRef<{ path: string; command: string } | null>(null);
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
@@ -510,6 +521,59 @@ export default function App() {
     checkUpdate();
   }, [info?.gh.version, checkUpdate]);
 
+  /**
+   * One GraphQL request for the whole fleet, through the gh CLI.
+   *
+   * A failed read keeps the last good list on screen rather than emptying the
+   * pane, because the usual reason is a laptop that was off the network.
+   */
+  const inboxInFlight = useRef(false);
+  const refreshInbox = useCallback(async () => {
+    // The poll, a settled command and the button can all ask at once, and one
+    // read answers all three.
+    if (inboxInFlight.current) return;
+    inboxInFlight.current = true;
+    setInboxReading(true);
+    try {
+      const next = await api.githubRefresh();
+      setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
+      if (next.error) setNote(next.error);
+      else if (next.unresolved.length > 0) {
+        setNote(`Read the inbox. ${next.unresolved.length} did not resolve.`);
+      }
+    } catch (err) {
+      setNote(String(err));
+    } finally {
+      inboxInFlight.current = false;
+      setInboxReading(false);
+    }
+  }, [setNote]);
+
+  /**
+   * The interval read.
+   *
+   * Once a minute while a pull request in the list has checks running, or a
+   * merge GitHub is still computing, and otherwise every ten. The whole fleet
+   * reads at cost 8 of 5000 an hour, so the fast rate is affordable, but it is
+   * held to pull requests that moved in the last hour: a stranger's PR whose
+   * checks never ran would otherwise keep the fast rate on for good.
+   */
+  useEffect(() => {
+    if (!info?.gh.version || !info.gh.loggedIn) return;
+    const hourAgo = Date.now() - 3_600_000;
+    const busy = (inbox?.items ?? []).some(
+      (item) =>
+        item.kind === "pr" &&
+        Date.parse(item.updatedAt) > hourAgo &&
+        (item.checks === "PENDING" || item.checks === "EXPECTED" || item.mergeable === "UNKNOWN"),
+    );
+    const every = busy ? 60_000 : 600_000;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refreshInbox();
+    }, every);
+    return () => window.clearInterval(timer);
+  }, [info, inbox, refreshInbox]);
+
   const refreshRepo = useCallback(
     (path: string) => {
       api.repoRefresh(path).then(upsert).catch(() => undefined);
@@ -518,8 +582,21 @@ export default function App() {
       if (path === selectedPath) {
         api.repoChanges(path).then(setChanges).catch(() => undefined);
       }
+
+      // A `gh` write the inbox typed here has finished when its block has an
+      // exit code. A shell with no prompt hook leaves no blocks at all, and
+      // there the first settle is the best signal there is.
+      const waiting = inboxAfter.current;
+      if (waiting && waiting.path === path) {
+        const blocks = getBlocks(path);
+        const block = [...blocks].reverse().find((b) => b.command === waiting.command);
+        if (blocks.length === 0 || (block && block.endedAt !== null)) {
+          inboxAfter.current = null;
+          refreshInbox();
+        }
+      }
     },
-    [upsert, selectedPath],
+    [upsert, selectedPath, refreshInbox],
   );
 
   const onLiveChange = useCallback((path: string, isLive: boolean) => {
@@ -885,28 +962,6 @@ export default function App() {
    * sync had selected.
    */
   /**
-   * One GraphQL request for the whole fleet, through the gh CLI.
-   *
-   * A failed read keeps the last good list on screen rather than emptying the
-   * pane, because the usual reason is a laptop that was off the network.
-   */
-  const refreshInbox = useCallback(async () => {
-    setInboxReading(true);
-    try {
-      const next = await api.githubRefresh();
-      setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
-      if (next.error) setNote(next.error);
-      else if (next.unresolved.length > 0) {
-        setNote(`Read the inbox. ${next.unresolved.length} did not resolve.`);
-      }
-    } catch (err) {
-      setNote(String(err));
-    } finally {
-      setInboxReading(false);
-    }
-  }, [setNote]);
-
-  /**
    * One read on launch when the cached copy has gone stale.
    *
    * Without it the sidebar badge stays at whatever it was when the app last
@@ -1219,10 +1274,14 @@ export default function App() {
       shell={shell}
       refreshing={inboxReading}
       onRefresh={refreshInbox}
-      onClose={() => setInboxOpen(false)}
+      onClose={() => {
+        setInboxOpen(false);
+        setInboxFocus(null);
+      }}
       onSelect={(path) => {
         setSelectedPath(path);
         setInboxOpen(false);
+        setInboxFocus(null);
       }}
       onCommand={(path, command, typeOnly = false) => {
         // The command lands in that repository's shell, which means selecting
@@ -1230,8 +1289,49 @@ export default function App() {
         // that shell rather than for a timer.
         setSelectedPath(path);
         setInboxOpen(false);
+        setInboxFocus(null);
         setPendingCommand({ path, command, typeOnly });
+        // Anything `gh` writes changes the next read. A line left at the
+        // prompt has not been run, so it arms nothing.
+        if (!typeOnly && command.startsWith("gh ")) inboxAfter.current = { path, command };
       }}
+      onMerge={(item, method, command) => {
+        const base = item.baseRef ?? "the base branch";
+        const head = item.headRef ?? "the branch";
+        const landing =
+          method === "squash"
+            ? `Squashes ${head} into one commit on ${base}.`
+            : method === "rebase"
+              ? `Rebases ${head}'s commits onto ${base}, one by one.`
+              : `Merges ${head} into ${base} with a merge commit.`;
+        const cleanup = item.deleteBranchOnMerge
+          ? `GitHub deletes ${head} on origin itself afterwards; the local copy stays until Prune.`
+          : `Then deletes ${head} on origin and, if the shell is standing on it, switches to ${base} and deletes the local copy too.`;
+        const failing = item.checkRuns.filter((run) => run.state === "FAILURE").length;
+        const pending = item.checkRuns.filter((run) => run.state === "PENDING").length;
+        const warning =
+          failing > 0
+            ? ` ${failing} ${failing === 1 ? "check is" : "checks are"} failing. GitHub refuses the merge if the branch protection requires them, and merges anyway if it does not.`
+            : pending > 0
+              ? ` ${pending} ${pending === 1 ? "check is" : "checks are"} still running.`
+              : "";
+        setConfirmation({
+          title: `Merge #${item.number} into ${base}`,
+          body: `${item.title}
+
+${landing} ${cleanup}${warning}`,
+          command,
+          confirmLabel: "Merge",
+          onConfirm: () => {
+            setSelectedPath(item.repoPath);
+            setInboxOpen(false);
+            setInboxFocus(null);
+            setPendingCommand({ path: item.repoPath, command, typeOnly: false });
+            inboxAfter.current = { path: item.repoPath, command };
+          },
+        });
+      }}
+      openKey={inboxFocus}
       onCopy={async (text) => {
         const copied = await copyText(text);
         setNote(copied ? `Copied ${text}` : "The clipboard refused the copy.");
@@ -1309,7 +1409,10 @@ export default function App() {
                     title={`${branchPr.title}
 
 gh pr view ${branchPr.number} --web`}
-                    onClick={() => setInboxOpen(true)}
+                    onClick={() => {
+                      setInboxFocus(itemKey(branchPr));
+                      setInboxOpen(true);
+                    }}
                   >
                     PR #{branchPr.number}
                     {branchPr.draft && <span className="inbox-badge draft">draft</span>}

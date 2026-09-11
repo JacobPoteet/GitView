@@ -8,7 +8,8 @@ run and build commands for each project sit next to the repository that needs th
 > [!NOTE]
 > Everything through Phase 3 works: the fleet scanner, the persistent terminal, task discovery, the
 > branch graph, command blocks, the GitHub inbox, the diff view, hunk staging and the commit
-> history. Worktree lanes are designed but not built. See [Status](#status).
+> history. The pull request desk is in progress, and worktree lanes are designed but not built. See
+> [Status](#status).
 
 ## Why
 
@@ -196,7 +197,8 @@ times per repository per refresh is slow enough to feel.
 | 2 | GitHub inbox: pull requests, issues and CI status in one GraphQL query | Built |
 | 3 | The diff pane, and staging one hunk of it through a typed `git apply` | Built |
 | 3 | The commit history: canvas rails under virtualised rows, lanes packed in Rust | Built |
-| 4 | Worktree lanes | Designed |
+| 4 | The pull request desk: checks by name, mergeability, merge and re-run typed as `gh` | In progress |
+| 5 | Worktree lanes | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and
 oh-my-posh keep working, and it writes nothing to your profile or anywhere else outside its own

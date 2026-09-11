@@ -892,6 +892,8 @@ input {
   padding: 6px 16px 0;
   color: var(--text-dim);
   font-size: 12px;
+  /* A merge names the pull request on a line of its own above what it does. */
+  white-space: pre-line;
 }
 
 .confirm pre {
@@ -2335,6 +2337,119 @@ input {
 .btn.tiny {
   font-size: 10.5px;
   padding: 2px 7px;
+}
+
+/* The chevron that opens a pull request's desk. An issue gets the blank so the
+   two kinds of row line up. */
+.inbox-expand {
+  flex: none;
+  width: 18px;
+  align-self: stretch;
+  font-size: 10px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+button.inbox-expand:hover {
+  color: var(--text);
+}
+
+.inbox-row {
+  flex-wrap: wrap;
+}
+
+/* The desk: the pull request page on GitHub, under its row, with the browser
+   left closed. It takes the row's full width beneath the chevron and the
+   actions. */
+.inbox-desk {
+  flex-basis: 100%;
+  margin: 0 8px 8px 26px;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.inbox-desk-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.inbox-desk-refs {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.inbox-desk-size .add {
+  color: var(--green);
+}
+
+.inbox-desk-size .del {
+  color: var(--red);
+}
+
+.inbox-checklist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inbox-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+}
+
+.inbox-check-name {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+button.inbox-check-name.link:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
+
+.inbox-check.off .inbox-check-name {
+  color: var(--text-faint);
+}
+
+.inbox-checks.off {
+  color: var(--text-faint);
+}
+
+.inbox-desk-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inbox-desk-actions > .inbox-when {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-method {
+  font-size: 10.5px;
+  padding: 2px 4px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.btn.tiny.accent:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Two questions about one list, in the same segmented control the diff pane

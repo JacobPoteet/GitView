@@ -55,12 +55,58 @@ pub struct InboxItem {
     pub review_decision: Option<String>,
     /// The check rollup on the head commit: `SUCCESS`, `FAILURE`, `PENDING`.
     pub checks: Option<String>,
+    /// Each check behind that rollup, so a red one names the job. Every field
+    /// from here to `delete_branch_on_merge` defaults, because the cached blob
+    /// on an installed machine was written before they existed.
+    #[serde(default)]
+    pub check_runs: Vec<CheckRun>,
+    /// PRs only. The branch it merges into.
+    #[serde(default)]
+    pub base_ref: Option<String>,
+    /// `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while GitHub is still working
+    /// it out in the background.
+    #[serde(default)]
+    pub mergeable: Option<String>,
+    /// `CLEAN`, `BLOCKED`, `BEHIND`, `DIRTY`, `UNSTABLE`, `HAS_HOOKS`, `DRAFT`
+    /// or `UNKNOWN`: whether the Merge button on GitHub would be green.
+    #[serde(default)]
+    pub merge_state: Option<String>,
+    #[serde(default)]
+    pub additions: i64,
+    #[serde(default)]
+    pub deletions: i64,
+    #[serde(default)]
+    pub changed_files: i64,
+    /// `squash`, `merge`, `rebase`: the ones the repository allows, in that
+    /// order. Denormalised onto the row the way `repo_name` is.
+    #[serde(default)]
+    pub merge_methods: Vec<String>,
+    /// GitHub deletes the head branch itself after a merge, so
+    /// `--delete-branch` would only be repeating it.
+    #[serde(default)]
+    pub delete_branch_on_merge: bool,
     /// Opened by the person holding the token.
     pub mine: bool,
     /// A review is requested of them.
     pub review_requested: bool,
     /// An issue assigned to them.
     pub assigned: bool,
+}
+
+/// One check on a pull request's head commit, whether it came from Actions as
+/// a `CheckRun` or from an older integration as a `StatusContext`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckRun {
+    pub name: String,
+    /// `SUCCESS`, `FAILURE`, `PENDING`, `SKIPPED` or `CANCELLED`. GitHub has
+    /// a dozen conclusions and the pane has three colours, so the folding
+    /// happens here rather than in every component that draws one.
+    pub state: String,
+    pub url: Option<String>,
+    /// The Actions run the check belongs to, which is what `gh run rerun`
+    /// takes. None for a status context, which has no run to re-run.
+    pub run_id: Option<i64>,
 }
 
 /// Everything the inbox draws, cached as one blob.
@@ -110,6 +156,14 @@ struct Login {
 struct RepoBits {
     pull_requests: Nodes<PrNode>,
     issues: Nodes<IssueNode>,
+    #[serde(default)]
+    squash_merge_allowed: bool,
+    #[serde(default)]
+    merge_commit_allowed: bool,
+    #[serde(default)]
+    rebase_merge_allowed: bool,
+    #[serde(default)]
+    delete_branch_on_merge: bool,
 }
 
 #[derive(Deserialize)]
@@ -133,7 +187,17 @@ struct PrNode {
     is_draft: bool,
     updated_at: String,
     head_ref_name: String,
+    #[serde(default)]
+    base_ref_name: Option<String>,
     review_decision: Option<String>,
+    mergeable: Option<String>,
+    merge_state_status: Option<String>,
+    #[serde(default)]
+    additions: i64,
+    #[serde(default)]
+    deletions: i64,
+    #[serde(default)]
+    changed_files: i64,
     author: Option<Login>,
     #[serde(default)]
     review_requests: Nodes<ReviewRequest>,
@@ -161,6 +225,87 @@ struct CommitRollup {
 #[derive(Deserialize)]
 struct Rollup {
     state: String,
+    #[serde(default)]
+    contexts: Nodes<RollupNode>,
+}
+
+/// A rollup holds two kinds of node and GraphQL tells them apart by
+/// `__typename`. Anything else GitHub adds later lands in `Other` rather than
+/// failing the whole response.
+#[derive(Deserialize)]
+#[serde(tag = "__typename", rename_all_fields = "camelCase")]
+enum RollupNode {
+    CheckRun {
+        name: String,
+        conclusion: Option<String>,
+        details_url: Option<String>,
+        check_suite: Option<CheckSuite>,
+    },
+    StatusContext {
+        context: String,
+        state: String,
+        target_url: Option<String>,
+    },
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckSuite {
+    workflow_run: Option<WorkflowRun>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkflowRun {
+    database_id: Option<i64>,
+}
+
+impl RollupNode {
+    fn flatten(&self) -> Option<CheckRun> {
+        match self {
+            RollupNode::CheckRun {
+                name,
+                conclusion,
+                details_url,
+                check_suite,
+            } => Some(CheckRun {
+                name: name.clone(),
+                state: match conclusion.as_deref() {
+                    None => "PENDING",
+                    Some("SUCCESS") => "SUCCESS",
+                    Some("NEUTRAL") | Some("SKIPPED") => "SKIPPED",
+                    Some("CANCELLED") => "CANCELLED",
+                    // FAILURE, TIMED_OUT, ACTION_REQUIRED, STARTUP_FAILURE,
+                    // STALE: the job did not pass, and the URL says why.
+                    Some(_) => "FAILURE",
+                }
+                .to_string(),
+                url: details_url.clone(),
+                run_id: check_suite
+                    .as_ref()
+                    .and_then(|s| s.workflow_run.as_ref())
+                    .and_then(|r| r.database_id),
+            }),
+            RollupNode::StatusContext {
+                context,
+                state,
+                target_url,
+            } => Some(CheckRun {
+                name: context.clone(),
+                state: match state.as_str() {
+                    "SUCCESS" => "SUCCESS",
+                    "PENDING" | "EXPECTED" => "PENDING",
+                    _ => "FAILURE",
+                }
+                .to_string(),
+                url: target_url.clone(),
+                run_id: None,
+            }),
+            RollupNode::Other => None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -185,16 +330,30 @@ struct IssueNode {
 /// point hourly budget.
 const PAGE: usize = 20;
 
+/// Checks per pull request. This repository's CI is one job; a project with
+/// a matrix has a handful. Past ten the rollup still says whether the rest
+/// passed, and the browser has the list.
+const CHECKS: usize = 10;
+
 fn fragment() -> String {
     format!(
         r#"
 fragment FleetBits on Repository {{
+  squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed deleteBranchOnMerge
   pullRequests(states: OPEN, first: {PAGE}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
     nodes {{
-      number title url isDraft updatedAt headRefName reviewDecision
+      number title url isDraft updatedAt headRefName baseRefName reviewDecision
+      mergeable mergeStateStatus additions deletions changedFiles
       author {{ login }}
       reviewRequests(first: 5) {{ nodes {{ requestedReviewer {{ ... on User {{ login }} }} }} }}
-      commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+      commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{
+        state
+        contexts(first: {CHECKS}) {{ nodes {{
+          __typename
+          ... on CheckRun {{ name conclusion detailsUrl checkSuite {{ workflowRun {{ databaseId }} }} }}
+          ... on StatusContext {{ context state targetUrl }}
+        }} }}
+      }} }} }} }}
     }}
   }}
   issues(states: OPEN, first: {PAGE}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
@@ -415,6 +574,17 @@ fn collect(
     viewer: Option<&str>,
     out: &mut Vec<InboxItem>,
 ) {
+    let mut merge_methods = Vec::new();
+    if bits.squash_merge_allowed {
+        merge_methods.push("squash".to_string());
+    }
+    if bits.merge_commit_allowed {
+        merge_methods.push("merge".to_string());
+    }
+    if bits.rebase_merge_allowed {
+        merge_methods.push("rebase".to_string());
+    }
+
     for pr in &bits.pull_requests.nodes {
         let author = pr
             .author
@@ -428,13 +598,22 @@ fn collect(
                 .filter_map(|r| r.requested_reviewer.as_ref())
                 .any(|r| r.login == me)
         });
-        let checks = pr
+        let rollup = pr
             .commits
             .nodes
             .first()
             .and_then(|c| c.commit.as_ref())
-            .and_then(|c| c.status_check_rollup.as_ref())
-            .map(|r| r.state.clone());
+            .and_then(|c| c.status_check_rollup.as_ref());
+        let checks = rollup.map(|r| r.state.clone());
+        let check_runs = rollup
+            .map(|r| {
+                r.contexts
+                    .nodes
+                    .iter()
+                    .filter_map(RollupNode::flatten)
+                    .collect()
+            })
+            .unwrap_or_default();
 
         out.push(InboxItem {
             kind: "pr".to_string(),
@@ -451,6 +630,15 @@ fn collect(
             head_ref: Some(pr.head_ref_name.clone()),
             review_decision: pr.review_decision.clone(),
             checks,
+            check_runs,
+            base_ref: pr.base_ref_name.clone(),
+            mergeable: pr.mergeable.clone(),
+            merge_state: pr.merge_state_status.clone(),
+            additions: pr.additions,
+            deletions: pr.deletions,
+            changed_files: pr.changed_files,
+            merge_methods: merge_methods.clone(),
+            delete_branch_on_merge: bits.delete_branch_on_merge,
             review_requested,
             assigned: false,
         });
@@ -485,6 +673,15 @@ fn collect(
             head_ref: None,
             review_decision: None,
             checks: None,
+            check_runs: Vec::new(),
+            base_ref: None,
+            mergeable: None,
+            merge_state: None,
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+            merge_methods: Vec::new(),
+            delete_branch_on_merge: false,
             review_requested: false,
             assigned,
         });
@@ -655,6 +852,10 @@ mod tests {
         let pr = &items[0];
         assert_eq!(pr.kind, "pr");
         assert_eq!(pr.checks.as_deref(), Some("FAILURE"));
+        // No contexts asked for in this shape, and no merge methods on the
+        // repository: both default rather than fail.
+        assert!(pr.check_runs.is_empty());
+        assert!(pr.merge_methods.is_empty());
         assert_eq!(pr.review_decision.as_deref(), Some("CHANGES_REQUESTED"));
         assert!(pr.review_requested);
         assert!(!pr.mine);
@@ -666,6 +867,90 @@ mod tests {
         assert!(issue.assigned);
         assert!(issue.mine);
         assert!(issue.checks.is_none());
+    }
+
+    /// The shape gh returned for #31 on 10 Sep 2026, plus a status context
+    /// and a still-running job beside it. Each kind of node folds to one of
+    /// the pane's states, and the Actions run id comes through for `gh run
+    /// rerun`.
+    #[test]
+    fn each_check_folds_to_a_state_and_keeps_its_run() {
+        let bits: RepoBits = serde_json::from_str(
+            r#"{
+              "squashMergeAllowed": true, "mergeCommitAllowed": false,
+              "rebaseMergeAllowed": true, "deleteBranchOnMerge": false,
+              "pullRequests": {"nodes": [{
+                "number": 31, "title": "T", "url": "u", "isDraft": false,
+                "updatedAt": "2026-09-10T00:00:00Z", "headRefName": "ui-sweep",
+                "baseRefName": "main", "reviewDecision": null,
+                "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+                "additions": 1264, "deletions": 177, "changedFiles": 18,
+                "author": {"login": "me"},
+                "reviewRequests": {"nodes": []},
+                "commits": {"nodes": [{"commit": {"statusCheckRollup": {
+                  "state": "FAILURE",
+                  "contexts": {"nodes": [
+                    {"__typename": "CheckRun", "name": "build", "conclusion": "TIMED_OUT",
+                     "detailsUrl": "https://github.com/o/r/actions/runs/34533227812/job/1",
+                     "checkSuite": {"workflowRun": {"databaseId": 34533227812}}},
+                    {"__typename": "CheckRun", "name": "lint", "conclusion": null,
+                     "detailsUrl": null, "checkSuite": {"workflowRun": null}},
+                    {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS",
+                     "targetUrl": "https://ci.example/1"},
+                    {"__typename": "SomethingNew", "name": "x"}
+                  ]}
+                }}}]}
+              }]},
+              "issues": {"nodes": []}
+            }"#,
+        )
+        .unwrap();
+        let mut items = Vec::new();
+        collect(&bits, "p", "n", "o/r", Some("me"), &mut items);
+        let pr = &items[0];
+
+        assert_eq!(pr.merge_methods, vec!["squash", "rebase"]);
+        assert_eq!(pr.base_ref.as_deref(), Some("main"));
+        assert_eq!(pr.mergeable.as_deref(), Some("MERGEABLE"));
+        assert_eq!(pr.merge_state.as_deref(), Some("CLEAN"));
+        assert_eq!(
+            (pr.additions, pr.deletions, pr.changed_files),
+            (1264, 177, 18)
+        );
+
+        assert_eq!(pr.check_runs.len(), 3, "the unknown typename drops out");
+        assert_eq!(
+            pr.check_runs[0],
+            CheckRun {
+                name: "build".into(),
+                state: "FAILURE".into(),
+                url: Some("https://github.com/o/r/actions/runs/34533227812/job/1".into()),
+                run_id: Some(34533227812),
+            }
+        );
+        assert_eq!(pr.check_runs[1].state, "PENDING");
+        assert_eq!(pr.check_runs[1].run_id, None);
+        assert_eq!(pr.check_runs[2].name, "ci/legacy");
+        assert_eq!(pr.check_runs[2].state, "SUCCESS");
+        assert_eq!(pr.check_runs[2].run_id, None);
+    }
+
+    /// The blob `github_inbox` holds on an installed machine predates every
+    /// field the desk added. It has to read back as it did, not as an error
+    /// that empties the pane.
+    #[test]
+    fn a_cached_item_from_before_the_desk_still_reads() {
+        let old = r#"{
+          "kind": "pr", "repoPath": "p", "repoName": "n", "ownerRepo": "o/r",
+          "number": 1, "title": "T", "url": "u", "updatedAt": "2026-09-10T00:00:00Z",
+          "author": "me", "draft": false, "headRef": "b", "reviewDecision": null,
+          "checks": "SUCCESS", "mine": true, "reviewRequested": false, "assigned": false
+        }"#;
+        let item: InboxItem = serde_json::from_str(old).unwrap();
+        assert!(item.check_runs.is_empty());
+        assert!(item.mergeable.is_none());
+        assert_eq!(item.additions, 0);
+        assert!(!item.delete_branch_on_merge);
     }
 
     /// A pull request with no checks configured, no reviewer asked, and a

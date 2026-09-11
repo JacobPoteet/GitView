@@ -13,6 +13,8 @@
  * text a person can read before it runs.
  */
 
+import type { MergeMethod } from "./types";
+
 export type ShellKind = "powershell" | "posix";
 
 export function shellKind(shellPath: string | undefined): ShellKind {
@@ -113,6 +115,26 @@ export function issueCreateCommand(
     parts.push("--body", quote(body, kind));
   }
   return parts.join(" ");
+}
+
+/**
+ * Merging a pull request, and deleting the branch it came from.
+ *
+ * `--delete-branch` removes the head branch on origin and, when the shell is
+ * standing on it, switches to the base branch and removes the local copy too,
+ * which is the whole cleanup the merge button on GitHub leaves for later. A
+ * repository set to delete the branch itself gets the plain merge, since the
+ * flag would only repeat what GitHub is about to do.
+ */
+export function mergeCommand(number: number, method: MergeMethod, deleteBranch: boolean): string {
+  const parts = ["gh", "pr", "merge", String(number), `--${method}`];
+  if (deleteBranch) parts.push("--delete-branch");
+  return parts.join(" ");
+}
+
+/** Re-running the jobs that failed in one Actions run, and only those. */
+export function rerunCommand(runId: number): string {
+  return `gh run rerun ${runId} --failed`;
 }
 
 /**

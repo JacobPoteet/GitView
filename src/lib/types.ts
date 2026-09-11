@@ -258,9 +258,45 @@ export interface InboxItem {
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   /** The check rollup on the head commit. */
   checks: "SUCCESS" | "FAILURE" | "PENDING" | "ERROR" | "EXPECTED" | null;
+  /** Each check behind that rollup, so a red one names the job. PRs only. */
+  checkRuns: CheckRun[];
+  /** The branch it merges into. PRs only. */
+  baseRef: string | null;
+  /** `UNKNOWN` while GitHub is still computing the merge in the background. */
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | null;
+  /** Whether the Merge button on GitHub would be green, and if not, why. */
+  mergeState: MergeState | null;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  /** The methods the repository allows, squash first. Empty on an issue. */
+  mergeMethods: MergeMethod[];
+  /** GitHub deletes the head branch itself, so `--delete-branch` is not needed. */
+  deleteBranchOnMerge: boolean;
   mine: boolean;
   reviewRequested: boolean;
   assigned: boolean;
+}
+
+export type MergeMethod = "squash" | "merge" | "rebase";
+
+export type MergeState =
+  | "CLEAN"
+  | "BLOCKED"
+  | "BEHIND"
+  | "DIRTY"
+  | "UNSTABLE"
+  | "HAS_HOOKS"
+  | "DRAFT"
+  | "UNKNOWN";
+
+/** One check on a pull request's head commit, folded to the pane's states in github.rs. */
+export interface CheckRun {
+  name: string;
+  state: "SUCCESS" | "FAILURE" | "PENDING" | "SKIPPED" | "CANCELLED";
+  url: string | null;
+  /** The Actions run, which is what `gh run rerun` takes. Null for a status context. */
+  runId: number | null;
 }
 
 export interface Inbox {
