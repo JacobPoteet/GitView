@@ -3131,3 +3131,179 @@ button.inbox-check-name.link:hover {
   background: color-mix(in oklch, var(--lane-4) 16%, transparent);
   color: var(--lane-4);
 }
+
+/* ------------------------------------------------------------------ splash */
+
+/* Over everything, including a dialog that opened on launch, and above the
+   row menu's 70. Fixed rather than a grid cell so the grid beneath keeps its
+   real size the whole time: the terminal's ResizeObserver never sees a cover.
+   The word types once and stays typed; only the hairline keeps moving, so a
+   long cold scan is a cursor and a sweep rather than a name being retyped. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  transition:
+    opacity 220ms var(--ease),
+    transform 220ms var(--ease);
+}
+.splash.exiting {
+  opacity: 0;
+  transform: scale(1.015);
+  pointer-events: none;
+}
+.splash-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+.splash-line {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.splash-chev {
+  color: var(--accent);
+  margin-right: 0.6ch;
+}
+.splash-word {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 0;
+  animation: splash-type 480ms steps(7, end) 120ms forwards;
+}
+.splash-cursor {
+  display: inline-block;
+  width: 0.6ch;
+  height: 1.1em;
+  margin-left: 2px;
+  background: var(--text);
+  animation: splash-blink 1s steps(2, end) infinite;
+}
+.splash-track {
+  position: relative;
+  width: 100%;
+  height: 1px;
+  background: var(--line);
+  overflow: hidden;
+}
+.splash-track::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34%;
+  height: 100%;
+  background: var(--accent);
+  animation: splash-sweep 1.3s var(--ease) infinite;
+}
+@keyframes splash-type {
+  to {
+    width: 7ch;
+  }
+}
+@keyframes splash-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes splash-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* The columns arrive as the splash lifts, in two beats. First the frame: the
+   rail from the left, the changes column from the right, the main column up a
+   step. Then what is in it: the rail's labels and rows pop in by their `--slot`
+   in list order, and the other two columns' contents fade in behind. All of it
+   is transform and opacity, so the grid never changes size and the terminal
+   never sees a resize. The class comes off once the last row lands. */
+.app.arriving > .rail {
+  animation: arrive-left 480ms var(--ease) both;
+}
+.app.arriving > .main {
+  animation: arrive-up 480ms var(--ease) 80ms both;
+}
+.app.arriving > .changes-pane {
+  animation: arrive-right 480ms var(--ease) 160ms both;
+}
+.app.arriving > .status-bar {
+  animation: arrive-fade 360ms var(--ease) 720ms both;
+}
+/* The frame is empty while it slides, and fills once it has stopped. */
+.app.arriving .sidebar-head,
+.app.arriving .sidebar-search {
+  animation: arrive-fade 240ms var(--ease) 340ms both;
+}
+.app.arriving .repo-list > * {
+  animation: arrive-pop 260ms var(--ease) both;
+  animation-delay: calc(440ms + min(var(--slot, 0), 16) * 45ms);
+}
+.app.arriving > .rail > :not(.sidebar) {
+  animation: arrive-fade 300ms var(--ease) 640ms both;
+}
+.app.arriving > .main > * {
+  animation: arrive-fade 300ms var(--ease) 560ms both;
+}
+.app.arriving > .changes-pane > * {
+  animation: arrive-fade 300ms var(--ease) 640ms both;
+}
+@keyframes arrive-left {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+}
+@keyframes arrive-right {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@keyframes arrive-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@keyframes arrive-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes arrive-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.97);
+  }
+  60% {
+    transform: translateX(1px) scale(1.01);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.arriving,
+  .app.arriving * {
+    animation: none;
+  }
+  .splash-word {
+    animation: none;
+    width: 7ch;
+  }
+  .splash-track::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

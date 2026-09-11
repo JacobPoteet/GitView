@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { attentionScore, isClean, unpushed, type RepoPref, type RepoState } from "../lib/types";
 
 /** What the inbox knows about one repository, merged in the way prefs are. */
@@ -197,6 +197,7 @@ function Row({
   hidden,
   github,
   orderable,
+  slot,
   drag,
   onSelect,
   onPin,
@@ -216,6 +217,8 @@ function Row({
   github?: RepoGithub;
   /** False on every row outside the pinned group, which has no order to set. */
   orderable: boolean;
+  /** Position in the list, labels included, for the cascade on launch. */
+  slot: number;
   drag: DragRole;
   onSelect: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
@@ -235,6 +238,7 @@ function Row({
   return (
     <div
       ref={wrap}
+      style={{ "--slot": slot } as CSSProperties}
       className={
         `repo-row-wrap${selected ? " selected" : ""}${hidden ? " muted" : ""}` +
         (drag === "source" ? " dragging" : "") +
@@ -436,9 +440,14 @@ export default function FleetSidebar({
     return pinOrder.indexOf(dragging) < pinOrder.indexOf(path) ? "after" : "before";
   }
 
+  // Counted in render order, which is top to bottom: the launch cascade pops
+  // each label and row in by its place, whichever group it is in.
+  let slots = 0;
+  const slot = () => ({ "--slot": slots++ }) as CSSProperties;
   const renderRow = (repo: RepoState, inPinnedGroup: boolean) => (
     <Row
       key={repo.path}
+      slot={slots++}
       repo={repo}
       selected={repo.path === selectedPath}
       live={liveSessions.has(repo.path)}
@@ -542,7 +551,7 @@ export default function FleetSidebar({
 
         {groups.pinned.length > 0 && (
           <>
-            <div className="group-label">
+            <div className="group-label" style={slot()}>
               Pinned <span className="count">{groups.pinned.length}</span>
               {orderable && <span className="group-hint">drag to reorder</span>}
             </div>
@@ -552,7 +561,7 @@ export default function FleetSidebar({
 
         {groups.attention.length > 0 && (
           <>
-            <div className="group-label">
+            <div className="group-label" style={slot()}>
               Needs attention <span className="count">{groups.attention.length}</span>
             </div>
             {groups.attention.map(render)}
@@ -561,7 +570,7 @@ export default function FleetSidebar({
 
         {groups.clean.length > 0 && (
           <>
-            <div className="group-label">
+            <div className="group-label" style={slot()}>
               Clean <span className="count">{groups.clean.length}</span>
             </div>
             {groups.clean.map(render)}
@@ -570,7 +579,11 @@ export default function FleetSidebar({
 
         {groups.hidden.length > 0 && (
           <>
-            <button className="group-label toggle" onClick={() => setShowHidden((v) => !v)}>
+            <button
+              className="group-label toggle"
+              style={slot()}
+              onClick={() => setShowHidden((v) => !v)}
+            >
               <span className="chevron">{showHidden ? "▾" : "▸"}</span>
               Hidden <span className="count">{groups.hidden.length}</span>
             </button>
