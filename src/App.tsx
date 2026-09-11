@@ -93,6 +93,8 @@ const GRAPH_KEY = "gitview.graph.collapsed";
  * typing at 600 ms, and this leaves the cursor a beat before the exit.
  */
 const SPLASH_MIN_MS = 900;
+/** The last column's delay plus its duration in `.app.arriving`, and a frame. */
+const ARRIVE_MS = 600;
 
 /**
  * A first guess at what to call a command being kept as a task.
@@ -153,6 +155,20 @@ export default function App() {
    * filling row by row is the thing worth covering.
    */
   const [booted, setBooted] = useState(false);
+  /**
+   * Whether the columns are still sliding into place.
+   *
+   * Set with `booted` and cleared once the last of them has landed, so the
+   * transforms come off: a transformed rail would anchor the fixed row menu to
+   * itself rather than to the window.
+   */
+  const [arriving, setArriving] = useState(false);
+  useEffect(() => {
+    if (!booted) return;
+    setArriving(true);
+    const timer = window.setTimeout(() => setArriving(false), ARRIVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [booted]);
   const [live, setLive] = useState<Set<string>>(new Set());
   // The one repository whose shell was closed on purpose, until something else
   // is selected. Anything wider would mean a repository you opened yesterday
@@ -1442,7 +1458,7 @@ ${landing} ${cleanup}${warning}`,
   ) : null;
 
   return (
-    <div className="app">
+    <div className={`app${arriving ? " arriving" : ""}`}>
       {/* The fleet and the tasks share the left rail. Tasks belong to whichever
           repository is selected, which is chosen immediately above them, and
           moving them here freed the right-hand column for the working tree. */}

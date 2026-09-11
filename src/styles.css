@@ -3223,7 +3223,50 @@ button.inbox-check-name.link:hover {
     transform: translateX(300%);
   }
 }
+
+/* The columns arrive as the splash lifts: the rail from the left, the changes
+   column from the right, the main column up a step, then the status bar. All of
+   it is transform and opacity, so the grid never changes size and the terminal
+   never sees a resize. The class comes off once the last one lands. */
+.app.arriving > .rail {
+  animation: arrive-left 360ms var(--ease) both;
+}
+.app.arriving > .main {
+  animation: arrive-up 360ms var(--ease) 60ms both;
+}
+.app.arriving > .changes-pane {
+  animation: arrive-right 360ms var(--ease) 120ms both;
+}
+.app.arriving > .status-bar {
+  animation: arrive-fade 360ms var(--ease) 180ms both;
+}
+@keyframes arrive-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+}
+@keyframes arrive-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+@keyframes arrive-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes arrive-fade {
+  from {
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
+  .app.arriving > * {
+    animation: none;
+  }
   .splash-word {
     animation: none;
     width: 7ch;
