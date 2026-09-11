@@ -3224,38 +3224,58 @@ button.inbox-check-name.link:hover {
   }
 }
 
-/* The columns arrive as the splash lifts: the rail from the left, the changes
-   column from the right, the main column up a step, then the status bar. All of
-   it is transform and opacity, so the grid never changes size and the terminal
-   never sees a resize. The class comes off once the last one lands. */
+/* The columns arrive as the splash lifts, in two beats. First the frame: the
+   rail from the left, the changes column from the right, the main column up a
+   step. Then what is in it: the rail's labels and rows pop in by their `--slot`
+   in list order, and the other two columns' contents fade in behind. All of it
+   is transform and opacity, so the grid never changes size and the terminal
+   never sees a resize. The class comes off once the last row lands. */
 .app.arriving > .rail {
-  animation: arrive-left 360ms var(--ease) both;
+  animation: arrive-left 480ms var(--ease) both;
 }
 .app.arriving > .main {
-  animation: arrive-up 360ms var(--ease) 60ms both;
+  animation: arrive-up 480ms var(--ease) 80ms both;
 }
 .app.arriving > .changes-pane {
-  animation: arrive-right 360ms var(--ease) 120ms both;
+  animation: arrive-right 480ms var(--ease) 160ms both;
 }
 .app.arriving > .status-bar {
-  animation: arrive-fade 360ms var(--ease) 180ms both;
+  animation: arrive-fade 360ms var(--ease) 720ms both;
+}
+/* The frame is empty while it slides, and fills once it has stopped. */
+.app.arriving .sidebar-head,
+.app.arriving .sidebar-search {
+  animation: arrive-fade 240ms var(--ease) 340ms both;
+}
+.app.arriving .repo-list > * {
+  animation: arrive-pop 260ms var(--ease) both;
+  animation-delay: calc(440ms + min(var(--slot, 0), 16) * 45ms);
+}
+.app.arriving > .rail > :not(.sidebar) {
+  animation: arrive-fade 300ms var(--ease) 640ms both;
+}
+.app.arriving > .main > * {
+  animation: arrive-fade 300ms var(--ease) 560ms both;
+}
+.app.arriving > .changes-pane > * {
+  animation: arrive-fade 300ms var(--ease) 640ms both;
 }
 @keyframes arrive-left {
   from {
     opacity: 0;
-    transform: translateX(-20px);
+    transform: translateX(-40px);
   }
 }
 @keyframes arrive-right {
   from {
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(40px);
   }
 }
 @keyframes arrive-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(14px);
   }
 }
 @keyframes arrive-fade {
@@ -3263,8 +3283,18 @@ button.inbox-check-name.link:hover {
     opacity: 0;
   }
 }
+@keyframes arrive-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.97);
+  }
+  60% {
+    transform: translateX(1px) scale(1.01);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .app.arriving > * {
+  .app.arriving,
+  .app.arriving * {
     animation: none;
   }
   .splash-word {

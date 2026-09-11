@@ -93,8 +93,12 @@ const GRAPH_KEY = "gitview.graph.collapsed";
  * typing at 600 ms, and this leaves the cursor a beat before the exit.
  */
 const SPLASH_MIN_MS = 900;
-/** The last column's delay plus its duration in `.app.arriving`, and a frame. */
-const ARRIVE_MS = 600;
+/**
+ * How long `.app.arriving` stays on: the panels, then the longest cascade the
+ * rows can run, then a frame. The row delay is capped in the stylesheet, so a
+ * fleet of forty is no longer than one of sixteen.
+ */
+const ARRIVE_MS = 1500;
 
 /**
  * A first guess at what to call a command being kept as a task.
