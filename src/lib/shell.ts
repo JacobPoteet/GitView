@@ -88,6 +88,43 @@ export function discardCommands(
 }
 
 /**
+ * Pushing the branch, and publishing it the first time.
+ *
+ * `git push` alone is the line when the branch already tracks something. With
+ * no upstream git refuses and suggests `--set-upstream`, so the first push
+ * names the remote and the branch and sets the tracking as it goes, which is
+ * what every push after it relies on.
+ */
+export function pushCommand(branch: string, hasUpstream: boolean, kind: ShellKind): string {
+  if (hasUpstream) return "git push";
+  return `git push -u origin ${quote(branch, kind)}`;
+}
+
+/**
+ * `gh pr create`, as one line.
+ *
+ * No `--repo` and no `--head`: the line is typed into that repository's shell,
+ * and gh takes the head from the branch the shell is standing on. That is
+ * also what lets gh offer to push a branch that has not been pushed, which
+ * `--head` would turn into a refusal. The body goes the way an issue's does.
+ */
+export function prCreateCommand(
+  base: string,
+  title: string,
+  body: string,
+  bodyFile: string | null,
+  kind: ShellKind,
+): string {
+  const parts = ["gh", "pr", "create", "--base", quote(base, kind), "--title", quote(title, kind)];
+  if (bodyFile) {
+    parts.push("--body-file", quote(bodyFile, kind));
+  } else {
+    parts.push("--body", quote(body, kind));
+  }
+  return parts.join(" ");
+}
+
+/**
  * `gh issue create`, as one line.
  *
  * The inbox reads GitHub out of sight because a fleet-wide read has nowhere to

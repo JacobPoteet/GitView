@@ -22,7 +22,7 @@ import UpdateDialog from "./components/UpdateDialog";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
-import { discardCommands, openUrlCommand, shellKind } from "./lib/shell";
+import { discardCommands, openUrlCommand, pushCommand, shellKind } from "./lib/shell";
 import {
   fetchPlan,
   isSkip,
@@ -827,6 +827,33 @@ export default function App() {
   const syncCommand = "git fetch --prune; git pull --ff-only";
 
   /**
+   * The push, and why it might be off.
+   *
+   * Off on a detached HEAD, which has no branch to push, and when the branch
+   * tracks something and is not ahead of it, which is nothing to push. A
+   * branch with no upstream is always on: the first push is what gives it one.
+   */
+  const push = useMemo(() => {
+    if (!selected || !selected.branch || selected.detached) return null;
+    const hasUpstream = selected.upstream !== null;
+    const command = pushCommand(selected.branch, hasUpstream, shell);
+    const nothing = hasUpstream && selected.ahead === 0;
+    return {
+      command,
+      label: hasUpstream ? "Push" : "Publish",
+      count: selected.ahead,
+      disabled: nothing,
+      title: nothing
+        ? `Nothing to push: ${selected.branch} is level with ${selected.upstream}.`
+        : `${command}\n\n${
+            hasUpstream
+              ? `${selected.ahead} ${selected.ahead === 1 ? "commit" : "commits"} to ${selected.upstream}.`
+              : `${selected.branch} has no upstream yet. This pushes it to origin and sets one.`
+          }${selected.behind > 0 ? ` ${selected.upstream} is ${selected.behind} ahead, so git will refuse until you pull.` : ""}\n\nShift-click to type it without running it.`,
+    };
+  }, [selected, shell]);
+
+  /**
    * Prune, for one repository, with the squash-merged branches included.
    *
    * The two halves take different flags and the dialog has to say so. A branch
@@ -1007,6 +1034,15 @@ export default function App() {
           kind: "task",
           hint: task.command,
           run: () => emit(task.command),
+        });
+      }
+      if (push && !push.disabled) {
+        items.push({
+          id: "action:push",
+          label: `${push.label} ${selected.branch}`,
+          kind: "git",
+          hint: push.command,
+          run: () => emit(push.command),
         });
       }
       items.push({
@@ -1457,6 +1493,17 @@ gh pr view ${branchPr.number} --web`}
                   squashed={squashed}
                   onCommand={emit}
                 />
+                {push && (
+                  <button
+                    className="btn"
+                    disabled={push.disabled || !shellReady}
+                    title={shellReady ? push.title : "Waiting for the shell"}
+                    onClick={(e) => emit(push.command, e.shiftKey)}
+                  >
+                    {push.label}
+                    {push.count > 0 && ` ↑${push.count}`}
+                  </button>
+                )}
                 <button
                   className="btn"
                   title={`${syncCommand}\n\nShift-click to type it without running it.`}
