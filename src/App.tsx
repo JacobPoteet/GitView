@@ -96,6 +96,9 @@ function taskNameFor(command: string): string {
   return stripped.split(/\s+/).slice(0, 2).join(" ").slice(0, 40) || command.slice(0, 40);
 }
 
+/** Module-level so a pane effect that depends on it never re-runs for it. */
+const noop = () => undefined;
+
 export default function App() {
   const [repos, setRepos] = useState<RepoState[]>([]);
   const [prefs, setPrefs] = useState<Map<string, RepoPref>>(new Map());
@@ -176,6 +179,14 @@ export default function App() {
   /** The launch check against the latest GitHub release, and its dialog. */
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
+  /**
+   * A shell of GitView's own, in its data folder, for the one command that
+   * belongs to no repository: its own update. Opened by that command when
+   * nothing is selected, since the main column has no prompt until then, and
+   * shown there for as long as nothing is. Selecting a repository swaps it out
+   * without ending it, the same as any other session.
+   */
+  const [ownShell, setOwnShell] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxReading, setInboxReading] = useState(false);
   /** A row the inbox opens expanded, when the header's PR button brought you there. */
@@ -680,8 +691,9 @@ export default function App() {
   const askCloseShell = useCallback(
     (path: string) => {
       const repo = repos.find((r) => r.path === path);
+      const own = path === info?.dataDir;
       setConfirmation({
-        title: `Close the shell in ${repo?.name ?? path}`,
+        title: own ? "Close GitView's own shell" : `Close the shell in ${repo?.name ?? path}`,
         body: "Anything still running in it stops: a dev server, a watcher, a build. Sessions outlive a view change precisely so those keep going, so this is the only thing that ends one.",
         confirmLabel: "Close the shell",
         onConfirm: () => {
@@ -692,10 +704,33 @@ export default function App() {
             return next;
           });
           if (path === selectedPath) setClosedShell(path);
+          if (own) setOwnShell(false);
         },
       });
     },
-    [repos, selectedPath],
+    [repos, selectedPath, info?.dataDir],
+  );
+
+  /**
+   * Types a command that belongs to the app rather than to a repository.
+   *
+   * The selected repository's shell takes it when there is one, waiting for
+   * `live` if it is still starting, and a closed one is reopened for it. With
+   * nothing selected the command opens GitView's own shell and waits on that
+   * instead, so the update never asks you to pick a repository it has no
+   * interest in.
+   */
+  const emitOwn = useCallback(
+    (command: string, typeOnly: boolean) => {
+      if (selected) {
+        if (closedShell === selected.path) setClosedShell(null);
+        setPendingCommand({ path: selected.path, command, typeOnly });
+      } else if (info) {
+        setOwnShell(true);
+        setPendingCommand({ path: info.dataDir, command, typeOnly });
+      }
+    },
+    [selected, closedShell, info],
   );
 
   /**
@@ -1582,6 +1617,20 @@ gh pr view ${branchPr.number} --web`}
               />
             </TerminalPane>
           </>
+        ) : ownShell && info ? (
+          /* GitView's own shell, in the place a repository's would be. No block
+             bar: nothing here is a task worth saving against a repository. */
+          <>
+            {pane}
+            <TerminalPane
+              repoPath={info.dataDir}
+              open
+              onSettled={noop}
+              onLiveChange={onLiveChange}
+              onRequestClose={askCloseShell}
+              onReopen={noop}
+            />
+          </>
         ) : (
           /* Nothing selected means there is no shell to keep visible, so the
              pane gets the column outright rather than splitting it with a
@@ -1766,9 +1815,9 @@ gh pr view ${branchPr.number} --web`}
         <UpdateDialog
           check={update}
           shell={shell}
-          target={shellReady && selected ? selected.name : null}
+          target={selected?.name ?? null}
           onCommand={(command, typeOnly) => {
-            emit(command, typeOnly);
+            emitOwn(command, typeOnly);
             setUpdateOpen(false);
           }}
           onCopy={async (text) => {
