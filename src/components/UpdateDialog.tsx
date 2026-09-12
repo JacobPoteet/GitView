@@ -40,11 +40,20 @@ export default function UpdateDialog({
   const size = release.assetSize ? `${(release.assetSize / 1_048_576).toFixed(1)} MB` : null;
 
   return (
-    <div className="confirm-backdrop" onMouseDown={onClose}>
-      <div className="confirm update" onMouseDown={(event) => event.stopPropagation()}>
+    <div
+      className="confirm-backdrop"
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <div
+        className="confirm update"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`GitView ${release.version}`}
+      >
         <h2>
           GitView {release.version}
-          <button className="pane-close" onClick={onClose} title="Close (Escape)">
+          <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
             ✕
           </button>
         </h2>

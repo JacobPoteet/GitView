@@ -17,7 +17,10 @@
 
   --text: oklch(94% 0.004 268);
   --text-dim: oklch(70% 0.010 268);
-  --text-faint: oklch(53% 0.010 268);
+  /* 60%, up from 53% on 12 Sep 2026: 53% measured 3.3 to 3.8:1 against the
+     four surfaces, under the 4.5:1 that 10.5 px metadata needs. 60% measures
+     4.4 to 5.1, and 70% is where --text-dim already sits. */
+  --text-faint: oklch(60% 0.010 268);
 
   --accent: oklch(70% 0.185 292);
   --accent-soft: oklch(70% 0.185 292 / 0.14);
@@ -89,6 +92,20 @@ input {
   background: none;
   border: none;
   outline: none;
+}
+
+/* The focus ring, on keyboard focus only. A control the mouse pressed shows
+   nothing, which is what :focus-visible is for. Text fields are left out: each
+   already lights its border on focus, and a ring on top of that is two
+   answers to one question. The palette's input is the one field with no
+   border of its own, and it is the only thing in the palette that can hold
+   focus, so the dialog's edge says where you are. */
+button:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 ::-webkit-scrollbar {
@@ -3318,6 +3335,10 @@ button.inbox-check-name.link:hover {
 @media (prefers-reduced-motion: reduce) {
   .app.arriving,
   .app.arriving * {
+    animation: none;
+  }
+  /* The refresh button stops turning; its accent colour still says busy. */
+  .icon-btn.busy svg {
     animation: none;
   }
   .splash-word {

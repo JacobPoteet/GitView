@@ -368,8 +368,14 @@ function Row({
           the checks, where a click on the desk landed on Check out. */}
       <div className="inbox-head">
         {desk ? (
-          <button className="inbox-expand" onClick={onToggle} title={deskTitle}>
-            {open ? "▾" : "▸"}
+          <button
+            className="inbox-expand"
+            onClick={onToggle}
+            title={deskTitle}
+            aria-label={deskTitle}
+            aria-expanded={open}
+          >
+            <span aria-hidden>{open ? "▾" : "▸"}</span>
           </button>
         ) : (
           <span className="inbox-expand" />
@@ -929,7 +935,7 @@ export default function InboxPane({
         >
           New issue
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)">
+        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
           ✕
         </button>
       </div>
@@ -1005,7 +1011,9 @@ export default function InboxPane({
                 onClick={() => toggle(group.key)}
                 title={shut ? "Show these" : "Hide these"}
               >
-                <span className="chevron">{shut ? "▸" : "▾"}</span>
+                <span className="chevron" aria-hidden>
+                  {shut ? "▸" : "▾"}
+                </span>
                 {group.label} <span className="count">{group.items.length}</span>
                 {group.hint && <span className="group-hint">{group.hint}</span>}
               </button>

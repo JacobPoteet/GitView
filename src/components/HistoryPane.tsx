@@ -277,7 +277,7 @@ export default function HistoryPane({
           {rows.length.toLocaleString()} of {total.toLocaleString()}
           {capped && "+"}
         </span>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)">
+        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
           ✕
         </button>
       </div>
