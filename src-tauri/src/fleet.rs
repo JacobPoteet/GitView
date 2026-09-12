@@ -31,6 +31,11 @@ pub struct BranchSummary {
     /// Contained in the default branch, so `git branch -d` would take it.
     pub merged: bool,
     pub last_commit_at: Option<i64>,
+    /// The commit the branch points at. The frontend folds every tip into one
+    /// key, so anything that moves a ref, a branch deleted or a commit amended
+    /// in the same second, reaches the graph and the history.
+    #[serde(default)]
+    pub tip: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -523,6 +528,7 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
             is_head,
             merged,
             last_commit_at,
+            tip: tip.map(|oid| oid.to_string()),
         });
     }
 

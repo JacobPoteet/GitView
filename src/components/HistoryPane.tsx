@@ -15,6 +15,12 @@ interface Props {
    * two ends of a join nothing else in the picture can draw.
    */
   squashed: Squashed[];
+  /**
+   * Moves when a ref does. The pane re-reads what it has loaded, in place, so
+   * a commit or a prune typed while it is open reaches it without the scroll
+   * position going back to the top.
+   */
+  reloadKey: string;
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
   onError: (message: string) => void;
@@ -67,6 +73,7 @@ export default function HistoryPane({
   repoName,
   disabled,
   squashed,
+  reloadKey,
   onClose,
   onCommand,
   onError,
@@ -89,13 +96,21 @@ export default function HistoryPane({
   // same 400 commits. A ref rather than state: the check has to see the change
   // before React has re-rendered.
   const loading = useRef(false);
+  // A read from the top supersedes whatever was in flight. Each one takes a
+  // number, and a page that lands carrying an older number is dropped rather
+  // than appended to rows it was not read against.
+  const generation = useRef(0);
+  const loaded = useRef(0);
+  loaded.current = rows.length;
 
   const loadPage = useCallback(
-    async (offset: number) => {
-      if (loading.current) return;
+    async (offset: number, limit = PAGE) => {
+      if (offset > 0 && loading.current) return;
+      const mine = offset === 0 ? ++generation.current : generation.current;
       loading.current = true;
       try {
-        const page = await api.repoHistory(repoPath, offset, PAGE);
+        const page = await api.repoHistory(repoPath, offset, limit);
+        if (mine !== generation.current) return;
         if (page.error) {
           onError(page.error);
           setDone(true);
@@ -109,24 +124,27 @@ export default function HistoryPane({
         setRows((current) =>
           offset === 0 ? page.rows : [...current, ...page.rows],
         );
-        if (page.rows.length < PAGE) setDone(true);
+        setDone(page.rows.length < limit);
       } catch (err) {
+        if (mine !== generation.current) return;
         onError(String(err));
         setDone(true);
       } finally {
-        loading.current = false;
-        setReading(false);
+        if (mine === generation.current) {
+          loading.current = false;
+          setReading(false);
+        }
       }
     },
     [repoPath, onError],
   );
 
+  // The first run is the mount. Every run after it is a ref that moved, and
+  // those re-read as many rows as are on screen so the window stays where it
+  // was; the rows already there stay up until the fresh ones replace them.
   useEffect(() => {
-    setRows([]);
-    setDone(false);
-    setReading(true);
-    loadPage(0);
-  }, [loadPage]);
+    loadPage(0, Math.max(PAGE, loaded.current));
+  }, [loadPage, reloadKey]);
 
   useLayoutEffect(() => {
     const el = scroller.current;

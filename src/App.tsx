@@ -459,11 +459,35 @@ export default function App() {
     };
   }, [changes, diffTarget]);
 
-  // The graph is cheap enough to read fresh, and it has to move the moment HEAD
-  // does. Keying on the branch and its counts rather than on `scannedAt` keeps a
-  // refresh that changed nothing from redrawing the strip.
-  const headSignature = selected
-    ? `${selected.branch}|${selected.lastCommitAt}|${selected.ahead}|${selected.behind}`
+  /**
+   * Every ref in one string.
+   *
+   * The graph, the squash detection and the history read fresh whenever this
+   * moves and stay put when a refresh changed nothing. HEAD's branch and its
+   * counts were the key at first, and a prune moved none of them: the branch it
+   * deleted stayed in `squashed`, and the button went on counting it. Every
+   * local tip is in here now, so a branch created, deleted, amended or reset
+   * reaches the picture. Working-tree counts are left out on purpose, because
+   * a build writing files is not a ref moving.
+   *
+   * `refreshEpoch` is the Refresh button. It asks for everything, including
+   * the tags and remote refs a signature built from the sweep cannot see.
+   */
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  const refSignature = selected
+    ? [
+        refreshEpoch,
+        selected.branch,
+        selected.detached,
+        selected.upstream,
+        selected.ahead,
+        selected.behind,
+        selected.defaultBase,
+        selected.aheadOfDefault,
+        selected.behindDefault,
+        selected.lastCommitAt,
+        ...selected.branches.map((b) => `${b.name}@${b.tip}:${b.ahead}:${b.behind}`),
+      ].join("|")
     : "";
 
   useEffect(() => {
@@ -483,7 +507,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPath, headSignature]);
+  }, [selectedPath, refSignature]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -502,7 +526,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPath, headSignature]);
+  }, [selectedPath, refSignature]);
 
   // Blocks belong to the session, not to this component, so they survive a view
   // change the same way the scrollback does. Resubscribing on `shellOpen` is
@@ -646,12 +670,19 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [info, inbox, refreshInbox]);
 
+  // Read through a ref so `refreshRepo` keeps one identity. Each session holds
+  // the copy it was handed when its pane was open, and a copy that had the
+  // selection baked in would fill the changes pane from whichever repository
+  // last had a dev server print something.
+  const selectedRef = useRef(selectedPath);
+  selectedRef.current = selectedPath;
+
   const refreshRepo = useCallback(
     (path: string) => {
       api.repoRefresh(path).then(upsert).catch(() => undefined);
       // A commit typed by hand empties the changes pane, and the pane is right
       // next to the prompt it was typed at.
-      if (path === selectedPath) {
+      if (path === selectedRef.current) {
         api.repoChanges(path).then(setChanges).catch(() => undefined);
       }
 
@@ -668,7 +699,7 @@ export default function App() {
         }
       }
     },
-    [upsert, selectedPath, refreshInbox],
+    [upsert, refreshInbox],
   );
 
   const onLiveChange = useCallback((path: string, isLive: boolean) => {
@@ -1476,6 +1507,7 @@ ${landing} ${cleanup}${warning}`,
       repoName={selected.name}
       disabled={!shellReady}
       squashed={squashed}
+      reloadKey={refSignature}
       onClose={() => setHistoryOpen(false)}
       onCommand={emit}
       onError={setNote}
@@ -1630,7 +1662,10 @@ gh pr view ${branchPr.number} --web`}
                 <button
                   className="btn"
                   title="Re-read this repository"
-                  onClick={() => refreshRepo(selected.path)}
+                  onClick={() => {
+                    refreshRepo(selected.path);
+                    setRefreshEpoch((epoch) => epoch + 1);
+                  }}
                 >
                   Refresh
                 </button>
