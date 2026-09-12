@@ -6,6 +6,8 @@ export interface BranchSummary {
   isHead: boolean;
   merged: boolean;
   lastCommitAt: number | null;
+  /** The commit it points at. Part of `refSignature`, see App.tsx. */
+  tip: string | null;
 }
 
 export interface RepoState {
