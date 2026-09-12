@@ -1652,22 +1652,21 @@ gh pr view ${branchPr.number} --web`}
                     )}
                   </button>
                 )}
-                <span className="path">
-                  {selected.branch ?? "no commits"}
-                  {selected.ahead > 0 && ` ↑${selected.ahead}`}
-                  {selected.behind > 0 && ` ↓${selected.behind}`}
-                  {dirty > 0 && ` · ${dirty} changed`}
-                  {selected.lastCommitAt && ` · ${relativeTime(selected.lastCommitAt)}`}
-                </span>
-              </div>
-
-              <div className="head-actions">
                 <BranchMenu
                   repo={selected}
                   shell={shell}
                   squashed={squashed}
                   onCommand={emit}
                 />
+                <span className="path">
+                  {selected.ahead > 0 && `↑${selected.ahead} `}
+                  {selected.behind > 0 && `↓${selected.behind} `}
+                  {dirty > 0 && `· ${dirty} changed `}
+                  {selected.lastCommitAt && `· ${relativeTime(selected.lastCommitAt)}`}
+                </span>
+              </div>
+
+              <div className="head-actions">
                 {push && (
                   <button
                     className="btn"
@@ -1699,13 +1698,6 @@ gh pr view ${branchPr.number} --web`}
                   Prune merged
                   {prunableCount > 0 && ` (${prunableCount})`}
                 </button>
-                <button
-                  className="btn"
-                  title={`Every commit on every branch of ${selected.name}`}
-                  onClick={() => setHistoryOpen(true)}
-                >
-                  History
-                </button>
                 <button className="btn accent" onClick={() => setPaletteOpen(true)}>
                   ⌘K
                 </button>
@@ -1717,6 +1709,7 @@ gh pr view ${branchPr.number} --web`}
               collapsed={graphCollapsed}
               squashed={headSquashed}
               onToggle={toggleGraph}
+              onHistory={() => setHistoryOpen(true)}
               onCommand={emit}
             />
 
