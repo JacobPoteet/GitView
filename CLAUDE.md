@@ -67,6 +67,7 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | `src-tauri/src/tasks.rs` | Task discovery across manifests |
 | `src-tauri/src/cache.rs` | SQLite. Cached scans, saved tasks, settings, and the pin and hide preferences |
 | `src-tauri/examples/scan.rs` | Headless scanner check, no window |
+| `scripts/install-local.ps1` | `npm run install:local`: build the installer, run it over the installed GitView, start the new one. Never rename the script to `install`, npm runs that on every `npm install` and `npm ci` |
 
 ## Rules that hold across changes
 

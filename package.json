@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "install:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-local.ps1",
     "dev:vite": "vite",
     "build:vite": "tsc --noEmit && vite build",
     "preview": "vite preview",
