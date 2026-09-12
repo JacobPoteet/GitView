@@ -100,6 +100,11 @@ export default function CommandPalette({ items, onClose }: Props) {
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+        {/* The input is a combobox over the list, so a screen reader follows
+            the arrow keys: `aria-activedescendant` names the row they are on
+            without moving focus off the field, and the rows are options with
+            ids for it to point at. The id is the row's position: item ids
+            hold paths, which are not valid in an id. */}
         <input
           ref={inputRef}
           className="palette-input"
@@ -108,12 +113,21 @@ export default function CommandPalette({ items, onClose }: Props) {
           onKeyDown={onKeyDown}
           placeholder="Jump to a repository, run a task, sync"
           spellCheck={false}
+          role="combobox"
+          aria-label="Command"
+          aria-autocomplete="list"
+          aria-expanded={results.length > 0}
+          aria-controls="palette-options"
+          aria-activedescendant={results[active] ? `palette-option-${active}` : undefined}
         />
-        <div className="palette-list" ref={listRef}>
+        <div className="palette-list" ref={listRef} id="palette-options" role="listbox">
           {results.length === 0 && <p className="empty">Nothing matches.</p>}
           {results.map((item, index) => (
             <button
               key={item.id}
+              id={`palette-option-${index}`}
+              role="option"
+              aria-selected={index === active}
               className={`palette-item${index === active ? " active" : ""}`}
               onMouseEnter={() => setActive(index)}
               onClick={() => {

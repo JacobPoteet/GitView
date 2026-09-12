@@ -193,6 +193,11 @@ function CloseIcon() {
 /** How a row is taking part in a drag, which is what draws the insertion line. */
 type DragRole = "none" | "source" | "before" | "after";
 
+/** What a heading says for a group: the visible count is a bare number. */
+function groupName(label: string, count: number): string {
+  return `${label}, ${count} ${count === 1 ? "repository" : "repositories"}`;
+}
+
 function Row({
   repo,
   selected,
@@ -235,12 +240,12 @@ function Row({
   onMove: (path: string, delta: number) => void;
 }) {
   const state = repo.error ? "error" : live ? "live" : isClean(repo) ? "clean" : "attention";
-  const wrap = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLLIElement>(null);
 
   // The row and its two controls are siblings rather than nested buttons, which
   // the browser refuses to nest and the keyboard cannot reach.
   return (
-    <div
+    <li
       ref={wrap}
       style={{ "--slot": slot } as CSSProperties}
       className={
@@ -328,6 +333,7 @@ function Row({
             className="row-action live"
             onClick={() => onCloseShell(repo.path)}
             title="Close this repository's shell"
+            aria-label={`Close ${repo.name}'s shell`}
           >
             <CloseIcon />
           </button>
@@ -336,6 +342,8 @@ function Row({
           className={`row-action${pinned ? " on" : ""}`}
           onClick={() => onPin(repo.path, !pinned)}
           title={pinned ? "Unpin" : "Pin to the top of the list"}
+          aria-label={pinned ? `Unpin ${repo.name}` : `Pin ${repo.name}`}
+          aria-pressed={pinned}
         >
           <PinIcon />
         </button>
@@ -343,11 +351,12 @@ function Row({
           className="row-action"
           onClick={() => onHide(repo.path, !hidden)}
           title={hidden ? "Show in the list again" : "Hide, and drop it from the palette"}
+          aria-label={hidden ? `Show ${repo.name}` : `Hide ${repo.name}`}
         >
           <HideIcon hidden={hidden} />
         </button>
       </span>
-    </div>
+    </li>
   );
 }
 
@@ -587,48 +596,73 @@ export default function FleetSidebar({
           </p>
         )}
 
+        {/* Each group is a region under its own heading, and the rows are a
+            list, so a screen reader hears "Pinned, 3 repositories" and then a
+            list of three rather than one long run of buttons. The count is
+            read from the heading's label: the bare number in the visible
+            text says nothing on its own. */}
         {groups.pinned.length > 0 && (
-          <>
-            <div className="group-label" style={slot()}>
+          <section className="repo-group" aria-labelledby="group-pinned">
+            <h2
+              id="group-pinned"
+              className="group-label"
+              style={slot()}
+              aria-label={groupName("Pinned", groups.pinned.length)}
+            >
               Pinned <span className="count">{groups.pinned.length}</span>
               {orderable && <span className="group-hint">drag to reorder</span>}
-            </div>
-            {groups.pinned.map((repo) => renderRow(repo, true))}
-          </>
+            </h2>
+            <ul className="repo-rows">{groups.pinned.map((repo) => renderRow(repo, true))}</ul>
+          </section>
         )}
 
         {groups.attention.length > 0 && (
-          <>
-            <div className="group-label" style={slot()}>
+          <section className="repo-group" aria-labelledby="group-attention">
+            <h2
+              id="group-attention"
+              className="group-label"
+              style={slot()}
+              aria-label={groupName("Needs attention", groups.attention.length)}
+            >
               Needs attention <span className="count">{groups.attention.length}</span>
-            </div>
-            {groups.attention.map(render)}
-          </>
+            </h2>
+            <ul className="repo-rows">{groups.attention.map(render)}</ul>
+          </section>
         )}
 
         {groups.clean.length > 0 && (
-          <>
-            <div className="group-label" style={slot()}>
+          <section className="repo-group" aria-labelledby="group-clean">
+            <h2
+              id="group-clean"
+              className="group-label"
+              style={slot()}
+              aria-label={groupName("Clean", groups.clean.length)}
+            >
               Clean <span className="count">{groups.clean.length}</span>
-            </div>
-            {groups.clean.map(render)}
-          </>
+            </h2>
+            <ul className="repo-rows">{groups.clean.map(render)}</ul>
+          </section>
         )}
 
         {groups.hidden.length > 0 && (
-          <>
-            <button
-              className="group-label toggle"
-              style={slot()}
-              onClick={() => setShowHidden((v) => !v)}
-            >
-              <span className="chevron" aria-hidden>
-                {showHidden ? "▾" : "▸"}
-              </span>
-              Hidden <span className="count">{groups.hidden.length}</span>
-            </button>
-            {showHidden && groups.hidden.map(render)}
-          </>
+          <section className="repo-group" aria-labelledby="group-hidden">
+            <h2 className="group-head">
+              <button
+                id="group-hidden"
+                className="group-label toggle"
+                style={slot()}
+                onClick={() => setShowHidden((v) => !v)}
+                aria-expanded={showHidden}
+                aria-label={groupName("Hidden", groups.hidden.length)}
+              >
+                <span className="chevron" aria-hidden>
+                  {showHidden ? "▾" : "▸"}
+                </span>
+                Hidden <span className="count">{groups.hidden.length}</span>
+              </button>
+            </h2>
+            {showHidden && <ul className="repo-rows">{groups.hidden.map(render)}</ul>}
+          </section>
         )}
       </div>
     </aside>
