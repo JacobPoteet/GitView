@@ -67,7 +67,9 @@ export default function BranchGraph({ graph, collapsed, squashed, onToggle, onCo
 
   // How much history fits is a question about the pane, so the pane has to be
   // measured. Zero until the first observation, which `build` reads as "draw the
-  // floor" rather than as "draw nothing".
+  // floor" rather than as "draw nothing". The scroller mounts with the graph,
+  // so the observer has to be attached again when the graph arrives.
+  const hasGraph = graph !== null;
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -77,7 +79,7 @@ export default function BranchGraph({ graph, collapsed, squashed, onToggle, onCo
     observer.observe(el);
     setWidth(el.clientWidth);
     return () => observer.disconnect();
-  }, [collapsed, graph !== null]);
+  }, [collapsed, hasGraph]);
 
   const model = useMemo(() => build(graph, width), [graph, width]);
 

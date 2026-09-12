@@ -37,6 +37,9 @@ jobs:
       - name: Typecheck and bundle the frontend
         run: npm run build:vite
 
+      - name: Lint the frontend
+        run: npm run lint
+
       - name: Check Rust formatting
         working-directory: src-tauri
         run: cargo fmt --all --check

@@ -55,11 +55,15 @@ export default function RootsDialog({ roots, onChange, onClose }: Props) {
   }
 
   return (
-    <div className="confirm-backdrop" onMouseDown={onClose}>
-      <div className="confirm roots" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className="confirm-backdrop"
+      role="presentation"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="confirm roots" role="dialog" aria-modal="true" aria-label="Watched folders">
         <h2>
           Watched folders
-          <button className="pane-close" onClick={onClose} title="Close (Escape)">
+          <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
             ✕
           </button>
         </h2>

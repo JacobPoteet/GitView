@@ -510,6 +510,9 @@ export default function FleetSidebar({
                 ? `GitHub inbox: ${inboxWaiting} waiting on you`
                 : "GitHub inbox: pull requests and issues across the fleet"
             }
+            // The badge's count is the button's text, and text beats a title
+            // for the accessible name, so without this the button reads "3".
+            aria-label={inboxWaiting > 0 ? `GitHub inbox, ${inboxWaiting} waiting on you` : "GitHub inbox"}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path
@@ -529,6 +532,8 @@ export default function FleetSidebar({
           className={`icon-btn${refreshing ? " busy" : ""}`}
           onClick={onRefresh}
           disabled={refreshing}
+          aria-label="Refresh"
+          aria-busy={refreshing}
           title={
             refreshing
               ? "Refreshing"
@@ -545,7 +550,12 @@ export default function FleetSidebar({
             />
           </svg>
         </button>
-        <button className="icon-btn" onClick={onManageRoots} title="Folders GitView watches">
+        <button
+          className="icon-btn"
+          onClick={onManageRoots}
+          title="Folders GitView watches"
+          aria-label="Watched folders"
+        >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -612,7 +622,9 @@ export default function FleetSidebar({
               style={slot()}
               onClick={() => setShowHidden((v) => !v)}
             >
-              <span className="chevron">{showHidden ? "▾" : "▸"}</span>
+              <span className="chevron" aria-hidden>
+                {showHidden ? "▾" : "▸"}
+              </span>
               Hidden <span className="count">{groups.hidden.length}</span>
             </button>
             {showHidden && groups.hidden.map(render)}

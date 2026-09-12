@@ -120,11 +120,20 @@ export default function BatchDialog({
   if (!run) {
     const verb = verbFor[kind];
     return (
-      <div className="confirm-backdrop" onMouseDown={onClose}>
-        <div className="confirm wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        className="confirm-backdrop"
+        role="presentation"
+        onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div
+          className="confirm wide"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${verb} ${picked.size} of ${candidates.length} repositories`}
+        >
           <h2>
             {verb} {picked.size} of {candidates.length} repositories
-            <button className="pane-close" onClick={onClose} title="Close (Escape)">
+            <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
               ✕
             </button>
           </h2>
@@ -209,8 +218,17 @@ export default function BatchDialog({
   if (skipped > 0) tally.push(`${skipped} skipped`);
   if (failed > 0) tally.push(`${failed} failed`);
   return (
-    <div className="confirm-backdrop" onMouseDown={run.running ? undefined : onClose}>
-      <div className="confirm wide" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className="confirm-backdrop"
+      role="presentation"
+      onMouseDown={(e) => !run.running && e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="confirm wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${verbFor[run.kind]} ${run.running ? "running" : "finished"}`}
+      >
         <h2>
           {run.running
             ? `${verbFor[run.kind]}ing ${run.done + 1} of ${run.rows.length}`
@@ -219,7 +237,7 @@ export default function BatchDialog({
           {/* A run still going keeps its dialog: this is the only place the
               commands it is about to type are named. */}
           {!run.running && (
-            <button className="pane-close" onClick={onClose} title="Close (Escape)">
+            <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
               ✕
             </button>
           )}

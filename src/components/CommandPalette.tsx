@@ -94,8 +94,12 @@ export default function CommandPalette({ items, onClose }: Props) {
   }
 
   return (
-    <div className="palette-backdrop" onMouseDown={onClose}>
-      <div className="palette" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className="palette-backdrop"
+      role="presentation"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette">
         <input
           ref={inputRef}
           className="palette-input"

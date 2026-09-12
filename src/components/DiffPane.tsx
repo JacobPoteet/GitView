@@ -174,7 +174,7 @@ export default function DiffPane({
         >
           {verb}
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)">
+        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
           ✕
         </button>
       </div>

@@ -320,7 +320,7 @@ export default function App() {
     } finally {
       setScanning(false);
     }
-  }, [upsert, loadPrefs]);
+  }, [upsert, loadPrefs, setNote]);
 
   // Cache first, so the list is on screen before anything is opened.
   useEffect(() => {
@@ -366,7 +366,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [scan, loadPrefs]);
+  }, [scan, loadPrefs, setNote]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -740,7 +740,7 @@ export default function App() {
       await api.repoSetPinned(path, pinned).catch((err) => setNote(String(err)));
       await loadPrefs();
     },
-    [loadPrefs],
+    [loadPrefs, setNote],
   );
 
   /**
@@ -770,7 +770,7 @@ export default function App() {
       // the list no longer shows, with no obvious way back to it.
       if (hidden && path === selectedPath) setSelectedPath(null);
     },
-    [loadPrefs, selectedPath],
+    [loadPrefs, selectedPath, setNote],
   );
 
   const setTaskHidden = useCallback(
@@ -781,7 +781,7 @@ export default function App() {
       );
       await api.taskSetHidden(selectedPath, task.id, hidden).catch((err) => setNote(String(err)));
     },
-    [selectedPath],
+    [selectedPath, setNote],
   );
 
   /**
@@ -922,7 +922,7 @@ export default function App() {
           : "The clipboard refused the copy.",
       );
     },
-    [],
+    [setNote],
   );
 
   const askSaveTask = useCallback((block: CommandBlock) => {
@@ -945,7 +945,7 @@ export default function App() {
     } catch (err) {
       setNote(String(err));
     }
-  }, [pendingTask]);
+  }, [pendingTask, setNote]);
 
   /**
    * Saved tasks are the only ones that can be deleted. A discovered task belongs
@@ -964,7 +964,7 @@ export default function App() {
           .catch((err) => setNote(String(err)));
       },
     });
-  }, []);
+  }, [setNote]);
 
   // Typed at a prompt, so it is one PowerShell line. A batch runs the same two
   // commands as two separate invocations, see `lib/batch.ts`.
@@ -1122,7 +1122,7 @@ export default function App() {
       "fetch",
       batchCandidates.filter((repo) => !isSkip(fetchPlan(repo))).map((repo) => repo.path),
     );
-  }, [batchCandidates, runBatch]);
+  }, [batchCandidates, runBatch, setNote]);
 
   /**
    * Opens a fresh pick stage.
@@ -1859,10 +1859,16 @@ gh pr view ${branchPr.number} --web`}
       )}
 
       {pendingTask && (
-        <div className="confirm-backdrop" onMouseDown={() => setPendingTask(null)}>
+        <div
+          className="confirm-backdrop"
+          role="presentation"
+          onMouseDown={(e) => e.target === e.currentTarget && setPendingTask(null)}
+        >
           <form
             className="confirm"
-            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keep this command as a task"
             onSubmit={(e) => {
               e.preventDefault();
               saveTask();
@@ -1875,6 +1881,7 @@ gh pr view ${branchPr.number} --web`}
                 className="pane-close"
                 onClick={() => setPendingTask(null)}
                 title="Close (Escape)"
+                aria-label="Close"
               >
                 ✕
               </button>
@@ -1922,14 +1929,19 @@ gh pr view ${branchPr.number} --web`}
       )}
 
       {confirmation && (
-        <div className="confirm-backdrop" onMouseDown={() => setConfirmation(null)}>
-          <div className="confirm" onMouseDown={(e) => e.stopPropagation()}>
+        <div
+          className="confirm-backdrop"
+          role="presentation"
+          onMouseDown={(e) => e.target === e.currentTarget && setConfirmation(null)}
+        >
+          <div className="confirm" role="dialog" aria-modal="true" aria-label={confirmation.title}>
             <h2>
               {confirmation.title}
               <button
                 className="pane-close"
                 onClick={() => setConfirmation(null)}
                 title="Close (Escape)"
+                aria-label="Close"
               >
                 ✕
               </button>
