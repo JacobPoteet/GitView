@@ -6,6 +6,12 @@ interface Props {
   graph: Graph | null;
   collapsed: boolean;
   onToggle: () => void;
+  /**
+   * Opens the whole history. The strip is an excerpt of it, forty commits each
+   * way, so the way to the rest sits on the strip rather than among the header's
+   * commands, where it was the one button that did not type anything.
+   */
+  onHistory: () => void;
   /** Set when the branch you are on was squash-merged into the base. */
   squashed: Squashed | null;
   /** Types a command in the repository's shell. Shift-click leaves it unrun. */
@@ -61,7 +67,14 @@ interface Placed {
   head: boolean;
 }
 
-export default function BranchGraph({ graph, collapsed, squashed, onToggle, onCommand }: Props) {
+export default function BranchGraph({
+  graph,
+  collapsed,
+  squashed,
+  onToggle,
+  onHistory,
+  onCommand,
+}: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -110,12 +123,21 @@ export default function BranchGraph({ graph, collapsed, squashed, onToggle, onCo
 
   return (
     <section className={`graph${collapsed ? " collapsed" : ""}`}>
-      <button className="graph-bar" onClick={onToggle} title="Collapse the branch graph">
-        <span className="graph-chevron">{collapsed ? "▸" : "▾"}</span>
-        <span className="graph-summary">{summary}</span>
-        {graph.unrelated && <span className="graph-note">no shared history</span>}
-        {graph.truncated && <span className="graph-note">first 40 each way</span>}
-      </button>
+      <div className="graph-bar">
+        <button
+          className="graph-toggle"
+          onClick={onToggle}
+          title={collapsed ? "Expand the branch graph" : "Collapse the branch graph"}
+        >
+          <span className="graph-chevron">{collapsed ? "▸" : "▾"}</span>
+          <span className="graph-summary">{summary}</span>
+          {graph.unrelated && <span className="graph-note">no shared history</span>}
+          {graph.truncated && <span className="graph-note">first 40 each way</span>}
+        </button>
+        <button className="graph-history" onClick={onHistory} title="Every commit on every branch">
+          History
+        </button>
+      </div>
 
       {!collapsed &&
         (graph.error ? (

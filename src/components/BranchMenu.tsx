@@ -12,13 +12,18 @@ interface Props {
 }
 
 /**
- * The branches you cannot otherwise see.
+ * The branches you cannot otherwise see, behind the name of the one you are on.
  *
  * Standing on the default branch and in sync with it, the graph is a straight
  * line and the header says everything matches, which is true and also hides the
  * three branches sitting behind it. The scanner already measures every local
  * branch against the default one, so this is a list of what that pass found
  * rather than a second read.
+ *
+ * The trigger is the branch name in the title, the way every other client does
+ * it, rather than a "Branches" button four commands to the right of the name it
+ * was about. With no commits there is no branch to stand on and nothing to list,
+ * so the name is plain text.
  */
 export default function BranchMenu({ repo, shell, squashed, onCommand }: Props) {
   const [open, setOpen] = useState(false);
@@ -54,15 +59,19 @@ export default function BranchMenu({ repo, shell, squashed, onCommand }: Props) 
     (b) => !b.isHead && !b.merged && !squashedBy.has(b.name),
   ).length;
 
+  if (!repo.branch) return <span className="branch-name">no commits</span>;
+
   return (
     <div className="branch-menu" ref={wrap}>
       <button
-        className={`btn${outstanding > 0 ? " has-other" : ""}`}
+        className={`branch-name${outstanding > 0 ? " has-other" : ""}${open ? " open" : ""}`}
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
         title={`${count} local ${count === 1 ? "branch" : "branches"}, measured against ${base}`}
       >
-        Branches
-        <code>{count}</code>
+        {repo.branch}
+        {count > 1 && <span className="branch-count">{count}</span>}
       </button>
 
       {open && (
