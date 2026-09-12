@@ -640,6 +640,23 @@ export default function App() {
   }, [setNote]);
 
   /**
+   * The one refresh button, in the sidebar head beside the folders button.
+   *
+   * It used to be three: a Refresh in the repository header that re-read one
+   * repository and bumped the epoch, a Refresh in the inbox that asked GitHub,
+   * and Rescan the fleet in the palette. Each was only visible where it was
+   * least needed, and the header's did not exist until a repository was open.
+   * One button asks for everything: the sweep re-reads every repository, the
+   * epoch re-reads the tags and remote refs the sweep cannot see, and the
+   * inbox reads if gh is here to ask.
+   */
+  const refreshAll = useCallback(() => {
+    void scan();
+    setRefreshEpoch((epoch) => epoch + 1);
+    if (info?.gh.version) void refreshInbox();
+  }, [scan, refreshInbox, info?.gh.version]);
+
+  /**
    * The interval read.
    *
    * Once a minute while a pull request in the list has checks running, no
@@ -1327,10 +1344,11 @@ export default function App() {
       });
     }
     items.push({
-      id: "action:rescan",
-      label: "Rescan the fleet",
+      id: "action:refresh",
+      label: "Refresh",
       kind: "fleet",
-      run: scan,
+      hint: "rescan the fleet, re-read the refs, read the inbox",
+      run: refreshAll,
     });
     items.push({
       id: "action:roots",
@@ -1436,7 +1454,6 @@ export default function App() {
       selectedPath={selectedPath}
       shell={shell}
       refreshing={inboxReading}
-      onRefresh={refreshInbox}
       onClose={() => {
         setInboxOpen(false);
         setInboxFocus(null);
@@ -1449,10 +1466,10 @@ export default function App() {
       onCommand={(path, command, typeOnly = false) => {
         // The command lands in that repository's shell, which means selecting
         // it first: a session belongs to a repository. The command waits for
-        // that shell rather than for a timer.
+        // that shell rather than for a timer. The pane stays up: the shell is
+        // the third of the column under it, so the output is in view, and a
+        // merge that closed the inbox left you reopening it to see the row go.
         setSelectedPath(path);
-        setInboxOpen(false);
-        setInboxFocus(null);
         setPendingCommand({ path, command, typeOnly });
         // Anything `gh` writes changes the next read. A line left at the
         // prompt has not been run, so it arms nothing.
@@ -1487,18 +1504,12 @@ ${landing} ${cleanup}${warning}`,
           confirmLabel: "Merge",
           onConfirm: () => {
             setSelectedPath(item.repoPath);
-            setInboxOpen(false);
-            setInboxFocus(null);
             setPendingCommand({ path: item.repoPath, command, typeOnly: false });
             inboxAfter.current = { path: item.repoPath, command };
           },
         });
       }}
       openKey={inboxFocus}
-      onCopy={async (text) => {
-        const copied = await copyText(text);
-        setNote(copied ? `Copied ${text}` : "The clipboard refused the copy.");
-      }}
       onError={setNote}
     />
   ) : historyOpen && selected ? (
@@ -1544,6 +1555,8 @@ ${landing} ${cleanup}${warning}`,
           liveSessions={live}
           query={query}
           scanning={scanning}
+          refreshing={scanning || inboxReading}
+          onRefresh={refreshAll}
           onQuery={setQuery}
           onSelect={setSelectedPath}
           onPin={setPinned}
@@ -1658,16 +1671,6 @@ gh pr view ${branchPr.number} --web`}
                   onClick={() => setHistoryOpen(true)}
                 >
                   History
-                </button>
-                <button
-                  className="btn"
-                  title="Re-read this repository"
-                  onClick={() => {
-                    refreshRepo(selected.path);
-                    setRefreshEpoch((epoch) => epoch + 1);
-                  }}
-                >
-                  Refresh
                 </button>
                 <button className="btn accent" onClick={() => setPaletteOpen(true)}>
                   ⌘K
