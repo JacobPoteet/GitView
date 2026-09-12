@@ -158,6 +158,13 @@ select:focus-visible,
   flex: 1;
 }
 
+/* The note's live region stays in the DOM while it has nothing to say, and
+   an empty flex item still costs a gap. The negative margin gives it back
+   rather than hiding the region, which would stop it announcing. */
+.status-bar .status-note:empty {
+  margin-left: -16px;
+}
+
 .status-bar kbd {
   font-family: var(--font-mono);
   background: var(--bg-raised);
@@ -279,10 +286,25 @@ select:focus-visible,
   padding: 0 8px 12px;
 }
 
+/* A group is a section under a heading and its rows are a list, for the
+   screen reader. Neither element brings any of the browser's own styling. */
+.repo-group,
+.group-head {
+  margin: 0;
+  font: inherit;
+}
+
+.repo-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .group-label {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
   padding: 12px 6px 6px;
   font-size: 10px;
   font-weight: 600;
@@ -3287,7 +3309,7 @@ button.inbox-check-name.link:hover {
 .app.arriving .sidebar-search {
   animation: arrive-fade 240ms var(--ease) 340ms both;
 }
-.app.arriving .repo-list > * {
+.app.arriving .repo-list :is(.empty, .group-label, .repo-row-wrap) {
   animation: arrive-pop 260ms var(--ease) both;
   animation-delay: calc(440ms + min(var(--slot, 0), 16) * 45ms);
 }

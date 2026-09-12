@@ -46,6 +46,29 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
+/**
+ * Whether every terminal keeps a live region a screen reader can follow.
+ *
+ * The WebGL renderer draws to a canvas, so without this there is no terminal
+ * text in the DOM at all. xterm's mode mirrors each line into an off-screen
+ * element as it is written, which costs on every frame a dev server prints,
+ * so it stays off until someone asks. The palette toggles it and the choice
+ * survives a restart.
+ */
+const READER_KEY = "gitview.terminal.screenReader";
+let screenReader = localStorage.getItem(READER_KEY) === "1";
+
+export function screenReaderMode(): boolean {
+  return screenReader;
+}
+
+/** Applies to every open session and to every one opened after. */
+export function setScreenReaderMode(on: boolean) {
+  screenReader = on;
+  localStorage.setItem(READER_KEY, on ? "1" : "0");
+  for (const session of sessions.values()) session.term.options.screenReaderMode = on;
+}
+
 // Driving the window over the WebView2 debug port is how this project checks a
 // terminal change, and none of the state worth checking is in the DOM. Vite
 // drops this from a production bundle.
@@ -434,6 +457,7 @@ function getSession(id: string): Session {
     scrollback: 20000,
     theme: THEME,
     allowProposedApi: true,
+    screenReaderMode: screenReader,
   });
 
   const fit = new FitAddon();

@@ -403,10 +403,15 @@ function Row({
           </span>
         </button>
 
-        <span className="inbox-actions">
+        {/* The actions show on hover and on focus-within, which Tab reaches
+            but a reader does not hear coming. The group's name says they are
+            there, and each one names the row it belongs to rather than
+            sounding like the same Open on every row. */}
+        <span className="inbox-actions" role="group" aria-label={`Actions for #${item.number}`}>
           {desk && (
             <button
               className="btn tiny"
+              aria-label={`Check out #${item.number} in ${item.repoName}`}
               title={`${checkout}\n\nTyped into ${item.repoName}'s shell.`}
               onClick={() => onCommand(item.repoPath, checkout)}
             >
@@ -415,6 +420,7 @@ function Row({
           )}
           <button
             className="btn tiny"
+            aria-label={`Open #${item.number} on GitHub`}
             title={`${view}\n\nTyped into ${item.repoName}'s shell.`}
             onClick={() => onCommand(item.repoPath, view)}
           >

@@ -5,7 +5,9 @@ import TerminalPane, {
   closeSession,
   getBlocks,
   revealBlock,
+  screenReaderMode,
   sendCommand,
+  setScreenReaderMode,
   subscribeBlocks,
 } from "./components/TerminalPane";
 import BlockBar from "./components/BlockBar";
@@ -228,6 +230,8 @@ export default function App() {
   const [ownShell, setOwnShell] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxReading, setInboxReading] = useState(false);
+  /** Mirrors the terminal module's flag, so the palette label follows a toggle. */
+  const [readerMode, setReaderMode] = useState(screenReaderMode);
   /** A row the inbox opens expanded, when the header's PR button brought you there. */
   const [inboxFocus, setInboxFocus] = useState<string | null>(null);
   /**
@@ -617,26 +621,30 @@ export default function App() {
    * A failed read keeps the last good list on screen rather than emptying the
    * pane, because the usual reason is a laptop that was off the network.
    */
-  const inboxInFlight = useRef(false);
-  const refreshInbox = useCallback(async () => {
+  const inboxInFlight = useRef<Promise<void> | null>(null);
+  const refreshInbox = useCallback((): Promise<void> => {
     // The poll, a settled command and the button can all ask at once, and one
-    // read answers all three.
-    if (inboxInFlight.current) return;
-    inboxInFlight.current = true;
-    setInboxReading(true);
-    try {
-      const next = await api.githubRefresh();
-      setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
-      if (next.error) setNote(next.error);
-      else if (next.unresolved.length > 0) {
-        setNote(`Read the inbox. ${next.unresolved.length} did not resolve.`);
+    // read answers all three. The promise is shared so a caller that arrived
+    // second still waits for the read it got.
+    if (inboxInFlight.current) return inboxInFlight.current;
+    const read = (async () => {
+      setInboxReading(true);
+      try {
+        const next = await api.githubRefresh();
+        setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
+        if (next.error) setNote(next.error);
+        else if (next.unresolved.length > 0) {
+          setNote(`Read the inbox. ${next.unresolved.length} did not resolve.`);
+        }
+      } catch (err) {
+        setNote(String(err));
+      } finally {
+        inboxInFlight.current = null;
+        setInboxReading(false);
       }
-    } catch (err) {
-      setNote(String(err));
-    } finally {
-      inboxInFlight.current = false;
-      setInboxReading(false);
-    }
+    })();
+    inboxInFlight.current = read;
+    return read;
   }, [setNote]);
 
   /**
@@ -649,12 +657,25 @@ export default function App() {
    * One button asks for everything: the sweep re-reads every repository, the
    * epoch re-reads the tags and remote refs the sweep cannot see, and the
    * inbox reads if gh is here to ask.
+   *
+   * The button reflects only the refresh it started. It used to borrow
+   * `scanning` and `inboxReading`, and the inbox poll set the second one every
+   * minute while a check was running, so the button greyed out and turned on
+   * its own with nothing clicked. A control that disables itself on a timer
+   * reads as a fault. The launch sweep and the poll have their own signs: the
+   * status bar's count and the inbox's read-just-now line.
    */
-  const refreshAll = useCallback(() => {
-    void scan();
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshAll = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
     setRefreshEpoch((epoch) => epoch + 1);
-    if (info?.gh.version) void refreshInbox();
-  }, [scan, refreshInbox, info?.gh.version]);
+    try {
+      await Promise.all([scan(), info?.gh.version ? refreshInbox() : null]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [scan, refreshInbox, info?.gh.version, refreshing]);
 
   /**
    * The interval read.
@@ -1357,6 +1378,18 @@ export default function App() {
       hint: "add or remove a folder GitView scans",
       run: () => setRootsOpen(true),
     });
+    // The one setting with no other home. The label says which way it will go.
+    items.push({
+      id: "action:screen-reader",
+      label: readerMode ? "Terminal: screen reader mode off" : "Terminal: screen reader mode on",
+      kind: "fleet",
+      hint: "a live region a reader can follow; costs the renderer",
+      run: () => {
+        setScreenReaderMode(!readerMode);
+        setReaderMode(!readerMode);
+        setNote(readerMode ? "Screen reader mode off." : "Screen reader mode on in every terminal.");
+      },
+    });
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1376,6 +1409,7 @@ export default function App() {
     copyBlock,
     batchCandidates,
     openBatch,
+    readerMode,
     fetchAll,
     inbox,
     info,
@@ -1555,7 +1589,7 @@ ${landing} ${cleanup}${warning}`,
           liveSessions={live}
           query={query}
           scanning={scanning}
-          refreshing={scanning || inboxReading}
+          refreshing={refreshing}
           onRefresh={refreshAll}
           onQuery={setQuery}
           onSelect={setSelectedPath}
@@ -1766,19 +1800,23 @@ gh pr view ${branchPr.number} --web`}
             {live.size} shells
           </button>
         )}
-        {note &&
-          (note.onClick ? (
-            <button
-              className="status-link"
-              style={{ color: "var(--amber)" }}
-              onClick={note.onClick}
-              title="Every command it ran, and what git said"
-            >
-              {note.text}
-            </button>
-          ) : (
-            <span style={{ color: "var(--amber)" }}>{note.text}</span>
-          ))}
+        {/* A live region, always present, so a note like Copied is spoken.
+            A region that appears with its text does not announce it. */}
+        <span className="status-note" role="status" aria-live="polite">
+          {note &&
+            (note.onClick ? (
+              <button
+                className="status-link"
+                style={{ color: "var(--amber)" }}
+                onClick={note.onClick}
+                title="Every command it ran, and what git said"
+              >
+                {note.text}
+              </button>
+            ) : (
+              <span style={{ color: "var(--amber)" }}>{note.text}</span>
+            ))}
+        </span>
         {update?.available && update.latest && (
           <button
             className="status-link"
