@@ -20,6 +20,10 @@ interface Props {
   liveSessions: Set<string>;
   query: string;
   scanning: boolean;
+  /** A refresh is in flight: the sweep, the inbox read, or both. */
+  refreshing: boolean;
+  /** Rescans the fleet, re-reads the refs, and reads the inbox. */
+  onRefresh: () => void;
   onQuery: (value: string) => void;
   onSelect: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
@@ -354,6 +358,8 @@ export default function FleetSidebar({
   liveSessions,
   query,
   scanning,
+  refreshing,
+  onRefresh,
   onQuery,
   github,
   inboxWaiting,
@@ -517,6 +523,28 @@ export default function FleetSidebar({
             {inboxWaiting > 0 && <span className="badge-count">{inboxWaiting}</span>}
           </button>
         )}
+        {/* The one refresh. It lives beside the folders button because that is
+            the one row on screen whether or not a repository is open. */}
+        <button
+          className={`icon-btn${refreshing ? " busy" : ""}`}
+          onClick={onRefresh}
+          disabled={refreshing}
+          title={
+            refreshing
+              ? "Refreshing"
+              : "Refresh: rescan the fleet, re-read the refs, and read the inbox"
+          }
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.4h-2.4"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
         <button className="icon-btn" onClick={onManageRoots} title="Folders GitView watches">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />

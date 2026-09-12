@@ -171,16 +171,19 @@ input {
 .sidebar-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 12px 10px;
+  gap: 6px;
+  /* The same 48 px as .repo-head, so the two rows of buttons share a centre
+     line across the column boundary, and the same 12 px gutter. */
+  height: 48px;
+  padding: 0 12px;
+  flex: none;
 }
 
 .icon-btn {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-left: auto;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   border: 1px solid var(--line);
   color: var(--text-faint);
@@ -193,10 +196,29 @@ input {
   border-color: var(--accent-line);
 }
 
+/* The refresh button turns while the sweep or the inbox read is in flight. */
+.icon-btn.busy {
+  color: var(--accent);
+  cursor: default;
+}
+
+.icon-btn.busy svg {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The buttons cluster at the right edge. An auto margin on each button
+     instead spread the three of them evenly across the head. */
+  margin-right: auto;
   font-weight: 600;
   letter-spacing: -0.01em;
   font-size: 13px;
@@ -536,7 +558,7 @@ input {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
   flex: none;
@@ -2196,14 +2218,20 @@ input {
 }
 
 .inbox-row {
-  position: relative;
-  display: flex;
-  align-items: center;
   border-top: 1px solid var(--line);
   border-radius: var(--radius);
 }
 
-.inbox-row:hover {
+/* The row's first line: chevron, title, and the actions that hang off its
+   right edge. The desk sits under it, outside the head, so the actions never
+   float into the checks and hovering the desk summons nothing. */
+.inbox-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.inbox-head:hover {
   background: var(--bg-hover);
 }
 
@@ -2329,8 +2357,8 @@ input {
   background: linear-gradient(90deg, transparent, var(--bg-hover) 30%);
 }
 
-.inbox-row:hover .inbox-actions,
-.inbox-row:focus-within .inbox-actions {
+.inbox-head:hover .inbox-actions,
+.inbox-head:focus-within .inbox-actions {
   display: flex;
 }
 
@@ -2354,15 +2382,10 @@ button.inbox-expand:hover {
   color: var(--text);
 }
 
-.inbox-row {
-  flex-wrap: wrap;
-}
-
 /* The desk: the pull request page on GitHub, under its row, with the browser
    left closed. It takes the row's full width beneath the chevron and the
    actions. */
 .inbox-desk {
-  flex-basis: 100%;
   margin: 0 8px 8px 26px;
   padding: 8px 10px;
   background: var(--bg-inset);

@@ -26,8 +26,8 @@ interface Props {
   /** What the picker starts on, when that repository has a GitHub remote. */
   selectedPath: string | null;
   shell: ShellKind;
+  /** The sidebar's refresh button is reading GitHub. There is no button here. */
   refreshing: boolean;
-  onRefresh: () => void;
   onClose: () => void;
   /** Selects the repository an item belongs to and closes the pane. */
   onSelect: (path: string) => void;
@@ -39,7 +39,6 @@ interface Props {
    * the command, and the app owns the dialog.
    */
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
-  onCopy: (text: string) => void;
   /** Where a refused write of the issue body goes. The status bar. */
   onError: (message: string) => void;
   /**
@@ -340,7 +339,6 @@ function Row({
   onSelect,
   onCommand,
   onMerge,
-  onCopy,
 }: {
   item: InboxItem;
   /** Set in repo mode, where nothing above the row says why it is here. */
@@ -352,72 +350,74 @@ function Row({
   onSelect: (path: string) => void;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
-  onCopy: (text: string) => void;
 }) {
   // Every action names the command it runs, so an inbox row types `gh` the way
   // a sidebar row types `git`. Nothing here writes to GitHub out of sight.
   const view = item.kind === "pr" ? `gh pr view ${item.number} --web` : `gh issue view ${item.number} --web`;
   const checkout = `gh pr checkout ${item.number}`;
+  // A pull request row opens its desk, the same as its chevron: the details
+  // are what you clicked it for. An issue has no desk, so its row opens the
+  // repository instead.
+  const desk = item.kind === "pr";
+  const deskTitle = open ? "Hide the checks" : "Checks, mergeability, and the merge button";
 
   return (
     <div className={`inbox-row${open ? " open" : ""}`}>
-      {item.kind === "pr" ? (
-        <button
-          className="inbox-expand"
-          onClick={onToggle}
-          title={open ? "Hide the checks" : "Checks, mergeability, and the merge button"}
-        >
-          {open ? "▾" : "▸"}
-        </button>
-      ) : (
-        <span className="inbox-expand" />
-      )}
-      <button
-        className="inbox-main"
-        onClick={() => onSelect(item.repoPath)}
-        title={`${item.repoPath}\n\nOpens ${item.repoName}`}
-      >
-        <span className="inbox-line">
-          <span className={`inbox-kind ${item.kind}`}>
-            {item.kind === "pr" ? "PR" : "issue"}
-          </span>
-          <span className="inbox-number">#{item.number}</span>
-          <span className="inbox-title">{item.title}</span>
-        </span>
-        <span className="inbox-meta">
-          <span className="inbox-repo">{item.repoName}</span>
-          {showNeed ? <NeedBadge item={item} /> : <ReviewBadge item={item} />}
-          <CheckMark state={item.checks} />
-          <span className="inbox-when">
-            {item.author && `${item.author} · `}
-            {relativeTime(Math.floor(new Date(item.updatedAt).getTime() / 1000))}
-          </span>
-        </span>
-      </button>
-
-      <span className="inbox-actions">
-        {item.kind === "pr" && (
-          <button
-            className="btn tiny"
-            title={`${checkout}\n\nTyped into ${item.repoName}'s shell.`}
-            onClick={() => onCommand(item.repoPath, checkout)}
-          >
-            Check out
+      {/* The head is what the actions hang off. They used to float over the
+          whole row, and a row with its desk open put them in the middle of
+          the checks, where a click on the desk landed on Check out. */}
+      <div className="inbox-head">
+        {desk ? (
+          <button className="inbox-expand" onClick={onToggle} title={deskTitle}>
+            {open ? "▾" : "▸"}
           </button>
+        ) : (
+          <span className="inbox-expand" />
         )}
         <button
-          className="btn tiny"
-          title={`${view}\n\nTyped into ${item.repoName}'s shell.`}
-          onClick={() => onCommand(item.repoPath, view)}
+          className="inbox-main"
+          onClick={desk ? onToggle : () => onSelect(item.repoPath)}
+          title={desk ? deskTitle : `${item.repoPath}\n\nOpens ${item.repoName}`}
         >
-          Open
+          <span className="inbox-line">
+            <span className={`inbox-kind ${item.kind}`}>
+              {item.kind === "pr" ? "PR" : "issue"}
+            </span>
+            <span className="inbox-number">#{item.number}</span>
+            <span className="inbox-title">{item.title}</span>
+          </span>
+          <span className="inbox-meta">
+            <span className="inbox-repo">{item.repoName}</span>
+            {showNeed ? <NeedBadge item={item} /> : <ReviewBadge item={item} />}
+            <CheckMark state={item.checks} />
+            <span className="inbox-when">
+              {item.author && `${item.author} · `}
+              {relativeTime(Math.floor(new Date(item.updatedAt).getTime() / 1000))}
+            </span>
+          </span>
         </button>
-        <button className="btn tiny" title="The URL, for pasting" onClick={() => onCopy(item.url)}>
-          Copy link
-        </button>
-      </span>
 
-      {open && item.kind === "pr" && (
+        <span className="inbox-actions">
+          {desk && (
+            <button
+              className="btn tiny"
+              title={`${checkout}\n\nTyped into ${item.repoName}'s shell.`}
+              onClick={() => onCommand(item.repoPath, checkout)}
+            >
+              Check out
+            </button>
+          )}
+          <button
+            className="btn tiny"
+            title={`${view}\n\nTyped into ${item.repoName}'s shell.`}
+            onClick={() => onCommand(item.repoPath, view)}
+          >
+            Open
+          </button>
+        </span>
+      </div>
+
+      {open && desk && (
         <Desk item={item} shell={shell} onCommand={onCommand} onMerge={onMerge} />
       )}
     </div>
@@ -827,12 +827,10 @@ export default function InboxPane({
   selectedPath,
   shell,
   refreshing,
-  onRefresh,
   onClose,
   onSelect,
   onCommand,
   onMerge,
-  onCopy,
   onError,
   openKey,
 }: Props) {
@@ -931,9 +929,6 @@ export default function InboxPane({
         >
           New issue
         </button>
-        <button className="btn tiny" disabled={refreshing || missing} onClick={onRefresh}>
-          {refreshing ? "Reading…" : "Refresh"}
-        </button>
         <button className="pane-close" onClick={onClose} title="Close (Escape)">
           ✕
         </button>
@@ -992,7 +987,7 @@ export default function InboxPane({
         )}
 
         {!missing && !inbox && !refreshing && (
-          <p className="empty">Nothing read yet. Refresh to ask GitHub.</p>
+          <p className="empty">Nothing read yet. The refresh button in the sidebar asks GitHub.</p>
         )}
 
         {!missing && inbox && groups.length === 0 && !inbox.error && (
@@ -1035,7 +1030,6 @@ export default function InboxPane({
                       onSelect={onSelect}
                       onCommand={onCommand}
                       onMerge={onMerge}
-                      onCopy={onCopy}
                     />
                   );
                 })}
