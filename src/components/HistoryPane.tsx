@@ -166,7 +166,10 @@ export default function HistoryPane({
         },
       ];
     }
-    return commitMenu(row, onCommand, onCopy);
+    const tips = row.refs
+      .filter((r) => r.kind === "local" || r.kind === "head")
+      .map((r) => ({ name: r.name, isHead: r.kind === "head" }));
+    return commitMenu(row, tips, shell, onCommand, onCopy);
   }
 
   const loadPage = useCallback(

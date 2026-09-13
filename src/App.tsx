@@ -1786,6 +1786,8 @@ gh pr view ${branchPr.number} --web`}
               onHistory={() => setHistoryOpen(true)}
               onCommand={emit}
               onCopy={copy}
+              branches={selected.branches}
+              shell={shell}
             />
 
             {/* Between the strip and the shell. `.main.split` hides the strip,
