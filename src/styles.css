@@ -1320,6 +1320,41 @@ select:focus-visible,
     0 0 0 4px oklch(74% 0.135 242 / 0.16);
 }
 
+/* A signed commit gets a pip in the middle of its dot. Presence only: the
+   tooltip names the kind and the command that verifies it, since verifying
+   from here cost two seconds a graph and needs gpg or ssh configured. */
+.graph-dot {
+  position: relative;
+}
+
+.graph-node.signed .graph-dot::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 4px;
+  height: 4px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.graph-node.signed.trunk .graph-dot::after {
+  width: 3px;
+  height: 3px;
+}
+
+.graph-node.signed.theirs .graph-dot::after {
+  background: var(--blue);
+}
+
+.graph-node.signed.ours .graph-dot::after {
+  background: var(--accent);
+}
+
+.graph-node.signed.tip .graph-dot::after {
+  background: var(--bg);
+}
+
 /* HEAD and a branch name land on the same commit most of the time, so they
    share one row above the node instead of one covering the other. */
 .graph-refs {
@@ -3422,6 +3457,20 @@ button.inbox-check-name.link:hover {
   width: 56px;
   text-align: right;
   font-family: var(--font-mono);
+}
+
+/* The signing scheme, as a bare mono word beside the date. Faint on purpose:
+   a signed history is most of the rows, and a rail of pills would be louder
+   than the branch names. */
+.history-signed {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 13px;
 }
 
 .history-ref {

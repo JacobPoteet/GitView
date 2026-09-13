@@ -9,7 +9,7 @@ import {
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { quote, type ShellKind } from "../lib/shell";
 import type { BranchGraph as Graph, BranchSummary, GraphCommit, Squashed } from "../lib/types";
-import { relativeTime } from "../lib/types";
+import { relativeTime, signedTitle } from "../lib/types";
 
 interface Props {
   graph: Graph | null;
@@ -330,13 +330,13 @@ function Node({
   const command = `git --no-pager show --stat ${commit.short}`;
   return (
     <button
-      className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}`}
+      className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}${commit.signature ? " signed" : ""}`}
       style={{ left: node.x, top: node.y }}
       onClick={(event) =>
         event.shiftKey ? onCommand(command, true) : onOpen({ id: commit.id, short: commit.short })
       }
       onContextMenu={(event) => onMenu(event, commit)}
-      title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\nClick to read the commit.\nShift-click to type ${command} without running it.`}
+      title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n${commit.signature ? `${signedTitle(commit.signature, commit.short)}\n` : ""}\nClick to read the commit.\nShift-click to type ${command} without running it.`}
     >
       <span className="graph-dot" />
       {/* The HEAD badge only earns its place when HEAD is detached: on a

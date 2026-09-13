@@ -13,6 +13,7 @@ pub mod graph;
 pub mod history;
 pub mod pty;
 pub mod settings;
+pub mod signing;
 pub mod squash;
 pub mod tasks;
 pub mod update;
