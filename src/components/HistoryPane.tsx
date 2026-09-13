@@ -528,8 +528,8 @@ This branch ends here because a squash rebuilt its ${tipOf.commits} ${tipOf.comm
       )}
       <span className="history-author">{row.author}</span>
       {row.signature && (
-        <span className="history-signed" title={signedTitle(row.signature, row.short)}>
-          {row.signature}
+        <span className="history-signed" title={signedTitle(row.signature, row.short)} aria-label="signed">
+          ✓
         </span>
       )}
       <span className="history-when">{relativeTime(row.time)}</span>

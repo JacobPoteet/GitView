@@ -3459,18 +3459,22 @@ button.inbox-check-name.link:hover {
   font-family: var(--font-mono);
 }
 
-/* The signing scheme, as a bare mono word beside the date. Faint on purpose:
-   a signed history is most of the rows, and a rail of pills would be louder
-   than the branch names. */
+/* A signed commit wears a verified badge beside the date: a filled circle
+   with a check, the shape every social site uses for "this is who it says".
+   The scheme moved to the tooltip; it was a mono word here for a day. */
 .history-signed {
   flex: none;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--text-faint);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  padding: 0 3px;
-  line-height: 13px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--bg);
+  background: var(--blue);
 }
 
 .history-ref {
