@@ -38,6 +38,9 @@ pub struct GraphCommit {
     /// Branch and tag names pointing at this commit, already shortened.
     pub refs: Vec<String>,
     pub is_merge: bool,
+    /// `ssh`, `gpg`, `x509` or `other` when the commit carries a signature.
+    /// Presence only; see `signing.rs` for why it is not verified here.
+    pub signature: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -303,6 +306,7 @@ fn load(repo: &Repository, oid: Oid, names: &HashMap<Oid, Vec<String>>) -> Optio
         time: commit.time().seconds(),
         refs: names.get(&oid).cloned().unwrap_or_default(),
         is_merge: commit.parent_count() > 1,
+        signature: crate::signing::kind(repo, oid),
         id,
     })
 }

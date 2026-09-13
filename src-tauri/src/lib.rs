@@ -13,6 +13,7 @@ pub mod graph;
 pub mod history;
 pub mod pty;
 pub mod settings;
+pub mod signing;
 pub mod squash;
 pub mod tasks;
 pub mod update;
@@ -27,7 +28,7 @@ use tauri::{Manager, State};
 use cache::{Adoption, Cache, RepoPref};
 use diff::{CommitDiff, FileDiff};
 use fleet::{FileChange, RepoState};
-use github::{GhStatus, Inbox};
+use github::{GhStatus, Inbox, IssueDetail};
 use gitops::GitOutcome;
 use graph::BranchGraph;
 use history::History;
@@ -364,6 +365,18 @@ async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
     .map_err(|e| e.to_string())
 }
 
+/// One issue, with its body and the tail of its comments.
+///
+/// Read out of sight, the same as the sweep: it is a read, and the desk under
+/// the row is where the answer goes. Not cached, because a thread changes
+/// between two openings of the same row and the read is one small request.
+#[tauri::command]
+async fn github_issue(owner_repo: String, number: i64) -> Result<IssueDetail, String> {
+    tauri::async_runtime::spawn_blocking(move || github::issue(&owner_repo, number))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Writes an issue body out and hands back the path `gh issue create` will
 /// read it from.
 ///
@@ -556,6 +569,7 @@ pub fn run() {
             github_cached,
             github_refresh,
             github_issue_body,
+            github_issue,
             update_check,
             git_run,
             pty_open,

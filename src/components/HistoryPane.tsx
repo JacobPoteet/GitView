@@ -10,7 +10,7 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { commitMenu } from "./BranchGraph";
 import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
-import { relativeTime, type HistoryRef, type HistoryRow, type Squashed } from "../lib/types";
+import { relativeTime, signedTitle, type HistoryRef, type HistoryRow, type Squashed } from "../lib/types";
 
 interface Props {
   repoPath: string;
@@ -527,6 +527,11 @@ This branch ends here because a squash rebuilt its ${tipOf.commits} ${tipOf.comm
         </span>
       )}
       <span className="history-author">{row.author}</span>
+      {row.signature && (
+        <span className="history-signed" title={signedTitle(row.signature, row.short)} aria-label="signed">
+          ✓
+        </span>
+      )}
       <span className="history-when">{relativeTime(row.time)}</span>
       <span className="history-sha">{row.short}</span>
     </button>

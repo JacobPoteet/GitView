@@ -49,6 +49,8 @@ pub struct HistoryRow {
     pub parents: Vec<String>,
     pub refs: Vec<HistoryRef>,
     pub is_merge: bool,
+    /// `ssh`, `gpg`, `x509` or `other` when the commit carries a signature.
+    pub signature: Option<String>,
     /// The column this commit's node sits in.
     pub lane: usize,
     /// What to draw in the band between this row and the one under it, as
@@ -243,6 +245,7 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize) -> History {
             parents: commit.parent_ids().map(|p| p.to_string()).collect(),
             refs: Vec::new(),
             is_merge: commit.parent_count() > 1,
+            signature: crate::signing::kind(&repo, placed[i].id),
             lane,
             edges,
         });

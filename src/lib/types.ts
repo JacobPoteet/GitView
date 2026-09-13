@@ -67,6 +67,16 @@ export interface GraphCommit {
   time: number;
   refs: string[];
   isMerge: boolean;
+  /** `ssh`, `gpg`, `x509` or `other` when the commit carries a signature. Presence, not verification. */
+  signature: SignatureKind | null;
+}
+
+export type SignatureKind = "ssh" | "gpg" | "x509" | "other";
+
+/** What a signed mark says on hover: the kind, and the command that verifies it. */
+export function signedTitle(kind: SignatureKind, short: string): string {
+  const name = { ssh: "SSH", gpg: "GPG", x509: "S/MIME", other: "an unknown scheme" }[kind];
+  return `Signed with ${name}. Not verified here: git verify-commit ${short} does that.`;
 }
 
 export interface BranchGraph {
@@ -193,6 +203,7 @@ export interface HistoryRow {
   parents: string[];
   refs: HistoryRef[];
   isMerge: boolean;
+  signature: SignatureKind | null;
   /** The column this commit's node sits in. */
   lane: number;
   /**
@@ -343,6 +354,28 @@ export interface Inbox {
   /** Repositories the query could not resolve. They drop out of the sweep. */
   unresolved: string[];
   error: string | null;
+}
+
+/** One issue opened under its row, read on demand rather than in the sweep. */
+export interface IssueDetail {
+  number: number;
+  title: string;
+  body: string;
+  createdAt: string;
+  author: string;
+  labels: { name: string; color: string }[];
+  assignees: string[];
+  /** The last twenty, oldest first. */
+  comments: IssueComment[];
+  /** How many there are altogether, so the pane can say what it left out. */
+  commentCount: number;
+}
+
+export interface IssueComment {
+  author: string;
+  createdAt: string;
+  body: string;
+  url: string;
 }
 
 /** The latest GitHub release, as `gh release view` reported it. */

@@ -688,6 +688,179 @@ fn collect(
     }
 }
 
+// ------------------------------------------------------------------ one issue
+
+/// An issue opened under its row: the page on GitHub with the browser left
+/// closed, the way the desk is for a pull request. Read on demand rather than
+/// in the sweep, because twenty bodies and their comments per repository is
+/// most of the node budget for a list that mostly gets scrolled past.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDetail {
+    pub number: i64,
+    pub title: String,
+    pub body: String,
+    pub created_at: String,
+    pub author: String,
+    pub labels: Vec<Label>,
+    pub assignees: Vec<String>,
+    /// The last `COMMENTS` of them, oldest first.
+    pub comments: Vec<Comment>,
+    /// How many there are altogether, so the pane can say what it left out.
+    pub comment_count: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Label {
+    pub name: String,
+    /// Six hex digits, no `#`, as GitHub stores it.
+    pub color: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Comment {
+    pub author: String,
+    pub created_at: String,
+    pub body: String,
+    pub url: String,
+}
+
+/// Comments per issue. A thread past twenty is a discussion, and the browser
+/// has the rest.
+const COMMENTS: usize = 20;
+
+#[derive(Deserialize)]
+struct IssueEnvelope {
+    data: Option<IssueData>,
+    #[serde(default)]
+    errors: Vec<GqlError>,
+}
+
+#[derive(Deserialize)]
+struct IssueData {
+    repository: Option<IssueRepo>,
+}
+
+#[derive(Deserialize)]
+struct IssueRepo {
+    issue: Option<IssueFull>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IssueFull {
+    number: i64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    created_at: String,
+    author: Option<Login>,
+    #[serde(default)]
+    labels: Nodes<Label>,
+    #[serde(default)]
+    assignees: Nodes<Login>,
+    #[serde(default)]
+    comments: CommentNodes,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CommentNodes {
+    #[serde(default)]
+    total_count: i64,
+    #[serde(default)]
+    nodes: Vec<CommentNode>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommentNode {
+    author: Option<Login>,
+    created_at: String,
+    #[serde(default)]
+    body: String,
+    url: String,
+}
+
+fn issue_query() -> String {
+    format!(
+        r#"query($owner: String!, $name: String!, $number: Int!) {{
+  repository(owner: $owner, name: $name) {{
+    issue(number: $number) {{
+      number title body createdAt
+      author {{ login }}
+      labels(first: 10) {{ nodes {{ name color }} }}
+      assignees(first: 5) {{ nodes {{ login }} }}
+      comments(last: {COMMENTS}) {{
+        totalCount
+        nodes {{ author {{ login }} createdAt body url }}
+      }}
+    }}
+  }}
+}}"#
+    )
+}
+
+/// Reads one issue: its body, its labels, and the tail of its comments.
+///
+/// The owner and name go in as variables rather than into the query text, so
+/// nothing parsed out of an origin URL is ever spliced into GraphQL.
+pub fn issue(owner_repo: &str, number: i64) -> Result<IssueDetail, String> {
+    let Some((owner, name)) = owner_repo.split_once('/') else {
+        return Err(format!("{owner_repo} is not owner/repo"));
+    };
+    let owner = format!("owner={owner}");
+    let name = format!("name={name}");
+    let number = format!("number={number}");
+    let raw = gh(
+        &[
+            "api", "graphql", "-F", "query=@-", "-f", &owner, "-f", &name, "-F", &number,
+        ],
+        Some(&issue_query()),
+    )?;
+    parse_issue(&raw)
+}
+
+fn parse_issue(raw: &str) -> Result<IssueDetail, String> {
+    let envelope: IssueEnvelope =
+        serde_json::from_str(raw).map_err(|err| format!("could not read gh's response: {err}"))?;
+    let issue = envelope
+        .data
+        .and_then(|d| d.repository)
+        .and_then(|r| r.issue);
+    let Some(issue) = issue else {
+        return Err(envelope
+            .errors
+            .first()
+            .map(|e| e.message.clone())
+            .unwrap_or_else(|| "gh returned no issue".to_string()));
+    };
+    let login = |l: &Option<Login>| l.as_ref().map(|a| a.login.clone()).unwrap_or_default();
+    Ok(IssueDetail {
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        created_at: issue.created_at,
+        author: login(&issue.author),
+        labels: issue.labels.nodes,
+        assignees: issue.assignees.nodes.into_iter().map(|a| a.login).collect(),
+        comment_count: issue.comments.total_count,
+        comments: issue
+            .comments
+            .nodes
+            .into_iter()
+            .map(|c| Comment {
+                author: login(&c.author),
+                created_at: c.created_at,
+                body: c.body,
+                url: c.url,
+            })
+            .collect(),
+    })
+}
+
 /// How long a written issue body is left on disk. The same day a hunk patch
 /// gets, for the same reason: shift-click leaves the line unrun at a prompt.
 const BODY_KEEP_SECS: u64 = 86_400;
@@ -976,5 +1149,39 @@ mod tests {
         assert!(items[0].checks.is_none());
         assert_eq!(items[0].author, "");
         assert!(!items[0].review_requested);
+    }
+
+    /// The shape gh returns for one issue, with a deleted commenter and no
+    /// labels. The tail of the thread comes back oldest first, as asked.
+    #[test]
+    fn an_issue_reads_with_its_comments() {
+        let raw = r#"{"data": {"repository": {"issue": {
+          "number": 53, "title": "T", "body": "It would be nice", "createdAt": "2026-09-12T00:00:00Z",
+          "author": {"login": "me"},
+          "labels": {"nodes": [{"name": "bug", "color": "d73a4a"}]},
+          "assignees": {"nodes": []},
+          "comments": {"totalCount": 2, "nodes": [
+            {"author": null, "createdAt": "2026-09-12T01:00:00Z", "body": "first", "url": "u1"},
+            {"author": {"login": "you"}, "createdAt": "2026-09-12T02:00:00Z", "body": "second", "url": "u2"}
+          ]}
+        }}}}"#;
+        let issue = parse_issue(raw).unwrap();
+        assert_eq!(issue.number, 53);
+        assert_eq!(issue.author, "me");
+        assert_eq!(issue.labels[0].color, "d73a4a");
+        assert_eq!(issue.comment_count, 2);
+        assert_eq!(issue.comments[0].author, "");
+        assert_eq!(issue.comments[1].body, "second");
+    }
+
+    /// A number that is not an issue: GitHub answers with a null and an error
+    /// beside it, and the error is what the status bar should say.
+    #[test]
+    fn a_missing_issue_is_the_error_gh_gave() {
+        let raw = r#"{"data": {"repository": {"issue": null}},
+          "errors": [{"type": "NOT_FOUND", "message": "Could not resolve to an Issue"}]}"#;
+        let err = parse_issue(raw).unwrap_err();
+        assert!(err.contains("Could not resolve"));
+        assert!(issue("no-slash", 1).is_err());
     }
 }
