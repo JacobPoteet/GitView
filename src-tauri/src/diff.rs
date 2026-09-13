@@ -196,7 +196,20 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
         return FileDiff::empty(file, staged);
     };
 
-    let mut out = FileDiff::empty(file, staged);
+    expand(&diff, idx, delta, FileDiff::empty(file, staged))
+}
+
+/// One delta out of a diff, turned into the rows the pane draws.
+///
+/// Shared by the working-tree reads and the commit read, which build different
+/// diffs and want the same file out of them.
+fn expand(
+    diff: &git2::Diff<'_>,
+    idx: usize,
+    delta: git2::DiffDelta<'_>,
+    mut out: FileDiff,
+) -> FileDiff {
+    let file = out.path.clone();
     out.empty = false;
     out.status = status_name(delta.status()).to_string();
     out.path = slashed(delta.new_file().path())
@@ -210,7 +223,7 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
         return out;
     }
 
-    let patch = match Patch::from_diff(&diff, idx) {
+    let patch = match Patch::from_diff(diff, idx) {
         Ok(Some(patch)) => patch,
         // A delta with no patch is libgit2's own answer for content it would
         // not expand, so it is reported as binary rather than as a failure.
@@ -296,6 +309,179 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
     }
 
     out
+}
+
+// -------------------------------------------------------------- one commit
+
+/// One file a commit touched, as a row in the commit pane's list. The hunks
+/// are a second read, per file, through `read_commit_file`.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFile {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: String,
+    pub binary: bool,
+    pub additions: usize,
+    pub deletions: usize,
+}
+
+/// A commit as the pane reads it: the message, who and when, its parents, and
+/// every file it touched with its counts.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDiff {
+    pub id: String,
+    pub short: String,
+    pub summary: String,
+    /// The message past the first paragraph, trimmed. Empty when there is none.
+    pub body: String,
+    pub author: String,
+    /// Seconds since the epoch.
+    pub time: i64,
+    pub parents: Vec<String>,
+    pub files: Vec<CommitFile>,
+    pub additions: usize,
+    pub deletions: usize,
+    pub error: Option<String>,
+}
+
+impl CommitDiff {
+    fn failed(sha: &str, message: String) -> Self {
+        Self {
+            id: sha.to_string(),
+            short: sha.chars().take(7).collect(),
+            summary: String::new(),
+            body: String::new(),
+            author: String::new(),
+            time: 0,
+            parents: Vec::new(),
+            files: Vec::new(),
+            additions: 0,
+            deletions: 0,
+            error: Some(message),
+        }
+    }
+}
+
+/// A commit against its first parent, which is what `git show` prints and what
+/// the ring in the history means: the change as the trunk saw it arrive. A root
+/// commit is diffed against nothing, so every file in it reads as new.
+///
+/// No pathspec here either, for the reason `build` gives: rename detection
+/// needs both halves of the pair.
+fn build_commit<'r>(
+    repo: &'r Repository,
+    sha: &str,
+) -> Result<(git2::Commit<'r>, git2::Diff<'r>), git2::Error> {
+    let oid = repo.revparse_single(sha)?.peel_to_commit()?.id();
+    let commit = repo.find_commit(oid)?;
+    let tree = commit.tree()?;
+    let parent = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let mut opts = DiffOptions::new();
+    opts.context_lines(CONTEXT).include_typechange(true);
+    let mut diff = repo.diff_tree_to_tree(parent.as_ref(), Some(&tree), Some(&mut opts))?;
+
+    let mut finder = DiffFindOptions::new();
+    finder.renames(true).copies(false);
+    let _ = diff.find_similar(Some(&mut finder));
+    Ok((commit, diff))
+}
+
+/// The commit and its file list.
+///
+/// The counts cost a `Patch` per file, which reads the content. `git show
+/// --stat` pays the same, and the alternative is a list with no numbers on it.
+pub fn read_commit(repo_path: &Path, sha: &str) -> CommitDiff {
+    let repo = match Repository::open(repo_path) {
+        Ok(repo) => repo,
+        Err(err) => return CommitDiff::failed(sha, err.message().to_string()),
+    };
+    let (commit, diff) = match build_commit(&repo, sha) {
+        Ok(pair) => pair,
+        Err(err) => return CommitDiff::failed(sha, err.message().to_string()),
+    };
+
+    // `summary` joins the first paragraph into one line and `body` is what
+    // follows it, both libgit2's. Splitting the message at its first newline
+    // instead put a wrapped subject's second line at the top of the body, so
+    // it read twice.
+    let summary = commit.summary().unwrap_or_default().to_string();
+    let body = commit.body().unwrap_or_default().trim().to_string();
+
+    let mut out = CommitDiff {
+        id: commit.id().to_string(),
+        short: commit.id().to_string().chars().take(7).collect(),
+        summary,
+        body,
+        author: commit.author().name().unwrap_or_default().to_string(),
+        time: commit.time().seconds(),
+        parents: commit
+            .parent_ids()
+            .map(|id| id.to_string().chars().take(7).collect())
+            .collect(),
+        files: Vec::new(),
+        additions: 0,
+        deletions: 0,
+        error: None,
+    };
+
+    for (idx, delta) in diff.deltas().enumerate() {
+        let path = slashed(delta.new_file().path())
+            .or_else(|| slashed(delta.old_file().path()))
+            .unwrap_or_default();
+        let old_path = if matches!(delta.status(), Delta::Renamed | Delta::Copied) {
+            slashed(delta.old_file().path())
+        } else {
+            None
+        };
+        let mut file = CommitFile {
+            path,
+            old_path,
+            status: status_name(delta.status()).to_string(),
+            binary: delta.old_file().is_binary() || delta.new_file().is_binary(),
+            additions: 0,
+            deletions: 0,
+        };
+        if !file.binary {
+            match Patch::from_diff(&diff, idx) {
+                Ok(Some(patch)) => {
+                    if let Ok((_, added, removed)) = patch.line_stats() {
+                        file.additions = added;
+                        file.deletions = removed;
+                    }
+                }
+                Ok(None) => file.binary = true,
+                Err(_) => {}
+            }
+        }
+        out.additions += file.additions;
+        out.deletions += file.deletions;
+        out.files.push(file);
+    }
+
+    out
+}
+
+/// One file out of a commit, in the shape the working-tree reads return so the
+/// pane draws it with the same rows. `staged` is false and means nothing here.
+pub fn read_commit_file(repo_path: &Path, sha: &str, file: &str) -> FileDiff {
+    let repo = match Repository::open(repo_path) {
+        Ok(repo) => repo,
+        Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
+    };
+    let (_, diff) = match build_commit(&repo, sha) {
+        Ok(pair) => pair,
+        Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
+    };
+    let Some(idx) = locate(&diff, file) else {
+        return FileDiff::empty(file, false);
+    };
+    let Some(delta) = diff.get_delta(idx) else {
+        return FileDiff::empty(file, false);
+    };
+    expand(&diff, idx, delta, FileDiff::empty(file, false))
 }
 
 // ------------------------------------------------------------ hunk staging
@@ -860,5 +1046,152 @@ mod tests {
         let err = hunk_patch(&fixture.dir, "a.txt", false, 0, "@@ -900,7 +900,7 @@")
             .expect_err("a header that does not match must not produce a patch");
         assert!(err.contains("moved"), "{err}");
+    }
+
+    // ---------------------------------------------------------- one commit
+
+    /// The list the commit pane draws: every file, with its counts, and the
+    /// commit's own text around it. `git show --stat` is the reference.
+    #[test]
+    fn a_commit_lists_its_files_with_their_counts() {
+        let fixture = Fixture::new("commit-list");
+        fixture.write(
+            "a.txt", "one
+two
+",
+        );
+        fixture.write(
+            "b.txt", "keep
+",
+        );
+        fixture.stage("a.txt");
+        fixture.stage("b.txt");
+        fixture.commit("first");
+
+        fixture.write(
+            "a.txt",
+            "one
+three
+",
+        );
+        std::fs::remove_file(fixture.dir.join("b.txt")).expect("remove");
+        fixture.write(
+            "c.txt", "new
+",
+        );
+        fixture.stage("a.txt");
+        fixture.stage("b.txt");
+        fixture.stage("c.txt");
+        fixture.commit(
+            "second
+
+The body, on its own paragraph.
+",
+        );
+
+        let commit = read_commit(&fixture.dir, "HEAD");
+
+        assert!(commit.error.is_none(), "{:?}", commit.error);
+        assert_eq!(commit.summary, "second");
+        assert_eq!(commit.body, "The body, on its own paragraph.");
+        assert_eq!(commit.author, "Test");
+        assert_eq!(commit.parents.len(), 1);
+        let rows: Vec<(&str, &str, usize, usize)> = commit
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), f.status.as_str(), f.additions, f.deletions))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("a.txt", "modified", 1, 1),
+                ("b.txt", "deleted", 0, 1),
+                ("c.txt", "new", 1, 0),
+            ]
+        );
+        assert_eq!((commit.additions, commit.deletions), (2, 2));
+
+        let file = read_commit_file(&fixture.dir, "HEAD", "a.txt");
+        assert!(file.error.is_none(), "{:?}", file.error);
+        assert_eq!(added(&file), vec!["three"]);
+        assert_eq!(file.hunks.len(), 1);
+    }
+
+    /// A subject wrapped over two lines is one paragraph, and the body starts
+    /// after it rather than after the first newline.
+    #[test]
+    fn a_wrapped_subject_stays_out_of_the_body() {
+        let fixture = Fixture::new("commit-wrapped");
+        fixture.write("a.txt", "one\n");
+        fixture.stage("a.txt");
+        fixture.commit("first line of the subject\nsecond line of the subject\n\nThe body.\n");
+
+        let commit = read_commit(&fixture.dir, "HEAD");
+        assert_eq!(
+            commit.summary,
+            "first line of the subject second line of the subject"
+        );
+        assert_eq!(commit.body, "The body.");
+    }
+
+    /// A root commit has no parent to diff against. Diffing against nothing is
+    /// what `git show` does there too: every file is new.
+    #[test]
+    fn a_root_commit_reads_every_file_as_new() {
+        let fixture = Fixture::new("commit-root");
+        fixture.write(
+            "a.txt", "one
+two
+",
+        );
+        fixture.stage("a.txt");
+        fixture.commit("first");
+
+        let commit = read_commit(&fixture.dir, "HEAD");
+        assert!(commit.error.is_none(), "{:?}", commit.error);
+        assert!(commit.parents.is_empty());
+        assert_eq!(commit.files.len(), 1);
+        assert_eq!(commit.files[0].status, "new");
+        assert_eq!(commit.files[0].additions, 2);
+
+        let file = read_commit_file(&fixture.dir, "HEAD", "a.txt");
+        assert_eq!(added(&file), vec!["one", "two"]);
+    }
+
+    /// A rename in a commit shows once, under the name it has now, the same
+    /// way the working-tree read reports one.
+    #[test]
+    fn a_renamed_file_in_a_commit_shows_once() {
+        let fixture = Fixture::new("commit-rename");
+        fixture.write("old.rs", &body(0..30));
+        fixture.stage("old.rs");
+        fixture.commit("first");
+        std::fs::rename(fixture.dir.join("old.rs"), fixture.dir.join("new.rs")).expect("rename");
+        fixture.stage("old.rs");
+        fixture.stage("new.rs");
+        fixture.commit("move");
+
+        let commit = read_commit(&fixture.dir, "HEAD");
+        assert_eq!(commit.files.len(), 1, "{:?}", commit.files);
+        assert_eq!(commit.files[0].path, "new.rs");
+        assert_eq!(commit.files[0].old_path.as_deref(), Some("old.rs"));
+        assert_eq!(commit.files[0].status, "renamed");
+    }
+
+    /// A sha that names nothing is an answer with an error in it, which the
+    /// pane shows, rather than a panic across the Tauri boundary.
+    #[test]
+    fn an_unknown_commit_is_an_error_not_a_panic() {
+        let fixture = Fixture::new("commit-missing");
+        fixture.write(
+            "a.txt", "one
+",
+        );
+        fixture.stage("a.txt");
+        fixture.commit("first");
+
+        let commit = read_commit(&fixture.dir, "deadbeef");
+        assert!(commit.error.is_some());
+        assert!(commit.files.is_empty());
     }
 }

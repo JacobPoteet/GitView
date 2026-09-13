@@ -217,6 +217,41 @@ export interface History {
   error: string | null;
 }
 
+/** One file a commit touched, as a row in the commit pane's list. */
+export interface CommitFile {
+  path: string;
+  oldPath: string | null;
+  status: FileChange["state"];
+  binary: boolean;
+  additions: number;
+  deletions: number;
+}
+
+/** A commit as the pane reads it, against its first parent. */
+export interface CommitDiff {
+  id: string;
+  short: string;
+  summary: string;
+  /** The message past the first paragraph. Empty when there is none. */
+  body: string;
+  author: string;
+  /** Seconds since the epoch. */
+  time: number;
+  /** Short ids. Empty on a root commit. */
+  parents: string[];
+  files: CommitFile[];
+  additions: number;
+  deletions: number;
+  error: string | null;
+}
+
+/** A commit the pane is open on. */
+export interface CommitTarget {
+  repoPath: string;
+  id: string;
+  short: string;
+}
+
 /** Which file the diff pane is showing, and from which side. */
 export interface DiffTarget {
   repoPath: string;

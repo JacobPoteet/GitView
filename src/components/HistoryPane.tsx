@@ -15,8 +15,10 @@ import { relativeTime, type HistoryRef, type HistoryRow, type Squashed } from ".
 interface Props {
   repoPath: string;
   repoName: string;
-  /** No live shell means a commit has nowhere to be shown. */
+  /** No live shell means Shift-click has nowhere to type, and a prune nowhere to run. */
   disabled: boolean;
+  /** Opens the commit pane on a row. The click itself types nothing. */
+  onOpen: (commit: { id: string; short: string }) => void;
   /**
    * Branches that were squash-merged, and the commit each one became.
    *
@@ -73,6 +75,18 @@ const OVERSCAN = 8;
 const PAGE = 400;
 
 /**
+ * Where each repository's history was scrolled to, by path.
+ *
+ * The commit pane takes this pane's slot in the main column, so opening a
+ * commit unmounts the list and closing it mounts a fresh one. Without this the
+ * fresh one read page one and sat at the top, and the row you had just opened
+ * was somewhere below. Module state, like the sessions in `TerminalPane`: it
+ * has to outlive the component. Keyed on the path so a selection change lands
+ * on that repository's own place.
+ */
+const places = new Map<string, number>();
+
+/**
  * Lane colours, in the order lanes open.
  *
  * Read off the stylesheet rather than written here, so the pane follows the
@@ -107,6 +121,7 @@ export default function HistoryPane({
   onPrune,
   onClose,
   onCommand,
+  onOpen,
   onDeleteBranch,
   onCopy,
   onError,
@@ -126,6 +141,10 @@ export default function HistoryPane({
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(600);
+  // The place to go back to, taken once at mount and cleared once reached.
+  // A ref rather than state: it is read inside `loadPage` to size the first
+  // read, and it must not re-run that read when it clears.
+  const restore = useRef(places.get(repoPath) ?? 0);
 
   // A page in flight, so a scroll that keeps going does not ask twice for the
   // same 400 commits. A ref rather than state: the check has to see the change
@@ -208,12 +227,31 @@ export default function HistoryPane({
     [repoPath, onError],
   );
 
-  // The first run is the mount. Every run after it is a ref that moved, and
-  // those re-read as many rows as are on screen so the window stays where it
-  // was; the rows already there stay up until the fresh ones replace them.
+  // The first run is the mount, and it reads far enough to cover the place
+  // being restored, so the scroll lands on rows rather than on a blank band
+  // waiting for page two. Every run after it is a ref that moved, and those
+  // re-read as many rows as are on screen so the window stays where it was;
+  // the rows already there stay up until the fresh ones replace them.
   useEffect(() => {
-    loadPage(0, Math.max(PAGE, loaded.current));
+    const wanted = Math.ceil((restore.current + 600) / ROW) + OVERSCAN;
+    loadPage(0, Math.max(PAGE, loaded.current, wanted));
   }, [loadPage, reloadKey]);
+
+  // Back to where it was, once there are rows under that offset. Setting
+  // `scrollTop` on an element shorter than the target clamps it to the bottom,
+  // which is why this waits for the rows rather than running at mount.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const target = restore.current;
+    if (!el || target === 0) return;
+    // A place at the foot of a short history is never covered by a full
+    // viewport of rows. Once the walk is done there is nothing more to wait
+    // for, and the browser clamps to the bottom, which is where it was.
+    if (rows.length * ROW < target + viewport && !done) return;
+    restore.current = 0;
+    el.scrollTop = target;
+    setScrollTop(el.scrollTop);
+  }, [rows.length, viewport, done]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -363,7 +401,12 @@ export default function HistoryPane({
       <div
         className="history-scroll"
         ref={scroller}
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        onScroll={(event) => {
+          setScrollTop(event.currentTarget.scrollTop);
+          // Written on every scroll rather than at unmount: React unmounts
+          // after the DOM is gone, and a detached scroller reads 0.
+          if (restore.current === 0) places.set(repoPath, event.currentTarget.scrollTop);
+        }}
       >
         {/* The canvas is sticky rather than tall: it covers the viewport and is
             redrawn on scroll, so a repository with forty thousand commits never
@@ -384,6 +427,7 @@ export default function HistoryPane({
               tipOf={row.refs.map((r) => isTipOf.get(r.name)).find(Boolean) ?? null}
               disabled={disabled}
               onCommand={onCommand}
+              onOpen={onOpen}
               onMenu={menu.open}
             />
           ))}
@@ -414,6 +458,7 @@ function Row({
   tipOf,
   disabled,
   onCommand,
+  onOpen,
   onMenu,
 }: {
   row: HistoryRow;
@@ -425,21 +470,29 @@ function Row({
   tipOf: Squashed | null;
   disabled: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onOpen: (commit: { id: string; short: string }) => void;
   onMenu: (event: ReactMouseEvent, target: Target) => void;
 }) {
-  // `--no-pager` and `--stat`, for the reason the branch graph gives: `git show`
-  // hands its output to a pager that holds the shell until you find out the way
-  // out is `Q`, and a large commit floods the scrollback.
+  // A click opens the commit pane and types nothing: reading a commit is a
+  // lookup, and until 12 Sep 2026 every lookup scrolled the shell. Shift-click
+  // keeps the typed route, `--no-pager` and `--stat` because `git show` hands
+  // its output to a pager that holds the shell until you find out the way out
+  // is `Q`, and a large commit floods the scrollback.
   const command = `git --no-pager show --stat ${row.short}`;
 
   return (
     <button
       className={`history-row${row.isMerge ? " merge" : ""}`}
       style={{ top, height: ROW }}
-      disabled={disabled}
-      onClick={(event) => onCommand(command, event.shiftKey)}
+      onClick={(event) => {
+        if (event.shiftKey) {
+          if (!disabled) onCommand(command, true);
+        } else {
+          onOpen({ id: row.id, short: row.short });
+        }
+      }}
       onContextMenu={(event) => onMenu(event, { row, ref: null })}
-      title={`${row.summary}\n\n${row.author} · ${new Date(row.time * 1000).toLocaleString()}\n${row.id}\n\n${command}\nShift-click to type it without running it.`}
+      title={`${row.summary}\n\n${row.author} · ${new Date(row.time * 1000).toLocaleString()}\n${row.id}\n\nClick to read the commit.\nShift-click to type ${command} without running it.`}
     >
       <span className="history-lanes" style={{ width: gutter }} />
       {row.refs.map((ref) => (
