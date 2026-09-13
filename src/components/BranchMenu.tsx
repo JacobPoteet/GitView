@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import type { BranchSummary, RepoState, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
@@ -9,6 +10,9 @@ interface Props {
   /** Branches the trunk swallowed through a squash, which it does not contain. */
   squashed: Squashed[];
   onCommand: (command: string, typeOnly: boolean) => void;
+  /** Deleting asks first, and the app owns the dialog. */
+  onDeleteBranch: (name: string) => void;
+  onCopy: (text: string, what: string) => void;
 }
 
 /**
@@ -25,14 +29,26 @@ interface Props {
  * was about. With no commits there is no branch to stand on and nothing to list,
  * so the name is plain text.
  */
-export default function BranchMenu({ repo, shell, squashed, onCommand }: Props) {
+export default function BranchMenu({
+  repo,
+  shell,
+  squashed,
+  onCommand,
+  onDeleteBranch,
+  onCopy,
+}: Props) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const menu = useContextMenu<BranchSummary>();
 
   useEffect(() => {
     if (!open) return;
     function onDown(event: MouseEvent) {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      // A right-click menu over a row renders outside the popup, and a click
+      // on one of its items must not close the list it was opened from.
+      if (target instanceof Element && target.closest(".row-menu")) return;
+      if (!wrap.current?.contains(target)) setOpen(false);
     }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
@@ -60,6 +76,34 @@ export default function BranchMenu({ repo, shell, squashed, onCommand }: Props) 
   ).length;
 
   if (!repo.branch) return <span className="branch-name">no commits</span>;
+
+  // The row's click, the name, and the one thing the row has no button for.
+  function rowMenu(branch: BranchSummary): MenuEntry[] {
+    const switchTo = `git switch ${quote(branch.name, shell)}`;
+    return [
+      {
+        label: "Switch to it",
+        title: branch.isHead ? "You are here." : switchTo,
+        disabled: branch.isHead,
+        run: (typeOnly) => {
+          onCommand(switchTo, typeOnly);
+          if (!typeOnly) setOpen(false);
+        },
+      },
+      { label: "Copy branch name", run: () => onCopy(branch.name, "the branch name") },
+      "-",
+      {
+        label: "Delete branch",
+        danger: true,
+        disabled: branch.isHead,
+        title: branch.isHead ? "You are on it. Switch away first." : "Asks first, and names the command.",
+        run: () => {
+          setOpen(false);
+          onDeleteBranch(branch.name);
+        },
+      },
+    ];
+  }
 
   return (
     <div className="branch-menu" ref={wrap}>
@@ -92,9 +136,19 @@ export default function BranchMenu({ repo, shell, squashed, onCommand }: Props) 
                 onCommand(command, typeOnly);
                 if (!typeOnly) setOpen(false);
               }}
+              onMenu={menu.open}
             />
           ))}
         </div>
+      )}
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.name}`}
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
       )}
     </div>
   );
@@ -105,11 +159,13 @@ function BranchRow({
   squashed,
   shell,
   onCommand,
+  onMenu,
 }: {
   branch: BranchSummary;
   squashed: Squashed | null;
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onMenu: (event: ReactMouseEvent, branch: BranchSummary) => void;
 }) {
   const command = `git switch ${quote(branch.name, shell)}`;
   return (
@@ -117,6 +173,7 @@ function BranchRow({
       className={`branch-pop-row${branch.isHead ? " current" : ""}`}
       disabled={branch.isHead}
       onClick={(event) => onCommand(command, event.shiftKey)}
+      onContextMenu={(event) => onMenu(event, branch)}
       title={
         branch.isHead
           ? "You are here."

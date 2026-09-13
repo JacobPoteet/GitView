@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
+import { commitMenu } from "./BranchGraph";
+import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
-import { relativeTime, type HistoryRow, type Squashed } from "../lib/types";
+import { relativeTime, type HistoryRef, type HistoryRow, type Squashed } from "../lib/types";
 
 interface Props {
   repoPath: string;
@@ -21,10 +31,27 @@ interface Props {
    * position going back to the top.
    */
   reloadKey: string;
+  shell: ShellKind;
+  /**
+   * Branches the trunk contains or swallowed, which is what Prune deletes. The
+   * button lives here rather than in the header because this is the view that
+   * shows a branch is finished: the chip sits on a commit under the trunk's, or
+   * ends at a "squashed into" note. Zero disables it rather than hiding it.
+   */
+  prunable: number;
+  /** The commands Prune would type, for the tooltip. */
+  pruneTitle: string;
+  onPrune: () => void;
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
+  /** Deleting asks first, and the app owns the dialog. */
+  onDeleteBranch: (name: string) => void;
+  onCopy: (text: string, what: string) => void;
   onError: (message: string) => void;
 }
+
+/** What a right-click landed on: a commit row, or a branch chip sitting on one. */
+type Target = { row: HistoryRow; ref: HistoryRef | null };
 
 /**
  * The whole DAG, scrolling, over the main column.
@@ -74,11 +101,19 @@ export default function HistoryPane({
   disabled,
   squashed,
   reloadKey,
+  shell,
+  prunable,
+  pruneTitle,
+  onPrune,
   onClose,
   onCommand,
+  onDeleteBranch,
+  onCopy,
   onError,
 }: Props) {
   const [rows, setRows] = useState<HistoryRow[]>([]);
+  const menu = useContextMenu<Target>();
+
   const [total, setTotal] = useState(0);
   const [capped, setCapped] = useState(false);
   const [crowded, setCrowded] = useState(false);
@@ -102,6 +137,37 @@ export default function HistoryPane({
   const generation = useRef(0);
   const loaded = useRef(0);
   loaded.current = rows.length;
+
+  /**
+   * A row's menu is the commit: what the click already does, and the id. A
+   * local branch chip gets the branch instead, which is where deleting lives:
+   * the history is the view that shows a branch is finished, so it is the
+   * view to remove it from.
+   */
+  function rowMenu({ row, ref }: Target): MenuEntry[] {
+    if (ref && (ref.kind === "local" || ref.kind === "head")) {
+      const current = ref.kind === "head";
+      const switchTo = `git switch ${quote(ref.name, shell)}`;
+      return [
+        {
+          label: `Switch to ${ref.name}`,
+          title: current ? "You are on it." : switchTo,
+          disabled: current,
+          run: (typeOnly) => onCommand(switchTo, typeOnly),
+        },
+        { label: "Copy branch name", run: () => onCopy(ref.name, "the branch name") },
+        "-",
+        {
+          label: `Delete ${ref.name}`,
+          danger: true,
+          disabled: current,
+          title: current ? "You are on it. Switch away first." : "Asks first, and names the command.",
+          run: () => onDeleteBranch(ref.name),
+        },
+      ];
+    }
+    return commitMenu(row, onCommand, onCopy);
+  }
 
   const loadPage = useCallback(
     async (offset: number, limit = PAGE) => {
@@ -277,6 +343,15 @@ export default function HistoryPane({
           {rows.length.toLocaleString()} of {total.toLocaleString()}
           {capped && "+"}
         </span>
+        <button
+          className="btn tiny"
+          disabled={prunable === 0 || disabled}
+          title={disabled ? "Waiting for the shell" : pruneTitle}
+          onClick={onPrune}
+        >
+          Prune merged
+          {prunable > 0 && ` (${prunable})`}
+        </button>
         <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
           ✕
         </button>
@@ -306,10 +381,24 @@ export default function HistoryPane({
               tipOf={row.refs.map((r) => isTipOf.get(r.name)).find(Boolean) ?? null}
               disabled={disabled}
               onCommand={onCommand}
+              onMenu={menu.open}
             />
           ))}
         </div>
       </div>
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={
+            menu.menu.payload.ref
+              ? `Actions for ${menu.menu.payload.ref.name}`
+              : `Actions for ${menu.menu.payload.row.short}`
+          }
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
+      )}
     </section>
   );
 }
@@ -322,6 +411,7 @@ function Row({
   tipOf,
   disabled,
   onCommand,
+  onMenu,
 }: {
   row: HistoryRow;
   top: number;
@@ -332,6 +422,7 @@ function Row({
   tipOf: Squashed | null;
   disabled: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onMenu: (event: ReactMouseEvent, target: Target) => void;
 }) {
   // `--no-pager` and `--stat`, for the reason the branch graph gives: `git show`
   // hands its output to a pager that holds the shell until you find out the way
@@ -344,11 +435,16 @@ function Row({
       style={{ top, height: ROW }}
       disabled={disabled}
       onClick={(event) => onCommand(command, event.shiftKey)}
+      onContextMenu={(event) => onMenu(event, { row, ref: null })}
       title={`${row.summary}\n\n${row.author} · ${new Date(row.time * 1000).toLocaleString()}\n${row.id}\n\n${command}\nShift-click to type it without running it.`}
     >
       <span className="history-lanes" style={{ width: gutter }} />
       {row.refs.map((ref) => (
-        <span key={`${ref.kind}:${ref.name}`} className={`history-ref ${ref.kind}`}>
+        <span
+          key={`${ref.kind}:${ref.name}`}
+          className={`history-ref ${ref.kind}`}
+          onContextMenu={(event) => onMenu(event, { row, ref })}
+        >
           {ref.name}
         </span>
       ))}

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { isUntracked, type DiffTarget, type FileChange, type RepoState } from "../lib/types";
 import { commitCommand, quote, type ShellKind } from "../lib/shell";
 
@@ -23,6 +24,8 @@ interface Props {
    * command it builds then names instead of listing them.
    */
   onDiscard: (rows: FileChange[], all: boolean) => void;
+  /** Copies, and says so in the status bar. `what` finishes "Copied …". */
+  onCopy: (text: string, what: string) => void;
 }
 
 /**
@@ -51,12 +54,6 @@ const MARK: Record<FileChange["state"], string> = {
  * one can be open, and positioned in viewport coordinates because the list
  * scrolls under it.
  */
-interface Menu {
-  change: FileChange;
-  x: number;
-  y: number;
-}
-
 function splitPath(path: string): { dir: string; file: string } {
   const cut = path.lastIndexOf("/");
   return cut === -1
@@ -89,7 +86,7 @@ function Row({
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
-  onMenu: (menu: Menu) => void;
+  onMenu: (event: ReactMouseEvent, change: FileChange) => void;
 }) {
   const arg = quote(change.path, shell);
   // Unstaging is `restore --staged`, not `reset HEAD`, because it says what it
@@ -100,10 +97,7 @@ function Row({
   return (
     <div
       className={`change-row ${change.state}${open ? " open" : ""}`}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onMenu({ change, x: event.clientX, y: event.clientY });
-      }}
+      onContextMenu={(event) => onMenu(event, change)}
     >
       <button
         className="change-open"
@@ -166,7 +160,7 @@ function Section({
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
-  onMenu: (menu: Menu) => void;
+  onMenu: (event: ReactMouseEvent, change: FileChange) => void;
   /** Set on the one section whose rows can be thrown away outright. */
   onDiscardAll?: () => void;
 }) {
@@ -235,43 +229,52 @@ export default function ChangesPane({
   onCommand,
   onOpenDiff,
   onDiscard,
+  onCopy,
 }: Props) {
   const [message, setMessage] = useState("");
-  const [menu, setMenu] = useState<Menu | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menu = useContextMenu<FileChange>();
 
   // A message belongs to the repository it was written for. Carrying a draft to
   // the next project offers to commit one repository's words into another.
   useEffect(() => {
     setMessage("");
-    setMenu(null);
+    menu.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo?.path]);
 
-  // Anything that is not the menu closes the menu: a click elsewhere, Escape,
-  // the list scrolling out from under it, another right-click. `mousedown` on
-  // the window rather than a click on a backdrop, so the click that dismisses
-  // it also reaches whatever it was aimed at.
-  useEffect(() => {
-    if (!menu) return;
-    function dismiss(event: Event) {
-      if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
-      setMenu(null);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenu(null);
-    }
-    window.addEventListener("mousedown", dismiss);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("resize", dismiss);
-    // Capture, because the list that scrolls is not the window.
-    window.addEventListener("scroll", dismiss, true);
-    return () => {
-      window.removeEventListener("mousedown", dismiss);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", dismiss);
-      window.removeEventListener("scroll", dismiss, true);
-    };
-  }, [menu]);
+  /**
+   * The row's menu. The verb the row already shows, the diff, the path, and
+   * the one action that has no button because it asks first.
+   */
+  function rowMenu(change: FileChange): MenuEntry[] {
+    const arg = quote(change.path, shell);
+    const verb = change.staged ? `git restore --staged -- ${arg}` : `git add -- ${arg}`;
+    const conflicted = change.state === "conflicted";
+    return [
+      {
+        label: change.staged ? "Unstage" : "Stage",
+        title: conflicted ? "Resolve this one in the shell first." : verb,
+        disabled: disabled || conflicted,
+        run: (typeOnly) => onCommand(verb, typeOnly),
+      },
+      { label: "Open diff", run: () => onOpenDiff(change.path, change.staged) },
+      { label: "Copy path", run: () => onCopy(change.path, "the path") },
+      "-",
+      {
+        label: "Discard changes",
+        danger: true,
+        disabled: disabled || change.staged || conflicted,
+        title: change.staged
+          ? "Unstage it first. Discarding staged work would throw away two decisions at once."
+          : conflicted
+            ? "Resolve this one in the shell first."
+            : isUntracked(change)
+              ? "git clean -f on this file. It is not in git, so nothing brings it back."
+              : "git restore on this file, back to what the index holds.",
+        run: () => onDiscard([change], false),
+      },
+    ];
+  }
 
   const { staged, unstaged, conflicted } = useMemo(() => {
     return {
@@ -324,7 +327,7 @@ export default function ChangesPane({
           shell={shell}
           onCommand={onCommand}
           onOpenDiff={onOpenDiff}
-          onMenu={setMenu}
+          onMenu={menu.open}
         />
         <Section
           label="Changed"
@@ -336,7 +339,7 @@ export default function ChangesPane({
           shell={shell}
           onCommand={onCommand}
           onOpenDiff={onOpenDiff}
-          onMenu={setMenu}
+          onMenu={menu.open}
           /* Only this section. Staged work can be unstaged back into it before
              it is thrown away, and a conflict has no single command that ends
              it, so neither gets a control that would have to guess. */
@@ -360,7 +363,7 @@ export default function ChangesPane({
             shell={shell}
             onCommand={onCommand}
             onOpenDiff={onOpenDiff}
-            onMenu={setMenu}
+            onMenu={menu.open}
           />
         </div>
       )}
@@ -405,51 +408,13 @@ export default function ChangesPane({
         </div>
       </div>
 
-      {menu && (
-        <div
-          className="row-menu"
-          ref={menuRef}
-          /* Viewport coordinates, and pulled back inside the window from the
-             right and the bottom, since a row near either edge is where a
-             right-click most often lands in a 300 px column. */
-          style={{
-            left: Math.min(menu.x, window.innerWidth - 190),
-            top: Math.min(menu.y, window.innerHeight - 96),
-          }}
-        >
-          <button
-            disabled={disabled || menu.change.state === "conflicted"}
-            onClick={() => {
-              const arg = quote(menu.change.path, shell);
-              onCommand(
-                menu.change.staged ? `git restore --staged -- ${arg}` : `git add -- ${arg}`,
-                false,
-              );
-              setMenu(null);
-            }}
-          >
-            {menu.change.staged ? "Unstage" : "Stage"}
-          </button>
-          <button
-            className="danger"
-            disabled={disabled || menu.change.staged || menu.change.state === "conflicted"}
-            title={
-              menu.change.staged
-                ? "Unstage it first. Discarding staged work would throw away two decisions at once."
-                : menu.change.state === "conflicted"
-                  ? "Resolve this one in the shell first."
-                  : isUntracked(menu.change)
-                    ? "git clean -f on this file. It is not in git, so nothing brings it back."
-                    : "git restore on this file, back to what the index holds."
-            }
-            onClick={() => {
-              onDiscard([menu.change], false);
-              setMenu(null);
-            }}
-          >
-            Discard changes
-          </button>
-        </div>
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.path}`}
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
       )}
     </aside>
   );

@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import type { BranchGraph as Graph, GraphCommit, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
 
@@ -16,6 +24,28 @@ interface Props {
   squashed: Squashed | null;
   /** Types a command in the repository's shell. Shift-click leaves it unrun. */
   onCommand: (command: string, typeOnly: boolean) => void;
+  onCopy: (text: string, what: string) => void;
+}
+
+/** The commit menu, shared with the history pane's rows: the click, and the id. */
+export function commitMenu(
+  commit: { id: string; short: string; summary: string },
+  onCommand: (command: string, typeOnly: boolean) => void,
+  onCopy: (text: string, what: string) => void,
+): MenuEntry[] {
+  const show = `git --no-pager show --stat ${commit.short}`;
+  const checkout = `git checkout ${commit.short}`;
+  return [
+    { label: "Show", title: show, run: (typeOnly) => onCommand(show, typeOnly) },
+    {
+      label: "Check out this commit",
+      title: `${checkout}\n\nLeaves HEAD detached at it. git switch - comes back.`,
+      run: (typeOnly) => onCommand(checkout, typeOnly),
+    },
+    "-",
+    { label: "Copy SHA", title: commit.id, run: () => onCopy(commit.id, "the commit id") },
+    { label: "Copy message", run: () => onCopy(commit.summary, "the message") },
+  ];
 }
 
 /**
@@ -74,8 +104,10 @@ export default function BranchGraph({
   onToggle,
   onHistory,
   onCommand,
+  onCopy,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const menu = useContextMenu<GraphCommit>();
   const [width, setWidth] = useState(0);
 
   // How much history fits is a question about the pane, so the pane has to be
@@ -180,12 +212,27 @@ export default function BranchGraph({
                 </svg>
 
                 {model.nodes.map((node) => (
-                  <Node key={node.commit.id} node={node} captions={model.layout.captions} onCommand={onCommand} />
+                  <Node
+                    key={node.commit.id}
+                    node={node}
+                    captions={model.layout.captions}
+                    onCommand={onCommand}
+                    onMenu={menu.open}
+                  />
                 ))}
               </div>
             </div>
           </div>
         ))}
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.short}`}
+          entries={commitMenu(menu.menu.payload, onCommand, onCopy)}
+          onClose={menu.close}
+        />
+      )}
     </section>
   );
 }
@@ -222,10 +269,12 @@ function Node({
   node,
   captions,
   onCommand,
+  onMenu,
 }: {
   node: Placed;
   captions: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onMenu: (event: ReactMouseEvent, commit: GraphCommit) => void;
 }) {
   const { commit } = node;
   // `git show` hands its output to the pager, which then holds the shell until
@@ -238,6 +287,7 @@ function Node({
       className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}`}
       style={{ left: node.x, top: node.y }}
       onClick={(event) => onCommand(command, event.shiftKey)}
+      onContextMenu={(event) => onMenu(event, commit)}
       title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\n${command}\nShift-click to type it without running it.`}
     >
       <span className="graph-dot" />

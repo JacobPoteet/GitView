@@ -1623,6 +1623,12 @@ select:focus-visible,
   cursor: default;
 }
 
+.row-menu-rule {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
 /* Two controls, not one: the name opens the diff and the verb types the
    command. The row is the container that lights up for either. */
 .change-row {

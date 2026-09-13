@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { attentionScore, isClean, unpushed, type RepoPref, type RepoState } from "../lib/types";
 
 /** What the inbox knows about one repository, merged in the way prefs are. */
@@ -34,6 +35,8 @@ interface Props {
    *  can be acted on without opening it, and that has to include ending its
    *  shell. */
   onCloseShell: (path: string) => void;
+  /** Copies, and says so in the status bar. `what` finishes "Copied …". */
+  onCopy: (text: string, what: string) => void;
   onManageRoots: () => void;
 }
 
@@ -212,6 +215,7 @@ function Row({
   onPin,
   onHide,
   onCloseShell,
+  onMenu,
   onDragStart,
   onDragOver,
   onDrop,
@@ -233,6 +237,7 @@ function Row({
   onPin: (path: string, pinned: boolean) => void;
   onHide: (path: string, hidden: boolean) => void;
   onCloseShell: (path: string) => void;
+  onMenu: (event: ReactMouseEvent, repo: RepoState) => void;
   onDragStart: (path: string) => void;
   onDragOver: (path: string) => void;
   onDrop: (path: string) => void;
@@ -254,6 +259,7 @@ function Row({
         (drag === "before" ? " drop-before" : "") +
         (drag === "after" ? " drop-after" : "")
       }
+      onContextMenu={(event) => onMenu(event, repo)}
       onDragOver={
         orderable
           ? (e) => {
@@ -378,9 +384,11 @@ export default function FleetSidebar({
   onReorderPins,
   onHide,
   onCloseShell,
+  onCopy,
   onManageRoots,
 }: Props) {
   const [showHidden, setShowHidden] = useState(false);
+  const menu = useContextMenu<RepoState>();
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
 
@@ -475,6 +483,7 @@ export default function FleetSidebar({
       onPin={onPin}
       onHide={onHide}
       onCloseShell={onCloseShell}
+      onMenu={menu.open}
       onDragStart={setDragging}
       onDragOver={setOver}
       onDrop={commitDrop}
@@ -489,6 +498,37 @@ export default function FleetSidebar({
   // A one-argument form, because `.map(render)` would otherwise hand the index
   // in as the second parameter and make every row after the first orderable.
   const render = (repo: RepoState) => renderRow(repo, false);
+
+  // The row's two hover controls and the one it shows when a shell is up, plus
+  // the path, which is otherwise only readable from the tooltip.
+  function rowMenu(repo: RepoState): MenuEntry[] {
+    const pinned = prefs.get(repo.path)?.pinnedAt != null;
+    const hidden = prefs.get(repo.path)?.hidden === true;
+    const live = liveSessions.has(repo.path);
+    return [
+      {
+        label: pinned ? "Unpin" : "Pin to the top",
+        run: () => onPin(repo.path, !pinned),
+      },
+      {
+        label: hidden ? "Show in the list" : "Hide",
+        title: hidden ? undefined : "Drops it from the list and the palette",
+        run: () => onHide(repo.path, !hidden),
+      },
+      { label: "Copy path", title: repo.path, run: () => onCopy(repo.path, "the path") },
+      ...(live
+        ? [
+            "-" as const,
+            {
+              label: "Close shell",
+              danger: true,
+              title: "Ends the session, and whatever is running in it",
+              run: () => onCloseShell(repo.path),
+            },
+          ]
+        : []),
+    ];
+  }
 
   return (
     <aside className="sidebar">
@@ -665,6 +705,15 @@ export default function FleetSidebar({
           </section>
         )}
       </div>
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.name}`}
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
+      )}
     </aside>
   );
 }

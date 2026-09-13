@@ -1,4 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
+import { copyText } from "../lib/clipboard";
 import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -553,6 +555,9 @@ interface Props {
   onLiveChange: (repoPath: string, live: boolean) => void;
   onRequestClose: (repoPath: string) => void;
   onReopen: (repoPath: string) => void;
+  /** The status bar, for the one thing the menu can fail at: a paste the
+   *  clipboard refused to hand over. */
+  onNote: (text: string) => void;
   /** The block strip, drawn under the tab bar so it belongs to this shell
    *  rather than floating between the graph and the terminal. */
   children?: ReactNode;
@@ -565,9 +570,66 @@ export default function TerminalPane({
   onLiveChange,
   onRequestClose,
   onReopen,
+  onNote,
   children,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const menu = useContextMenu<null>();
+
+  /**
+   * Copy, paste, clear, close. The webview's menu used to stand in for the
+   * first two, at the price of Print and Share sitting next to them. Copy is
+   * the selection, which is why it is off without one; xterm has no idea what
+   * a right-click means, so the row is built here rather than asked for.
+   */
+  function shellMenu(): MenuEntry[] {
+    const session = repoPath ? sessions.get(repoPath) : undefined;
+    const selection = session?.term.getSelection() ?? "";
+    return [
+      {
+        label: "Copy",
+        disabled: selection.length === 0,
+        title: selection.length === 0 ? "Select something first" : undefined,
+        run: () => {
+          copyText(selection).then((ok) => {
+            if (!ok) onNote("The clipboard refused the copy.");
+            session?.term.clearSelection();
+            session?.term.focus();
+          });
+        },
+      },
+      {
+        label: "Paste",
+        run: () => {
+          // Through Rust rather than `navigator.clipboard.readText()`, which
+          // makes WebView2 put an Edge permission dialog over the window.
+          api
+            .clipboardText()
+            .then((text) => {
+              if (text) session?.term.paste(text);
+              session?.term.focus();
+            })
+            .catch((err) => onNote(`The clipboard refused the paste: ${String(err)}`));
+        },
+      },
+      "-",
+      {
+        label: "Clear",
+        title: "clear",
+        run: (typeOnly) => {
+          if (!repoPath) return;
+          if (typeOnly) api.ptyWrite(repoPath, "clear").catch(() => undefined);
+          else sendCommand(repoPath, "clear");
+        },
+      },
+      {
+        label: "Close shell",
+        danger: true,
+        title: "Ends the session, and whatever is running in it",
+        run: () => repoPath && onRequestClose(repoPath),
+      },
+    ];
+  }
 
   useEffect(() => {
     if (!repoPath || !open || !containerRef.current) return;
@@ -680,7 +742,19 @@ export default function TerminalPane({
         </button>
       </div>
       {children}
-      <div className="terminal-host" ref={containerRef} />
+      <div
+        className="terminal-host"
+        ref={containerRef}
+        onContextMenu={(event) => menu.open(event, null)}
+      />
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label="Shell"
+          entries={shellMenu()}
+          onClose={menu.close}
+        />
+      )}
     </div>
   );
 }

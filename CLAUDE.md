@@ -103,6 +103,8 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | A sticky element is dimmed by colour, never by `opacity` | Opacity applies to the element's own background, so a translucent line-number gutter lets a long line scroll straight through it |
 | The output channel belongs to the session, not to a React effect | An effect-owned callback drops everything a shell prints while its pane is off screen, which is most of what a dev server prints. Sessions outlive views, and so does their output |
 | Everything closes with the X in its top right | One gesture for every pane and every dialog, plus `Escape`. A footer button survives only where it is a different act: Cancel abandons a choice, which is not what closing a finished report does |
+| A right-click opens the surface's own menu, never the webview's | WebView2 offers Back, Reload, Print and Share, and `App.tsx` swallows the event at the document. A surface with something to offer uses `ContextMenu.tsx` and builds its items from actions it already has; there is no "Type without running" item because shift-click on any item already does that. Text fields keep the native menu for cut, copy and paste |
+| The clipboard is read in Rust, and written from the webview | `navigator.clipboard.readText()` makes WebView2 raise an Edge permission dialog over the window; `clipboard_text` through `arboard` asks nothing. `writeText` never prompts, so `copyText` stays where it is |
 
 ## Building
 

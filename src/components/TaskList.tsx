@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import type { Task } from "../lib/types";
 
 interface Props {
   tasks: Task[];
   disabled: boolean;
-  onRun: (task: Task) => void;
+  onRun: (task: Task, typeOnly?: boolean) => void;
   onSetHidden: (task: Task, hidden: boolean) => void;
   /** Only a saved task can be deleted. A discovered one belongs to a manifest. */
   onDelete: (task: Task) => void;
+  /** Copies, and says so in the status bar. `what` finishes "Copied …". */
+  onCopy: (text: string, what: string) => void;
 }
 
 function HideIcon({ hidden }: { hidden: boolean }) {
@@ -28,15 +31,17 @@ function Row({
   onRun,
   onSetHidden,
   onDelete,
+  onMenu,
 }: {
   task: Task;
   disabled: boolean;
   onRun: (task: Task) => void;
   onSetHidden: (task: Task, hidden: boolean) => void;
   onDelete: (task: Task) => void;
+  onMenu: (event: ReactMouseEvent, task: Task) => void;
 }) {
   return (
-    <div className="task-row-wrap">
+    <div className="task-row-wrap" onContextMenu={(event) => onMenu(event, task)}>
       <button
         className="task-row"
         disabled={disabled}
@@ -74,8 +79,32 @@ function Row({
  * several that only CI or an agent ever runs. Hiding one drops it out of the
  * palette as well, which is where the noise actually hurt.
  */
-export default function TaskList({ tasks, disabled, onRun, onSetHidden, onDelete }: Props) {
+export default function TaskList({
+  tasks,
+  disabled,
+  onRun,
+  onSetHidden,
+  onDelete,
+  onCopy,
+}: Props) {
   const [showHidden, setShowHidden] = useState(false);
+  const menu = useContextMenu<Task>();
+
+  function rowMenu(task: Task): MenuEntry[] {
+    return [
+      { label: "Run", title: task.command, disabled, run: (typeOnly) => onRun(task, typeOnly) },
+      { label: "Copy command", title: task.command, run: () => onCopy(task.command, "the command") },
+      "-",
+      {
+        label: task.hidden ? "Move back into the list" : "Hide",
+        title: task.hidden ? undefined : "Drops it from the list and the palette",
+        run: () => onSetHidden(task, !task.hidden),
+      },
+      ...(task.saved
+        ? [{ label: "Delete task", danger: true, run: () => onDelete(task) }]
+        : []),
+    ];
+  }
 
   const { grouped, hidden } = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -125,6 +154,7 @@ export default function TaskList({ tasks, disabled, onRun, onSetHidden, onDelete
                 onRun={onRun}
                 onSetHidden={onSetHidden}
                 onDelete={onDelete}
+                onMenu={menu.open}
               />
             ))}
           </div>
@@ -148,11 +178,21 @@ export default function TaskList({ tasks, disabled, onRun, onSetHidden, onDelete
                   onRun={onRun}
                   onSetHidden={onSetHidden}
                   onDelete={onDelete}
+                  onMenu={menu.open}
                 />
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.name}`}
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
       )}
     </div>
   );

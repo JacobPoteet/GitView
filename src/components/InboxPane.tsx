@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
 import {
   issueCreateCommand,
@@ -41,6 +42,8 @@ interface Props {
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
   /** Where a refused write of the issue body goes. The status bar. */
   onError: (message: string) => void;
+  /** Copies, and says so in the status bar. `what` finishes "Copied …". */
+  onCopy: (text: string, what: string) => void;
   /**
    * A row to open the desk under when the pane opens: the header's `PR #n`
    * button brings you here for that pull request, so it arrives expanded.
@@ -339,6 +342,7 @@ function Row({
   onSelect,
   onCommand,
   onMerge,
+  onMenu,
 }: {
   item: InboxItem;
   /** Set in repo mode, where nothing above the row says why it is here. */
@@ -350,6 +354,7 @@ function Row({
   onSelect: (path: string) => void;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
+  onMenu: (event: ReactMouseEvent, item: InboxItem) => void;
 }) {
   // Every action names the command it runs, so an inbox row types `gh` the way
   // a sidebar row types `git`. Nothing here writes to GitHub out of sight.
@@ -366,7 +371,7 @@ function Row({
       {/* The head is what the actions hang off. They used to float over the
           whole row, and a row with its desk open put them in the middle of
           the checks, where a click on the desk landed on Check out. */}
-      <div className="inbox-head">
+      <div className="inbox-head" onContextMenu={(event) => onMenu(event, item)}>
         {desk ? (
           <button
             className="inbox-expand"
@@ -844,8 +849,36 @@ export default function InboxPane({
   onCommand,
   onMerge,
   onError,
+  onCopy,
   openKey,
 }: Props) {
+  const menu = useContextMenu<InboxItem>();
+
+  // The row's two hover buttons, the repository it belongs to, and the URL,
+  // which is the one thing here worth pasting somewhere else.
+  function rowMenu(item: InboxItem): MenuEntry[] {
+    const view =
+      item.kind === "pr" ? `gh pr view ${item.number} --web` : `gh issue view ${item.number} --web`;
+    const checkout = `gh pr checkout ${item.number}`;
+    const typed = (command: string) => `${command}
+
+Typed into ${item.repoName}'s shell.`;
+    return [
+      { label: "Open on GitHub", title: typed(view), run: (t) => onCommand(item.repoPath, view, t) },
+      ...(item.kind === "pr"
+        ? [
+            {
+              label: "Check out",
+              title: typed(checkout),
+              run: (t: boolean) => onCommand(item.repoPath, checkout, t),
+            },
+          ]
+        : []),
+      { label: `Open ${item.repoName}`, title: item.repoPath, run: () => onSelect(item.repoPath) },
+      "-",
+      { label: "Copy URL", title: item.url, run: () => onCopy(item.url, "the URL") },
+    ];
+  }
   // By repo to start with. A fleet's inbox is mostly one repository's backlog
   // at a time, and reading it in project order is what somebody opening it asks
   // for; the need groups are one click away and the choice sticks.
@@ -1044,6 +1077,7 @@ export default function InboxPane({
                       onSelect={onSelect}
                       onCommand={onCommand}
                       onMerge={onMerge}
+                      onMenu={menu.open}
                     />
                   );
                 })}
@@ -1058,6 +1092,15 @@ export default function InboxPane({
           </p>
         )}
       </div>
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for #${menu.menu.payload.number}`}
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
+      )}
     </section>
   );
 }
