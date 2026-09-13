@@ -8,6 +8,7 @@ import type {
   History,
   GitOutcome,
   Inbox,
+  IssueDetail,
   RepoPref,
   RepoState,
   ScanReport,
@@ -71,6 +72,9 @@ export const api = {
    */
   githubIssueBody: (ownerRepo: string, title: string, body: string) =>
     invoke<string>("github_issue_body", { ownerRepo, title, body }),
+  /** One issue's body, labels and the tail of its comments, read when its row opens. */
+  githubIssue: (ownerRepo: string, number: number) =>
+    invoke<IssueDetail>("github_issue", { ownerRepo, number }),
 
   /** The latest release, read through gh. One call, at launch. */
   updateCheck: () => invoke<UpdateCheck>("update_check"),

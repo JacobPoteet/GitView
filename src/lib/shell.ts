@@ -169,6 +169,24 @@ export function mergeCommand(number: number, method: MergeMethod, deleteBranch: 
   return parts.join(" ");
 }
 
+/**
+ * `gh issue comment`, as one line.
+ *
+ * The body goes the way a new issue's does: inline when it fits on a line, and
+ * out to a file under GitView's data folder when it has paragraphs.
+ */
+export function issueCommentCommand(
+  number: number,
+  body: string,
+  bodyFile: string | null,
+  kind: ShellKind,
+): string {
+  const parts = ["gh", "issue", "comment", String(number)];
+  if (bodyFile) parts.push("--body-file", quote(bodyFile, kind));
+  else parts.push("--body", quote(body, kind));
+  return parts.join(" ");
+}
+
 /** Re-running the jobs that failed in one Actions run, and only those. */
 export function rerunCommand(runId: number): string {
   return `gh run rerun ${runId} --failed`;

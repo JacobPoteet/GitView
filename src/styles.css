@@ -2673,6 +2673,78 @@ button.inbox-check-name.link:hover {
   cursor: not-allowed;
 }
 
+/* The issue desk: the description and the thread, then a box to reply in.
+   Bodies are shown as the text GitHub holds, wrapped, rather than rendered:
+   an issue written here is plain paragraphs, and a markdown renderer is a
+   dependency for the one in a hundred that is not. */
+.inbox-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.inbox-label {
+  --label: var(--line-strong);
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text);
+  background: color-mix(in oklch, var(--label) 22%, var(--bg-inset));
+  border: 1px solid color-mix(in oklch, var(--label) 50%, var(--line));
+}
+
+.inbox-thread {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.inbox-comment {
+  padding: 6px 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.inbox-comment-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.inbox-comment-author {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.inbox-reply {
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 9px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.inbox-reply:focus {
+  border-color: var(--accent-line);
+}
+
 /* Two questions about one list, in the same segmented control the diff pane
    uses to switch sides of the index. */
 .inbox-modes {

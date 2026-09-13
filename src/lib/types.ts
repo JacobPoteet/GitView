@@ -345,6 +345,28 @@ export interface Inbox {
   error: string | null;
 }
 
+/** One issue opened under its row, read on demand rather than in the sweep. */
+export interface IssueDetail {
+  number: number;
+  title: string;
+  body: string;
+  createdAt: string;
+  author: string;
+  labels: { name: string; color: string }[];
+  assignees: string[];
+  /** The last twenty, oldest first. */
+  comments: IssueComment[];
+  /** How many there are altogether, so the pane can say what it left out. */
+  commentCount: number;
+}
+
+export interface IssueComment {
+  author: string;
+  createdAt: string;
+  body: string;
+  url: string;
+}
+
 /** The latest GitHub release, as `gh release view` reported it. */
 export interface Release {
   /** `owner/repo`, so the typed command names where this was read from. */
