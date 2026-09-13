@@ -199,8 +199,8 @@ export default function BranchGraph({
           onClick={onToggle}
           title={collapsed ? "Expand the branch graph" : "Collapse the branch graph"}
         >
-          <span className="graph-chevron">{collapsed ? "▸" : "▾"}</span>
           <span className="graph-summary">{summary}</span>
+          <span className="graph-chevron">{collapsed ? "▸" : "▾"}</span>
           {graph.unrelated && <span className="graph-note">no shared history</span>}
           {graph.truncated && <span className="graph-note">first 40 each way</span>}
         </button>
