@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import DiffHunks from "./DiffHunks";
 import type { DiffTarget, FileDiff } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 
@@ -35,27 +36,6 @@ interface Props {
  * hunk is what `git diff` prints, which is the format this app is trying to
  * stay legible against rather than replace.
  */
-
-/**
- * `@@ -1,7 +1,9 @@ fn read_file(...)`. The range is machine text and the tail
- * is the enclosing function git found, which is the half worth reading, so the
- * two are drawn in different tones rather than as one grey line.
- */
-function splitHeader(header: string): { range: string; context: string } {
-  const close = header.indexOf("@@", 2);
-  if (close === -1) return { range: header, context: "" };
-  return {
-    range: header.slice(0, close + 2),
-    context: header.slice(close + 2).trim(),
-  };
-}
-
-const TONE: Record<string, string> = {
-  " ": "context",
-  "+": "add",
-  "-": "del",
-  "\\": "note",
-};
 
 export default function DiffPane({
   target,
@@ -182,106 +162,34 @@ export default function DiffPane({
       <div className="diff-body">
         {reading && !diff && <p className="empty">Reading…</p>}
         {failure && <p className="empty">{failure}</p>}
-        {diff?.error && <p className="empty">{diff.error}</p>}
 
-        {diff && !diff.error && diff.binary && (
-          <p className="empty">
-            Binary. git has no text to show for this one.
-          </p>
-        )}
-
-        {diff && !diff.error && !diff.binary && diff.empty && (
-          <p className="empty">
-            Nothing on the {target.staged ? "staged" : "unstaged"} side of this
-            file.
-          </p>
-        )}
-
-        {/* Modified with no hunks: the line endings or the mode changed and
-            not a line. `git diff` prints nothing for it either, and a blank
-            pane looked like a read that never finished. */}
-        {diff && !diff.error && !diff.binary && !diff.empty && diff.hunks.length === 0 && (
-          <p className="empty">
-            No line differs. Line endings or the file mode changed, which
-            <code> git diff</code> shows nothing for either.
-          </p>
-        )}
-
-        {diff?.oldPath && (
-          <p className="diff-rename">
-            renamed from <bdi>{diff.oldPath}</bdi>
-          </p>
-        )}
-
-        {/* One wrapper around every hunk, and it is what sets the scroll width.
-            Per-hunk `min-width` gave each hunk its own, so scrolling right to
-            read a 600-character line carried the short hunks off the left edge
-            and out of the pane. */}
-        <div className="diff-hunks">
-          {diff?.hunks.map((hunk, index) => {
-            const { range, context } = splitHeader(hunk.header);
-            return (
-              <div
-                className="diff-hunk"
-                key={`${hunk.oldStart}:${hunk.newStart}:${index}`}
-              >
-                <div className="diff-hunk-head">
-                  {/* The band is as wide as the widest line in the file. This
-                    span is what stays on screen when one is scrolled. */}
-                  <span className="stick">
-                    <span className="range">{range}</span>
-                    {context && <span className="context">{context}</span>}
-                  </span>
-                  {/* Sticky to the other edge, so it is where the eye expects a
-                    button however far the file has been scrolled sideways. */}
-                  <button
-                    className="hunk-apply"
-                    disabled={disabled}
-                    onClick={(event) =>
-                      applyHunk(index, hunk.header, event.shiftKey)
-                    }
-                    title={
-                      disabled
-                        ? "No shell open for this repository."
-                        : `git apply --cached ${target.staged ? "--reverse " : ""}<patch>
+        {diff && (
+          <DiffHunks
+            diff={diff}
+            restCommand={`git diff -- ${target.file}`}
+            emptyNote={`Nothing on the ${target.staged ? "staged" : "unstaged"} side of this file.`}
+            hunkAction={(index, header) => (
+              /* Sticky to the other edge, so it is where the eye expects a
+                 button however far the file has been scrolled sideways. */
+              <button
+                className="hunk-apply"
+                disabled={disabled}
+                onClick={(event) => applyHunk(index, header, event.shiftKey)}
+                title={
+                  disabled
+                    ? "No shell open for this repository."
+                    : `git apply --cached ${target.staged ? "--reverse " : ""}<patch>
 
 GitView writes this hunk out as a patch under its own data folder, never into
 the repository, and types the command that applies it. The prompt shows the
 path it wrote.
 Shift-click to type it without running it.`
-                    }
-                  >
-                    {verb} hunk
-                  </button>
-                </div>
-                {hunk.lines.map((line, row) => (
-                  <div
-                    className={`diff-line ${TONE[line.origin] ?? "context"}`}
-                    key={row}
-                  >
-                    <span className="ln">{line.old ?? ""}</span>
-                    <span className="ln">{line.new ?? ""}</span>
-                    <span className="sign">
-                      {line.origin === "\\" ? "\\" : line.origin}
-                    </span>
-                    <span className="text">
-                      {line.text}
-                      {line.clipped && (
-                        <span className="clipped"> … line clipped</span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-
-        {diff?.truncated && (
-          <p className="diff-note">
-            Stopped after 6000 lines. <code>git diff -- {target.file}</code> in
-            the shell has the rest.
-          </p>
+                }
+              >
+                {verb} hunk
+              </button>
+            )}
+          />
         )}
       </div>
     </section>

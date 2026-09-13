@@ -64,7 +64,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | `src/` | React frontend. Components, plus `lib/api.ts` mirroring the Rust command surface and `lib/shell.ts` quoting the commands that get typed at a prompt |
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
-| `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index |
+| `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index, and one commit against its first parent |
 | `src-tauri/src/history.rs` | The whole DAG, a page at a time, with its lanes already packed |
 | `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
 | `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |

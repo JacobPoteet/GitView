@@ -2,6 +2,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import type {
   AppInfo,
   BranchGraph,
+  CommitDiff,
   FileChange,
   FileDiff,
   History,
@@ -40,6 +41,10 @@ export const api = {
   /** One file, on one side of the index. Read per file, not per working tree. */
   repoDiff: (path: string, file: string, staged: boolean) =>
     invoke<FileDiff>("repo_diff", { path, file, staged }),
+  repoCommit: (path: string, sha: string) =>
+    invoke<CommitDiff>("repo_commit", { path, sha }),
+  repoCommitFile: (path: string, sha: string, file: string) =>
+    invoke<FileDiff>("repo_commit_file", { path, sha, file }),
 
   repoPrefs: () => invoke<RepoPref[]>("repo_prefs"),
   repoSetHidden: (path: string, hidden: boolean) =>

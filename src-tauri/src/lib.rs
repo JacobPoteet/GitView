@@ -25,7 +25,7 @@ use tauri::ipc::Channel;
 use tauri::{Manager, State};
 
 use cache::{Adoption, Cache, RepoPref};
-use diff::FileDiff;
+use diff::{CommitDiff, FileDiff};
 use fleet::{FileChange, RepoState};
 use github::{GhStatus, Inbox};
 use gitops::GitOutcome;
@@ -138,6 +138,28 @@ async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
 async fn repo_diff(path: String, file: String, staged: bool) -> Result<FileDiff, String> {
     tauri::async_runtime::spawn_blocking(move || {
         diff::read_file(&PathBuf::from(&path), &file, staged)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// One commit: its text, its parents, and every file it touched with counts.
+///
+/// The pane reads the list first and the hunks per file, the same split the
+/// working tree gets, so a forty-file merge costs one list and one file rather
+/// than forty diffs nobody scrolled to.
+#[tauri::command]
+async fn repo_commit(path: String, sha: String) -> Result<CommitDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || diff::read_commit(&PathBuf::from(&path), &sha))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// One file out of a commit, against the commit's first parent.
+#[tauri::command]
+async fn repo_commit_file(path: String, sha: String, file: String) -> Result<FileDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        diff::read_commit_file(&PathBuf::from(&path), &sha, &file)
     })
     .await
     .map_err(|e| e.to_string())
@@ -520,6 +542,8 @@ pub fn run() {
             repo_squashed,
             repo_changes,
             repo_diff,
+            repo_commit,
+            repo_commit_file,
             diff_hunk_patch,
             repo_prefs,
             repo_set_hidden,

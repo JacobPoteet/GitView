@@ -3158,6 +3158,72 @@ button.inbox-check-name.link:hover {
   color: var(--text-dim);
 }
 
+/* ----------------------------------------------------------------- commit */
+/* One commit over the main column: the message, the files it touched, and the
+   selected file's hunks. The file list is a fixed band and the diff takes the
+   rest, because the list is short and the diff is long. Reuses `.diff-pane`
+   for the frame and `.change-mark` / `.change-path` for the rows. */
+
+.commit-pane .commit-short {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.commit-head {
+  flex: none;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-ui);
+}
+
+.commit-summary {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.commit-body {
+  margin: 6px 0 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.commit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* The file list lives in the right-hand column while a commit is open, see
+   CommitFilesPane. The rows are the working tree's rows with counts where the
+   verb would be. */
+.commit-file-tally {
+  flex: none;
+  padding-right: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.commit-file-binary {
+  flex: none;
+  padding-right: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.commit-files-pane .pane-close {
+  margin-left: auto;
+}
+
 /* ---------------------------------------------------------------- history */
 /* The whole DAG, in the main column like the inbox and the diff. Canvas rails
    under plain DOM rows, and only the rows on screen exist: a node per commit in

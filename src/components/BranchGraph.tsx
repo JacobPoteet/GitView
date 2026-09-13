@@ -25,6 +25,8 @@ interface Props {
   squashed: Squashed | null;
   /** Types a command in the repository's shell. Shift-click leaves it unrun. */
   onCommand: (command: string, typeOnly: boolean) => void;
+  /** Opens the commit pane on a node. The click itself types nothing. */
+  onOpen: (commit: { id: string; short: string }) => void;
   onCopy: (text: string, what: string) => void;
   /** Every local branch, so a commit that is a branch tip offers the branch. */
   branches: BranchSummary[];
@@ -133,6 +135,7 @@ export default function BranchGraph({
   onToggle,
   onHistory,
   onCommand,
+  onOpen,
   onCopy,
   branches,
   shell,
@@ -256,6 +259,7 @@ export default function BranchGraph({
                     captions={model.layout.captions}
                     detached={graph.detached}
                     onCommand={onCommand}
+                    onOpen={onOpen}
                     onMenu={menu.open}
                   />
                 ))}
@@ -309,27 +313,30 @@ function Node({
   captions,
   detached,
   onCommand,
+  onOpen,
   onMenu,
 }: {
   node: Placed;
   captions: boolean;
   detached: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onOpen: (commit: { id: string; short: string }) => void;
   onMenu: (event: ReactMouseEvent, commit: GraphCommit) => void;
 }) {
   const { commit } = node;
-  // `git show` hands its output to the pager, which then holds the shell until
-  // you find out that the way out is Q. The strip is a place you click to read a
-  // commit message, not a place to open a reader, so this prints and returns to
-  // the prompt. The full diff is one `git show` away in the same shell.
+  // A click opens the commit pane and types nothing. Shift-click keeps the
+  // typed route, with `--no-pager` because `git show` hands its output to the
+  // pager, which then holds the shell until you find out that the way out is Q.
   const command = `git --no-pager show --stat ${commit.short}`;
   return (
     <button
       className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}`}
       style={{ left: node.x, top: node.y }}
-      onClick={(event) => onCommand(command, event.shiftKey)}
+      onClick={(event) =>
+        event.shiftKey ? onCommand(command, true) : onOpen({ id: commit.id, short: commit.short })
+      }
       onContextMenu={(event) => onMenu(event, commit)}
-      title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\n${command}\nShift-click to type it without running it.`}
+      title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\nClick to read the commit.\nShift-click to type ${command} without running it.`}
     >
       <span className="graph-dot" />
       {/* The HEAD badge only earns its place when HEAD is detached: on a

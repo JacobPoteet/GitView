@@ -15,6 +15,8 @@ import TaskList from "./components/TaskList";
 import BranchGraph from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
+import CommitFilesPane from "./components/CommitFilesPane";
+import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
 import ContextMenu, { isEditable, type MenuAt } from "./components/ContextMenu";
@@ -45,6 +47,8 @@ import {
   type AppInfo,
   type BranchGraph as Graph,
   type CommandBlock,
+  type CommitDiff,
+  type CommitTarget,
   type DiffTarget,
   type FileChange,
   type Inbox,
@@ -148,6 +152,24 @@ export default function App() {
    * and it closes with the selection the way the diff pane does.
    */
   const [historyOpen, setHistoryOpen] = useState(false);
+  /**
+   * The commit the commit pane is open on, if any.
+   *
+   * Carries the repository like the diff target does, so a selection change
+   * closes it. It sits above the history in precedence and leaves `historyOpen`
+   * alone, which is what puts the history back when it closes: the pane opens
+   * from a history row nine times out of ten, and closing both would drop you
+   * at the terminal with your place in the list lost.
+   */
+  const [commitTarget, setCommitTarget] = useState<CommitTarget | null>(null);
+  /**
+   * The open commit, read once per target. Held here rather than in the pane
+   * because two regions draw it: the pane draws the message and one file's
+   * hunks, and the right-hand column draws the file list in place of the
+   * working tree while the pane is up.
+   */
+  const [commit, setCommit] = useState<CommitDiff | null>(null);
+  const [commitFile, setCommitFile] = useState<string | null>(null);
   const [graphCollapsed, setGraphCollapsed] = useState(
     () => localStorage.getItem(GRAPH_KEY) === "1",
   );
@@ -428,6 +450,32 @@ export default function App() {
   }, [selectedPath]);
 
   useEffect(() => {
+    if (commitTarget && commitTarget.repoPath !== selectedPath) setCommitTarget(null);
+  }, [commitTarget, selectedPath]);
+
+  useEffect(() => {
+    setCommit(null);
+    setCommitFile(null);
+    if (!commitTarget) return;
+    let cancelled = false;
+    api
+      .repoCommit(commitTarget.repoPath, commitTarget.id)
+      .then((next) => {
+        if (cancelled) return;
+        setCommit(next);
+        // The first file opens on its own, so a one-file commit reads as a
+        // diff without a second click.
+        setCommitFile(next.files[0]?.path ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) setNote(String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [commitTarget, setNote]);
+
+  useEffect(() => {
     if (!diffTarget) return;
     if (diffTarget.repoPath !== selectedPath) {
       setDiffTarget(null);
@@ -446,11 +494,22 @@ export default function App() {
   const openDiff = useCallback(
     (file: string, staged: boolean) => {
       if (!selectedPath) return;
+      // The commit pane outranks the diff in the column, so a click in the
+      // changes column while a commit is up would otherwise do nothing visible.
+      setCommitTarget(null);
       setDiffTarget((current) =>
         current && current.file === file && current.staged === staged
           ? null
           : { repoPath: selectedPath, file, staged },
       );
+    },
+    [selectedPath],
+  );
+
+  const openCommit = useCallback(
+    (commit: { id: string; short: string }) => {
+      if (!selectedPath) return;
+      setCommitTarget({ repoPath: selectedPath, id: commit.id, short: commit.short });
     },
     [selectedPath],
   );
@@ -551,6 +610,23 @@ export default function App() {
         setPaletteOpen((open) => !open);
       }
       if (event.key === "Escape") {
+        // The commit pane sits over the history it was opened from, so Escape
+        // peels it and leaves the history where it was. A second Escape closes
+        // everything, as before. Only when it is the thing on screen, though:
+        // the inbox and every dialog draw over it, and Escape there has to
+        // close what the eye is on rather than a pane it cannot see.
+        const covered =
+          inboxOpen ||
+          confirmation !== null ||
+          rootsOpen ||
+          pendingTask !== null ||
+          batchOpen ||
+          updateOpen ||
+          paletteOpen;
+        if (commitTarget && !covered) {
+          setCommitTarget(null);
+          return;
+        }
         setConfirmation(null);
         setRootsOpen(false);
         setPendingTask(null);
@@ -567,7 +643,17 @@ export default function App() {
     // see attachCustomKeyEventHandler in TerminalPane.
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [batch?.running]);
+  }, [
+    batch?.running,
+    commitTarget,
+    inboxOpen,
+    confirmation,
+    rootsOpen,
+    pendingTask,
+    batchOpen,
+    updateOpen,
+    paletteOpen,
+  ]);
 
   // The webview's own right-click menu is Back, Reload, Print and Share, none
   // of which is anything here. Every surface that has something to offer opens
@@ -1621,6 +1707,16 @@ ${landing} ${cleanup}${warning}`,
       onError={setNote}
       onCopy={copy}
     />
+  ) : commitTarget && selected ? (
+    <CommitPane
+      target={commitTarget}
+      commit={commit}
+      file={commitFile}
+      disabled={!shellReady}
+      shell={shell}
+      onClose={() => setCommitTarget(null)}
+      onCommand={emit}
+    />
   ) : historyOpen && selected ? (
     <HistoryPane
       repoPath={selected.path}
@@ -1636,6 +1732,7 @@ ${landing} ${cleanup}${warning}`,
       onPrune={() => setConfirmation(pruneConfirmation(selected, squashed))}
       onClose={() => setHistoryOpen(false)}
       onCommand={emit}
+      onOpen={openCommit}
       onDeleteBranch={askDeleteBranch}
       onCopy={copy}
       onError={setNote}
@@ -1799,6 +1896,7 @@ gh pr view ${branchPr.number} --web`}
               onToggle={toggleGraph}
               onHistory={() => setHistoryOpen(true)}
               onCommand={emit}
+              onOpen={openCommit}
               onCopy={copy}
               branches={selected.branches}
               shell={shell}
@@ -1864,17 +1962,30 @@ gh pr view ${branchPr.number} --web`}
         )}
       </main>
 
-      <ChangesPane
-        repo={selected}
-        changes={changes}
-        disabled={!shellReady}
-        shell={shell}
-        open={diffTarget}
-        onCommand={emit}
-        onOpenDiff={openDiff}
-        onDiscard={askDiscard}
-        onCopy={copy}
-      />
+      {/* While a commit is open the column lists that commit's files, so the
+          main column keeps its full height for the hunks. The working tree is
+          back the moment the pane closes. */}
+      {commitTarget && selected ? (
+        <CommitFilesPane
+          target={commitTarget}
+          commit={commit}
+          file={commitFile}
+          onPick={setCommitFile}
+          onClose={() => setCommitTarget(null)}
+        />
+      ) : (
+        <ChangesPane
+          repo={selected}
+          changes={changes}
+          disabled={!shellReady}
+          shell={shell}
+          open={diffTarget}
+          onCommand={emit}
+          onOpenDiff={openDiff}
+          onDiscard={askDiscard}
+          onCopy={copy}
+        />
+      )}
 
       <div className="status-bar">
         <span>{repos.length - hiddenCount} repos</span>
