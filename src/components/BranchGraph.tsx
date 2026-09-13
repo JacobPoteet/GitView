@@ -254,6 +254,7 @@ export default function BranchGraph({
                     key={node.commit.id}
                     node={node}
                     captions={model.layout.captions}
+                    detached={graph.detached}
                     onCommand={onCommand}
                     onMenu={menu.open}
                   />
@@ -306,11 +307,13 @@ function Label({
 function Node({
   node,
   captions,
+  detached,
   onCommand,
   onMenu,
 }: {
   node: Placed;
   captions: boolean;
+  detached: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
   onMenu: (event: ReactMouseEvent, commit: GraphCommit) => void;
 }) {
@@ -329,11 +332,14 @@ function Node({
       title={`${node.head ? "You are on this commit.\n\n" : ""}${commit.short}  ${commit.summary}\n${commit.author}, ${relativeTime(commit.time)}\n\n${command}\nShift-click to type it without running it.`}
     >
       <span className="graph-dot" />
-      {/* One row above the node rather than two absolute badges stacked on each
-          other, so HEAD and a branch name on the same commit both stay read. */}
-      {(node.head || commit.refs.length > 0) && (
+      {/* The HEAD badge only earns its place when HEAD is detached: on a
+          branch, the emphasised dot already says which commit you are on, and
+          the badge would sit next to the branch name it duplicates. One row
+          above the node rather than two absolute badges stacked on each other,
+          so HEAD and a branch name on the same commit both stay read. */}
+      {((node.head && detached) || commit.refs.length > 0) && (
         <span className="graph-refs">
-          {node.head && <span className="graph-ref head">HEAD</span>}
+          {node.head && detached && <span className="graph-ref head">HEAD</span>}
           {commit.refs.length > 0 && <span className="graph-ref">{commit.refs[0]}</span>}
         </span>
       )}
