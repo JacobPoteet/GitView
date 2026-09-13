@@ -109,4 +109,6 @@ export const api = {
   settingsAddRoot: (path: string) => invoke<string[]>("settings_add_root", { path }),
   settingsRemoveRoot: (path: string) => invoke<string[]>("settings_remove_root", { path }),
   appInfo: () => invoke<AppInfo>("app_info"),
+  /** The clipboard's text, read in Rust so WebView2 never asks permission. */
+  clipboardText: () => invoke<string>("clipboard_text"),
 };

@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { blockOutput } from "./TerminalPane";
 import { blockDuration, portsIn, type CommandBlock } from "../lib/types";
 
 interface Props {
   blocks: CommandBlock[];
-  onRun: (command: string) => void;
+  onRun: (command: string, typeOnly?: boolean) => void;
   onSave: (block: CommandBlock) => void;
+  /** The block as a whole: command, exit code and output, for Claude. */
   onCopy: (block: CommandBlock) => void;
+  /** Just text, and the status line says what. */
+  onCopyText: (text: string, what: string) => void;
   onReveal: (block: CommandBlock) => void;
   /** The command a port chip types, so the chip can name it like every other
    *  control in the app does. */
@@ -28,12 +32,14 @@ export default function BlockBar({
   onRun,
   onSave,
   onCopy,
+  onCopyText,
   onReveal,
   portCommand,
   onPort,
 }: Props) {
   const last = blocks.length > 0 ? blocks[blocks.length - 1] : null;
   const running = last != null && last.exitCode === null;
+  const menu = useContextMenu<CommandBlock>();
 
   // A running block's clock is the only thing on this row that moves on its own.
   const [, tick] = useState(0);
@@ -63,8 +69,39 @@ export default function BlockBar({
 
   const state = running ? "running" : last.exitCode === 0 ? "ok" : "failed";
 
+  // The bar's buttons, plus the two the bar has no room for: typing the command
+  // to edit before it runs, and copying the command alone.
+  function barMenu(block: CommandBlock): MenuEntry[] {
+    const live = block.exitCode === null;
+    return [
+      {
+        label: "Run again",
+        title: live ? "It is still running" : block.command,
+        disabled: live,
+        run: (typeOnly) => onRun(block.command, typeOnly),
+      },
+      { label: "Scroll back to it", run: () => onReveal(block) },
+      "-",
+      { label: "Save as task", run: () => onSave(block) },
+      { label: "Copy command", title: block.command, run: () => onCopyText(block.command, "the command") },
+      {
+        label: "Copy for Claude",
+        title: "The command, its exit code and its output",
+        run: () => onCopy(block),
+      },
+    ];
+  }
+
   return (
-    <div className={`block-bar ${state}`}>
+    <div className={`block-bar ${state}`} onContextMenu={(event) => menu.open(event, last)}>
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.command}`}
+          entries={barMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
+      )}
       <button
         className="block-status"
         onClick={() => onReveal(last)}

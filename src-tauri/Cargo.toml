@@ -28,6 +28,9 @@ portable-pty = "0.8"
 parking_lot = "0.12"
 anyhow = "1"
 dirs = "5"
+# The shell's Paste. `navigator.clipboard.readText()` makes WebView2 raise a
+# browser permission dialog over the window; reading it here does not.
+arboard = { version = "3", default-features = false }
 
 [profile.release]
 opt-level = "s"

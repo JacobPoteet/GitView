@@ -468,6 +468,22 @@ fn settings_remove_root(state: State<'_, AppState>, path: String) -> Result<Vec<
     Ok(roots)
 }
 
+/// The clipboard's text, for the shell's Paste.
+///
+/// The webview can read it too, but WebView2 asks first with an Edge permission
+/// dialog, once per user data folder, and a browser prompt over a desktop app
+/// is the wrong answer to a right-click. An empty clipboard is an empty string,
+/// which pastes nothing rather than an error.
+#[tauri::command]
+fn clipboard_text() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    match clipboard.get_text() {
+        Ok(text) => Ok(text),
+        Err(arboard::Error::ContentNotAvailable) => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tauri::command]
 fn app_info(state: State<'_, AppState>) -> AppInfo {
     let shell = pty::default_shell();
@@ -528,6 +544,7 @@ pub fn run() {
             settings_set_roots,
             settings_add_root,
             settings_remove_root,
+            clipboard_text,
             app_info,
         ])
         .run(tauri::generate_context!())

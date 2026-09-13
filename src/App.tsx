@@ -17,6 +17,7 @@ import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
 import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
+import ContextMenu, { isEditable, type MenuAt } from "./components/ContextMenu";
 import RootsDialog from "./components/RootsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane, { itemKey } from "./components/InboxPane";
@@ -25,7 +26,7 @@ import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
-import { discardCommands, openUrlCommand, pushCommand, shellKind } from "./lib/shell";
+import { discardCommands, openUrlCommand, pushCommand, quote, shellKind } from "./lib/shell";
 import {
   fetchPlan,
   isSkip,
@@ -568,6 +569,26 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [batch?.running]);
 
+  // The webview's own right-click menu is Back, Reload, Print and Share, none
+  // of which is anything here. Every surface that has something to offer opens
+  // a menu of its own and stops the event before it gets this far, so what
+  // reaches here is a click on nothing and is swallowed. A text field keeps the
+  // native one: cut, copy and paste are exactly what a right-click there wants.
+  //
+  // Selected text is the one thing the native menu did that is worth keeping,
+  // so a right-click on a selection anywhere gets Copy and nothing else.
+  const [textMenu, setTextMenu] = useState<{ at: MenuAt; text: string } | null>(null);
+  useEffect(() => {
+    function onContextMenu(event: MouseEvent) {
+      if (isEditable(event.target)) return;
+      event.preventDefault();
+      const text = window.getSelection()?.toString() ?? "";
+      if (text.length > 0) setTextMenu({ at: { x: event.clientX, y: event.clientY }, text });
+    }
+    document.addEventListener("contextmenu", onContextMenu);
+    return () => document.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
   useEffect(() => {
     if (!pendingCommand || !live.has(pendingCommand.path)) return;
     const { path, command, typeOnly } = pendingCommand;
@@ -921,6 +942,15 @@ export default function App() {
     [shell, emit],
   );
 
+  /** Every right-click menu's Copy, with the one status line they all share. */
+  const copy = useCallback(
+    async (text: string, what: string) => {
+      const copied = await copyText(text);
+      setNote(copied ? `Copied ${what}.` : "The clipboard refused the copy.");
+    },
+    [setNote],
+  );
+
   /**
    * A block is the command, its exit code and its output as one unit, which is
    * exactly what is worth handing to Claude. Nothing is sent anywhere: it goes
@@ -1046,6 +1076,50 @@ export default function App() {
       onConfirm: () => commands.forEach((command) => emit(command)),
     };
   }
+
+  /**
+   * One branch, from a right-click. Asks first, the way Prune does, and with
+   * the same split: `-d` for a branch the trunk contains, `-D` with the reason
+   * spelled out for one it does not. The reason differs. A squash-merged branch
+   * is finished work git cannot see; anything else is unmerged work, and the
+   * dialog says how many commits that is rather than calling it safe.
+   */
+  function deleteBranchConfirmation(repo: RepoState, name: string, found: Squashed[]): Confirmation {
+    const branch = repo.branches.find((b) => b.name === name);
+    const squash = found.find((s) => s.branch === name);
+    const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
+    const arg = quote(name, shell);
+
+    let command: string;
+    let body: string;
+    if (branch?.merged) {
+      command = `git branch -d ${arg}`;
+      body = `${name} is already contained in ${trunk}. git branch -d refuses anything unmerged, and its output prints the commit it was at, so it can be recreated.`;
+    } else if (squash) {
+      command = `git branch -D ${arg}`;
+      body = `${name} was squash-merged: GitView matched its patch to ${squash.intoShort} on ${squash.base}. A squash rebuilds the work as a new commit with no link back, so git considers the branch unmerged and -d will not take it. -D deletes it on that evidence rather than on git's. The output prints the commit it was at, so a wrong answer is recoverable.`;
+    } else {
+      command = `git branch -D ${arg}`;
+      const ahead = branch?.ahead ?? 0;
+      body = `${name} is not contained in ${trunk}${ahead > 0 ? `: it is ${ahead} ${ahead === 1 ? "commit" : "commits"} ahead of it` : ""}. -d would refuse, so this is -D, which deletes the branch whether or not anything else holds those commits. The output prints the commit it was at, and git reflog keeps it reachable for a while, but nothing here has checked that the work is anywhere else.`;
+    }
+
+    return {
+      title: `Delete ${name}`,
+      body,
+      command,
+      confirmLabel: "Delete branch",
+      onConfirm: () => emit(command),
+    };
+  }
+
+  const askDeleteBranch = useCallback(
+    (name: string) => {
+      if (selected) setConfirmation(deleteBranchConfirmation(selected, name, squashed));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected, squashed, shell],
+  );
 
   /**
    * A repository the fleet-wide actions are allowed to touch.
@@ -1545,6 +1619,7 @@ ${landing} ${cleanup}${warning}`,
       }}
       openKey={inboxFocus}
       onError={setNote}
+      onCopy={copy}
     />
   ) : historyOpen && selected ? (
     <HistoryPane
@@ -1553,8 +1628,16 @@ ${landing} ${cleanup}${warning}`,
       disabled={!shellReady}
       squashed={squashed}
       reloadKey={refSignature}
+      shell={shell}
+      prunable={prunableCount}
+      pruneTitle={
+        prunableCount > 0 ? pruneCommands(prunable).join("\n") : "No merged branches to delete"
+      }
+      onPrune={() => setConfirmation(pruneConfirmation(selected, squashed))}
       onClose={() => setHistoryOpen(false)}
       onCommand={emit}
+      onDeleteBranch={askDeleteBranch}
+      onCopy={copy}
       onError={setNote}
     />
   ) : diffTarget ? (
@@ -1596,15 +1679,17 @@ ${landing} ${cleanup}${warning}`,
           onPin={setPinned}
           onReorderPins={reorderPins}
           onHide={setHidden}
+          onCopy={copy}
           onCloseShell={askCloseShell}
           onManageRoots={() => setRootsOpen(true)}
         />
         <TaskList
           tasks={selected ? tasks : []}
           disabled={!shellReady}
-          onRun={(task) => emit(task.command)}
+          onRun={(task, typeOnly) => emit(task.command, typeOnly)}
           onSetHidden={setTaskHidden}
           onDelete={askDeleteTask}
+          onCopy={copy}
         />
       </div>
 
@@ -1657,6 +1742,8 @@ gh pr view ${branchPr.number} --web`}
                   shell={shell}
                   squashed={squashed}
                   onCommand={emit}
+                  onDeleteBranch={askDeleteBranch}
+                  onCopy={copy}
                 />
                 <span className="path">
                   {selected.ahead > 0 && `↑${selected.ahead} `}
@@ -1685,19 +1772,6 @@ gh pr view ${branchPr.number} --web`}
                 >
                   Sync
                 </button>
-                <button
-                  className="btn"
-                  disabled={prunableCount === 0}
-                  title={
-                    prunableCount > 0
-                      ? pruneCommands(prunable).join("\n")
-                      : "No merged branches to delete"
-                  }
-                  onClick={() => setConfirmation(pruneConfirmation(selected, squashed))}
-                >
-                  Prune merged
-                  {prunableCount > 0 && ` (${prunableCount})`}
-                </button>
                 <button className="btn accent" onClick={() => setPaletteOpen(true)}>
                   ⌘K
                 </button>
@@ -1711,6 +1785,7 @@ gh pr view ${branchPr.number} --web`}
               onToggle={toggleGraph}
               onHistory={() => setHistoryOpen(true)}
               onCommand={emit}
+              onCopy={copy}
             />
 
             {/* Between the strip and the shell. `.main.split` hides the strip,
@@ -1724,13 +1799,15 @@ gh pr view ${branchPr.number} --web`}
               onSettled={refreshRepo}
               onLiveChange={onLiveChange}
               onRequestClose={askCloseShell}
+              onNote={setNote}
               onReopen={() => setClosedShell(null)}
             >
               <BlockBar
                 blocks={blocks}
-                onRun={(command) => emit(command)}
+                onRun={(command, typeOnly) => emit(command, typeOnly)}
                 onSave={askSaveTask}
                 onCopy={copyBlock}
+                onCopyText={copy}
                 onReveal={(block) => revealBlock(block.repoPath, block.id)}
                 portCommand={(port) => openUrlCommand(`http://localhost:${port}`, shell)}
                 onPort={(port) => emit(openUrlCommand(`http://localhost:${port}`, shell))}
@@ -1748,6 +1825,7 @@ gh pr view ${branchPr.number} --web`}
               onSettled={noop}
               onLiveChange={onLiveChange}
               onRequestClose={askCloseShell}
+              onNote={setNote}
               onReopen={noop}
             />
           </>
@@ -1777,6 +1855,7 @@ gh pr view ${branchPr.number} --web`}
         onCommand={emit}
         onOpenDiff={openDiff}
         onDiscard={askDiscard}
+        onCopy={copy}
       />
 
       <div className="status-bar">
@@ -1956,6 +2035,15 @@ gh pr view ${branchPr.number} --web`}
             setNote(copied ? "Copied the command." : "The clipboard refused the copy.");
           }}
           onClose={() => setUpdateOpen(false)}
+        />
+      )}
+
+      {textMenu && (
+        <ContextMenu
+          at={textMenu.at}
+          label="Selection"
+          entries={[{ label: "Copy", run: () => copy(textMenu.text, "the selection") }]}
+          onClose={() => setTextMenu(null)}
         />
       )}
 
