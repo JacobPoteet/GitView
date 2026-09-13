@@ -7,7 +7,8 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
-import type { BranchGraph as Graph, GraphCommit, Squashed } from "../lib/types";
+import { quote, type ShellKind } from "../lib/shell";
+import type { BranchGraph as Graph, BranchSummary, GraphCommit, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
 
 interface Props {
@@ -25,11 +26,30 @@ interface Props {
   /** Types a command in the repository's shell. Shift-click leaves it unrun. */
   onCommand: (command: string, typeOnly: boolean) => void;
   onCopy: (text: string, what: string) => void;
+  /** Every local branch, so a commit that is a branch tip offers the branch. */
+  branches: BranchSummary[];
+  shell: ShellKind;
 }
 
-/** The commit menu, shared with the history pane's rows: the click, and the id. */
+/** A local branch pointing at a commit, and whether you are on it. */
+export interface TipOf {
+  name: string;
+  isHead: boolean;
+}
+
+/**
+ * The commit menu, shared with the history pane's rows.
+ *
+ * `git checkout <sha>` detaches HEAD even when the sha is a branch tip, which
+ * is how right-clicking main's newest commit left Jacob detached at the commit
+ * he was already looking at. A commit that is the tip of a local branch offers
+ * `git switch <branch>` for each, and the detached checkout says so in its
+ * label rather than in the tooltip.
+ */
 export function commitMenu(
   commit: { id: string; short: string; summary: string },
+  tips: TipOf[],
+  shell: ShellKind,
   onCommand: (command: string, typeOnly: boolean) => void,
   onCopy: (text: string, what: string) => void,
 ): MenuEntry[] {
@@ -37,9 +57,18 @@ export function commitMenu(
   const checkout = `git checkout ${commit.short}`;
   return [
     { label: "Show", title: show, run: (typeOnly) => onCommand(show, typeOnly) },
+    ...tips.map((tip): MenuEntry => {
+      const command = `git switch ${quote(tip.name, shell)}`;
+      return {
+        label: `Switch to ${tip.name}`,
+        title: tip.isHead ? "You are on it." : command,
+        disabled: tip.isHead,
+        run: (typeOnly) => onCommand(command, typeOnly),
+      };
+    }),
     {
-      label: "Check out this commit",
-      title: `${checkout}\n\nLeaves HEAD detached at it. git switch - comes back.`,
+      label: "Check out detached",
+      title: `${checkout}\n\nLeaves HEAD at this commit and on no branch. git switch - comes back.`,
       run: (typeOnly) => onCommand(checkout, typeOnly),
     },
     "-",
@@ -105,9 +134,18 @@ export default function BranchGraph({
   onHistory,
   onCommand,
   onCopy,
+  branches,
+  shell,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const menu = useContextMenu<GraphCommit>();
+
+  // The strip's refs are bare names, local, remote and tag alike, so the local
+  // branch list is what says which of them can be switched to.
+  const tipsOf = (commit: GraphCommit): TipOf[] =>
+    branches
+      .filter((b) => commit.refs.includes(b.name))
+      .map((b) => ({ name: b.name, isHead: b.isHead }));
   const [width, setWidth] = useState(0);
 
   // How much history fits is a question about the pane, so the pane has to be
@@ -229,7 +267,7 @@ export default function BranchGraph({
         <ContextMenu
           at={menu.menu.at}
           label={`Actions for ${menu.menu.payload.short}`}
-          entries={commitMenu(menu.menu.payload, onCommand, onCopy)}
+          entries={commitMenu(menu.menu.payload, tipsOf(menu.menu.payload), shell, onCommand, onCopy)}
           onClose={menu.close}
         />
       )}
