@@ -1,0 +1,36 @@
+name: Pages
+
+# The project page at jacobpoteet.github.io/GitView is one static file under
+# `site/`. It has no build step, so the job uploads the folder as it is and
+# deploys it. Neither CI nor Release could carry this: CI runs on pull requests
+# too, and a pull request must never deploy the page.
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -2,6 +2,8 @@
 
 A git client for people who keep many repositories and type most of their git by hand.
 
+**[jacobpoteet.github.io/GitView](https://jacobpoteet.github.io/GitView/)** shows it in motion.
+
 The home screen is the whole fleet at once. The terminal is a primary pane rather than a tab. The
 run and build commands for each project sit next to the repository that needs them.
 
@@ -208,7 +210,8 @@ data folder. A `cmd.exe` session gets a working shell and no blocks.
 
 The wiki is the source of truth and lives outside this repository. It covers the architecture, each
 feature, the interface, and a decision log recording why each choice was made and what was ruled
-out. This repository keeps only `README.md`, `CLAUDE.md`, the licence and the two workflows.
+out. This repository keeps only `README.md`, `CLAUDE.md`, the licence, the workflows and the project
+page under `site/`.
 
 ## Licence
 
