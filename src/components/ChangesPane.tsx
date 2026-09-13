@@ -287,7 +287,9 @@ export default function ChangesPane({
   if (!repo) {
     return (
       <aside className="changes-pane">
-        <div className="pane-tab-bar">changes</div>
+        <div className="pane-tab-bar">
+          <span>changes</span>
+        </div>
         <p className="empty">Pick a repository to see its working tree.</p>
       </aside>
     );

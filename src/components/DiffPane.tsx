@@ -197,6 +197,16 @@ export default function DiffPane({
           </p>
         )}
 
+        {/* Modified with no hunks: the line endings or the mode changed and
+            not a line. `git diff` prints nothing for it either, and a blank
+            pane looked like a read that never finished. */}
+        {diff && !diff.error && !diff.binary && !diff.empty && diff.hunks.length === 0 && (
+          <p className="empty">
+            No line differs. Line endings or the file mode changed, which
+            <code> git diff</code> shows nothing for either.
+          </p>
+        )}
+
         {diff?.oldPath && (
           <p className="diff-rename">
             renamed from <bdi>{diff.oldPath}</bdi>

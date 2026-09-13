@@ -694,7 +694,9 @@ export default function TerminalPane({
   if (!repoPath) {
     return (
       <div className="terminal-pane">
-        <div className="pane-tab-bar">terminal</div>
+        <div className="pane-tab-bar">
+          <span>terminal</span>
+        </div>
         <p className="empty">Pick a repository to open its shell.</p>
       </div>
     );

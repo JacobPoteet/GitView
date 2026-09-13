@@ -1745,11 +1745,25 @@ gh pr view ${branchPr.number} --web`}
                   onDeleteBranch={askDeleteBranch}
                   onCopy={copy}
                 />
-                <span className="path">
-                  {selected.ahead > 0 && `↑${selected.ahead} `}
-                  {selected.behind > 0 && `↓${selected.behind} `}
-                  {dirty > 0 && `· ${dirty} changed `}
-                  {selected.lastCommitAt && `· ${relativeTime(selected.lastCommitAt)}`}
+                {/* The same chips as the sidebar row, so a count means the same
+                    thing in both places and wears the same colour. */}
+                <span className="path head-stats">
+                  {selected.ahead > 0 && (
+                    <span className="chip ahead" title="commits ahead of upstream">
+                      ↑{selected.ahead}
+                    </span>
+                  )}
+                  {selected.behind > 0 && (
+                    <span className="chip behind" title="commits behind upstream">
+                      ↓{selected.behind}
+                    </span>
+                  )}
+                  {dirty > 0 && (
+                    <span className="chip dirty" title="staged and modified files">
+                      {dirty} changed
+                    </span>
+                  )}
+                  {selected.lastCommitAt && <span>{relativeTime(selected.lastCommitAt)}</span>}
                 </span>
               </div>
 
@@ -1762,7 +1776,7 @@ gh pr view ${branchPr.number} --web`}
                     onClick={(e) => emit(push.command, e.shiftKey)}
                   >
                     {push.label}
-                    {push.count > 0 && ` ↑${push.count}`}
+                    {push.count > 0 && <span className="btn-count">↑{push.count}</span>}
                   </button>
                 )}
                 <button
@@ -1773,7 +1787,7 @@ gh pr view ${branchPr.number} --web`}
                   Sync
                 </button>
                 <button className="btn accent" onClick={() => setPaletteOpen(true)}>
-                  ⌘K
+                  Ctrl+K
                 </button>
               </div>
             </header>
@@ -1837,7 +1851,9 @@ gh pr view ${branchPr.number} --web`}
              placeholder. The inbox is the one that opens from here. */
           pane ?? (
             <div className="terminal-pane">
-              <div className="pane-tab-bar">terminal</div>
+              <div className="pane-tab-bar">
+                <span>terminal</span>
+              </div>
               <p className="empty">
                 {repos.length === 0 && scanning
                   ? "Scanning the roots…"
