@@ -43,12 +43,19 @@ rather than per note, and skip it for a one-line factual correction.
 
 ## Documents this repository keeps
 
-`README.md`, `CLAUDE.md`, `LICENSE`, and the two workflows. Everything else belongs in the wiki. Do
-not add a `docs/` folder.
+`README.md`, `CLAUDE.md`, `LICENSE`, the three workflows, and the project page under `site/`.
+Everything else belongs in the wiki. Do not add a `docs/` folder: GitHub Pages would serve it, but
+it is also where a reader expects documentation, and the documentation is in the wiki.
 
 `ci.yml` is the gate and builds `--no-bundle`, so it never produces an artifact. `release.yml` runs
 on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag push does not match
-`branches: [main]`, which is why CI cannot do both jobs.
+`branches: [main]`, which is why CI cannot do both jobs. `pages.yml` deploys `site/` to
+jacobpoteet.github.io/GitView on a push to `main` that touches it; CI cannot carry that either,
+because CI runs on pull requests and a pull request must never deploy the page.
+
+`site/index.html` is the whole page: one file, no build step, no framework, the app's OKLCH tokens
+copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
+`Operations/Project Site.md` records what the page shows and how it was checked.
 
 ## Layout
 
@@ -67,6 +74,7 @@ on a `v*` tag, builds the NSIS installer and attaches it to the release. A tag p
 | `src-tauri/src/tasks.rs` | Task discovery across manifests |
 | `src-tauri/src/cache.rs` | SQLite. Cached scans, saved tasks, settings, and the pin and hide preferences |
 | `src-tauri/examples/scan.rs` | Headless scanner check, no window |
+| `site/index.html` | The project page. Static, served by `pages.yml` |
 | `scripts/install-local.ps1` | `npm run install:local`: build the installer, run it over the installed GitView, start the new one. Never rename the script to `install`, npm runs that on every `npm install` and `npm ci` |
 
 ## Rules that hold across changes
