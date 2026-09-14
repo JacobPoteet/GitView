@@ -164,7 +164,10 @@ export default function HistoryPane({
    * view to remove it from.
    */
   function rowMenu({ row, ref }: Target): MenuEntry[] {
-    if (ref && (ref.kind === "local" || ref.kind === "head")) {
+    // A detached HEAD's chip is named `HEAD` and is no branch: nothing to
+    // switch to and nothing to delete, so it gets the commit's menu.
+    const isBranch = (r: HistoryRef) => r.kind === "local" || (r.kind === "head" && r.name !== "HEAD");
+    if (ref && isBranch(ref)) {
       const current = ref.kind === "head";
       const switchTo = `git switch ${quote(ref.name, shell)}`;
       return [
@@ -185,9 +188,7 @@ export default function HistoryPane({
         },
       ];
     }
-    const tips = row.refs
-      .filter((r) => r.kind === "local" || r.kind === "head")
-      .map((r) => ({ name: r.name, isHead: r.kind === "head" }));
+    const tips = row.refs.filter(isBranch).map((r) => ({ name: r.name, isHead: r.kind === "head" }));
     return commitMenu(row, tips, shell, onCommand, onCopy);
   }
 
@@ -300,7 +301,9 @@ export default function HistoryPane({
     ctx.lineCap = "round";
 
     const colours = laneColours(host);
-    const ground = getComputedStyle(host).getPropertyValue("--bg").trim() || "#111";
+    const style = getComputedStyle(host);
+    const ground = style.getPropertyValue("--bg").trim() || "#111";
+    const green = style.getPropertyValue("--green").trim() || "#4c4";
     const x = (lane: number) => Math.min(lane, 15) * LANE + LANE / 2 + 4;
     const y = (index: number) => index * ROW + ROW / 2 - scrollTop;
 
@@ -350,6 +353,18 @@ export default function HistoryPane({
         ctx.beginPath();
         ctx.arc(cx, cy, 2, 0, Math.PI * 2);
         ctx.fill();
+      }
+      // The commit you are standing on wears the branch graph's green ring, so
+      // the two pictures say "you are here" the same way. Drawn round the lane
+      // colour rather than over it: the lane still says which line the commit
+      // is on.
+      if (row.isHead) {
+        ctx.strokeStyle = green;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1.5;
       }
     }
   }, [rows, first, last, scrollTop, viewport, lanes]);
@@ -482,7 +497,7 @@ function Row({
 
   return (
     <button
-      className={`history-row${row.isMerge ? " merge" : ""}`}
+      className={`history-row${row.isMerge ? " merge" : ""}${row.isHead ? " head" : ""}`}
       style={{ top, height: ROW }}
       onClick={(event) => {
         if (event.shiftKey) {
@@ -492,7 +507,7 @@ function Row({
         }
       }}
       onContextMenu={(event) => onMenu(event, { row, ref: null })}
-      title={`${row.summary}\n\n${row.author} · ${new Date(row.time * 1000).toLocaleString()}\n${row.id}\n\nClick to read the commit.\nShift-click to type ${command} without running it.`}
+      title={`${row.isHead ? "You are on this commit.\n\n" : ""}${row.summary}\n\n${row.author} · ${new Date(row.time * 1000).toLocaleString()}\n${row.id}\n\nClick to read the commit.\nShift-click to type ${command} without running it.`}
     >
       <span className="history-lanes" style={{ width: gutter }} />
       {row.refs.map((ref) => (

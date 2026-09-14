@@ -51,6 +51,9 @@ pub struct HistoryRow {
     pub is_merge: bool,
     /// `ssh`, `gpg`, `x509` or `other` when the commit carries a signature.
     pub signature: Option<String>,
+    /// The commit HEAD is on. On a branch or detached, either way it is the
+    /// one the next commit lands on top of.
+    pub is_head: bool,
     /// The column this commit's node sits in.
     pub lane: usize,
     /// What to draw in the band between this row and the one under it, as
@@ -246,6 +249,7 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize) -> History {
             refs: Vec::new(),
             is_merge: commit.parent_count() > 1,
             signature: crate::signing::kind(&repo, placed[i].id),
+            is_head: false,
             lane,
             edges,
         });
@@ -254,10 +258,27 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize) -> History {
     // Refs cost a pass over every reference in the repository, so they are
     // looked up once and only for the commits this page actually drew.
     let names = ref_names(&repo);
+    let head_oid = repo.head().ok().and_then(|head| head.target());
+    let detached = repo.head_detached().unwrap_or(false);
     for row in &mut out.rows {
         if let Ok(oid) = Oid::from_str(&row.id) {
             if let Some(found) = names.get(&oid) {
                 row.refs = found.clone();
+            }
+            if Some(oid) == head_oid {
+                row.is_head = true;
+                // A detached HEAD sits on no branch, so no ref carries the
+                // `head` kind. The row still has to say where you are, and
+                // the name git itself prints is the one that goes on it.
+                if detached {
+                    row.refs.insert(
+                        0,
+                        HistoryRef {
+                            name: "HEAD".to_string(),
+                            kind: "head".to_string(),
+                        },
+                    );
+                }
             }
         }
     }
@@ -518,6 +539,8 @@ mod tests {
         let history = read(&fixture.dir, 0, 50);
 
         assert_eq!(history.head.as_deref(), Some("side"));
+        assert!(row(&history, "tip").is_head);
+        assert!(!row(&history, "base").is_head);
         let kinds: Vec<&str> = row(&history, "tip")
             .refs
             .iter()
@@ -530,6 +553,38 @@ mod tests {
             .map(|r| r.name.as_str())
             .collect();
         assert_eq!(names, vec!["main"]);
+    }
+
+    /// A detached HEAD is on no branch, so the commit under it says `HEAD`
+    /// itself rather than leaving the reader to find the short id in the
+    /// header.
+    #[test]
+    fn a_detached_head_marks_its_commit() {
+        let fixture = Fixture::new("detached");
+        let base = fixture.commit("refs/heads/main", "base", &[]);
+        fixture.commit("refs/heads/main", "tip", &[base]);
+        fixture
+            .repo
+            .set_head_detached(base)
+            .expect("detach at base");
+
+        let history = read(&fixture.dir, 0, 50);
+
+        assert_eq!(
+            history.head.as_deref(),
+            Some(&short_id(&base.to_string())[..])
+        );
+        let at_base = row(&history, "base");
+        assert!(at_base.is_head);
+        let names: Vec<(&str, &str)> = at_base
+            .refs
+            .iter()
+            .map(|r| (r.name.as_str(), r.kind.as_str()))
+            .collect();
+        assert_eq!(names, vec![("HEAD", "head")]);
+        let at_tip = row(&history, "tip");
+        assert!(!at_tip.is_head);
+        assert!(at_tip.refs.iter().all(|r| r.kind != "head"));
     }
 
     /// A page from the middle still knows which lane the row under it landed
