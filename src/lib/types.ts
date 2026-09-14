@@ -204,6 +204,8 @@ export interface HistoryRow {
   refs: HistoryRef[];
   isMerge: boolean;
   signature: SignatureKind | null;
+  /** The commit HEAD is on, on a branch or detached. */
+  isHead: boolean;
   /** The column this commit's node sits in. */
   lane: number;
   /**

@@ -270,8 +270,19 @@ export default function App() {
    * A merge or a re-run changes what GitHub would answer, and the pane has no
    * way to know the command finished except the block it left behind in that
    * shell. `refreshRepo` runs when the shell's output settles and checks here.
+   *
+   * `drops` names the row the command removes when it exits 0. A merge is
+   * final the moment `gh pr merge` returns, and the row goes on that rather
+   * than on the read that follows, because the read is not always right: a
+   * poll that started a second before the merge landed answers with the list
+   * as it was, and GitHub's own answer can lag the merge by a few seconds.
    */
-  const inboxAfter = useRef<{ path: string; command: string } | null>(null);
+  const inboxAfter = useRef<{ path: string; command: string; drops?: string } | null>(null);
+  /**
+   * Rows a command has removed, keyed like `itemKey`. A read that still lists
+   * one was answered from before the command, and the row stays gone.
+   */
+  const inboxGone = useRef<Set<string>>(new Set());
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
@@ -739,15 +750,24 @@ export default function App() {
    * pane, because the usual reason is a laptop that was off the network.
    */
   const inboxInFlight = useRef<Promise<void> | null>(null);
-  const refreshInbox = useCallback((): Promise<void> => {
+  const inboxAgain = useRef(false);
+  const refreshInbox = useCallback((after = false): Promise<void> => {
     // The poll, a settled command and the button can all ask at once, and one
     // read answers all three. The promise is shared so a caller that arrived
-    // second still waits for the read it got.
-    if (inboxInFlight.current) return inboxInFlight.current;
+    // second still waits for the read it got. A caller whose command just
+    // finished is the exception: a read already on the wire was asked before
+    // the command ran, so it gets another read after this one rather than
+    // that one's answer.
+    if (inboxInFlight.current) {
+      if (after) inboxAgain.current = true;
+      return inboxInFlight.current;
+    }
     const read = (async () => {
       setInboxReading(true);
       try {
         const next = await api.githubRefresh();
+        const gone = inboxGone.current;
+        if (gone.size > 0) next.items = next.items.filter((item) => !gone.has(itemKey(item)));
         setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
         if (next.error) setNote(next.error);
         else if (next.unresolved.length > 0) {
@@ -759,10 +779,16 @@ export default function App() {
         inboxInFlight.current = null;
         setInboxReading(false);
       }
+      if (inboxAgain.current) {
+        inboxAgain.current = false;
+        await refreshInboxRef.current();
+      }
     })();
     inboxInFlight.current = read;
     return read;
   }, [setNote]);
+  const refreshInboxRef = useRef(refreshInbox);
+  refreshInboxRef.current = refreshInbox;
 
   /**
    * The one refresh button, in the sidebar head beside the folders button.
@@ -850,7 +876,14 @@ export default function App() {
         const block = [...blocks].reverse().find((b) => b.command === waiting.command);
         if (blocks.length === 0 || (block && block.endedAt !== null)) {
           inboxAfter.current = null;
-          refreshInbox();
+          if (waiting.drops && block?.exitCode === 0) {
+            const key = waiting.drops;
+            inboxGone.current.add(key);
+            setInbox((current) =>
+              current ? { ...current, items: current.items.filter((item) => itemKey(item) !== key) } : current,
+            );
+          }
+          refreshInbox(true);
         }
       }
     },
@@ -1760,7 +1793,7 @@ ${landing} ${cleanup}${warning}`,
           onConfirm: () => {
             setSelectedPath(item.repoPath);
             setPendingCommand({ path: item.repoPath, command, typeOnly: false });
-            inboxAfter.current = { path: item.repoPath, command };
+            inboxAfter.current = { path: item.repoPath, command, drops: itemKey(item) };
           },
         });
       }}

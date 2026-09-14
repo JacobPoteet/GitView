@@ -3409,6 +3409,27 @@ button.inbox-check-name.link:hover {
   background: var(--bg-hover);
 }
 
+/* The commit you are standing on. Green is the branch graph's word for it,
+   and the row carries a tint so the eye finds it in a page of forty without
+   reading the gutter. The tint is a colour and not an opacity: the canvas is
+   sticky over this row and a translucent row would let the rails through. */
+.history-row.head {
+  background: color-mix(in oklch, var(--green) 9%, var(--bg));
+}
+
+.history-row.head:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--green) 14%, var(--bg-hover));
+}
+
+.history-row.head .history-summary {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.history-row.head .history-sha {
+  color: var(--green);
+}
+
 .history-row:disabled {
   cursor: default;
 }
@@ -3492,9 +3513,10 @@ button.inbox-check-name.link:hover {
 }
 
 .history-ref.head {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent);
+  background: color-mix(in oklch, var(--green) 18%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--green) 55%, transparent);
+  color: var(--green);
+  font-weight: 600;
 }
 
 .history-ref.local {
