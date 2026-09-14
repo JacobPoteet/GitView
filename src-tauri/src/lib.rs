@@ -514,6 +514,29 @@ fn settings_remove_root(state: State<'_, AppState>, path: String) -> Result<Vec<
     Ok(roots)
 }
 
+/// When the fleet was last fetched, as seconds since the epoch, or zero.
+///
+/// The counts on every sidebar row are only as true as the last fetch, and
+/// the app rather than any one repository is what did the fetching, so the
+/// time lives in the settings table beside the roots rather than in a
+/// `RepoState`, which the scanner rewrites every sweep.
+#[tauri::command]
+fn settings_fetched_at(state: State<'_, AppState>) -> i64 {
+    state
+        .cache
+        .get_setting("fleet_fetched_at")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+#[tauri::command]
+fn settings_set_fetched_at(state: State<'_, AppState>, at: i64) -> Result<(), String> {
+    state
+        .cache
+        .set_setting("fleet_fetched_at", &at.to_string())
+        .map_err(|e| e.to_string())
+}
+
 /// The clipboard's text, for the shell's Paste.
 ///
 /// The webview can read it too, but WebView2 asks first with an Edge permission
@@ -594,6 +617,8 @@ pub fn run() {
             settings_set_roots,
             settings_add_root,
             settings_remove_root,
+            settings_fetched_at,
+            settings_set_fetched_at,
             clipboard_text,
             app_info,
         ])

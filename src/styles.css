@@ -3723,3 +3723,44 @@ button.inbox-check-name.link:hover {
     opacity: 0.5;
   }
 }
+
+/* The fleet's to-do line and the button that clears the front of it. The
+   summary is faint like the rest of the bar; the button is the one thing on
+   the bar with a command behind it, so it gets the raised treatment a kbd
+   had. Busy is text rather than a disabled button, since a button that
+   cannot be pressed and a count that is changing are two different things. */
+.status-bar .fleet-summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.status-bar .sync-all {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.status-bar button.sync-all:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.status-bar .sync-all:disabled {
+  color: var(--text-faint);
+}
+
+.status-bar .sync-all.busy {
+  color: var(--accent);
+  border-color: transparent;
+  background: none;
+  padding-inline: 0;
+}
