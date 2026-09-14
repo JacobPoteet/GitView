@@ -496,6 +496,36 @@ export function isClean(repo: RepoState): boolean {
   return attentionScore(repo) === 0;
 }
 
+/**
+ * What the fleet needs, in the order a sync deals with it.
+ *
+ * The first two are what `git pull --ff-only` can fix, and the last three are
+ * what it leaves for you, so the line reads as a to-do list: a Sync all
+ * clears the front of it and the rest is the day's work. Each part is a
+ * count of repositories rather than of commits or files, because the button
+ * beside it acts on repositories.
+ */
+export function fleetSummary(repos: RepoState[]): string[] {
+  const readable = repos.filter((repo) => !repo.error);
+  const count = (test: (repo: RepoState) => boolean) => readable.filter(test).length;
+  const parts: string[] = [];
+  const unreadable = repos.length - readable.length;
+  if (unreadable > 0) parts.push(`${unreadable} unreadable`);
+  const conflicted = count((r) => r.conflicted > 0);
+  if (conflicted > 0) parts.push(`${conflicted} in conflict`);
+  const behind = count((r) => r.behind > 0 && r.ahead === 0);
+  if (behind > 0) parts.push(`${behind} behind`);
+  const diverged = count((r) => r.behind > 0 && r.ahead > 0);
+  if (diverged > 0) parts.push(`${diverged} diverged`);
+  const dirty = count((r) => r.staged + r.modified > 0);
+  if (dirty > 0) parts.push(`${dirty} with uncommitted work`);
+  const local = count((r) => (r.ahead > 0 && r.behind === 0) || unpushed(r) > 0);
+  if (local > 0) parts.push(`${local} with unpushed commits`);
+  const merged = count((r) => r.mergedBranches.length > 0);
+  if (merged > 0) parts.push(`${merged} with merged branches`);
+  return parts;
+}
+
 export function relativeTime(seconds: number | null): string {
   if (!seconds) return "never";
   const delta = Math.floor(Date.now() / 1000) - seconds;

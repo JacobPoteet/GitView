@@ -42,6 +42,7 @@ import {
   type BatchRun,
 } from "./lib/batch";
 import {
+  fleetSummary,
   isUntracked,
   relativeTime,
   type AppInfo,
@@ -178,6 +179,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(0);
+  /** The first sweep has resolved, so `repos` is the fleet and not its cached copy. */
+  const [swept, setSwept] = useState(false);
   /**
    * Whether the splash has been released.
    *
@@ -226,6 +229,10 @@ export default function App() {
   const setNote = useCallback((text: string) => setNoteState({ text }), []);
   const [blocks, setBlocks] = useState<CommandBlock[]>([]);
   const [inbox, setInbox] = useState<Inbox | null>(null);
+  /** Seconds since the epoch at which the fleet was last fetched, 0 for never. */
+  const [fetchedAt, setFetchedAt] = useState(0);
+  /** Whether the last Sync all's transcript has been opened, so the button can go back to being Sync all. */
+  const [transcriptSeen, setTranscriptSeen] = useState(true);
   /**
    * A command waiting for its repository's shell to exist.
    *
@@ -329,6 +336,7 @@ export default function App() {
       // Pruning only after the scan resolves keeps a failed sweep from emptying
       // the list.
       setRepos((current) => current.filter((repo) => seen.has(repo.path)));
+      setSwept(true);
 
       // A folder renamed since the last launch brought its pins and its saved
       // tasks with it. Silence is what made the old behaviour a bug, so this
@@ -365,16 +373,18 @@ export default function App() {
     (async () => {
       let warm = false;
       try {
-        const [cached, appInfo, storedInbox] = await Promise.all([
+        const [cached, appInfo, storedInbox, lastFetch] = await Promise.all([
           api.fleetCached(),
           api.appInfo(),
           // Cached like the fleet rows, so the pane has something before gh is
           // asked anything.
           api.githubCached().catch(() => null),
+          api.settingsFetchedAt().catch(() => 0),
         ]);
         if (cancelled) return;
         setRepos(cached);
         setInbox(storedInbox);
+        setFetchedAt(lastFetch);
         setInfo(appInfo);
         setRoots(appInfo.roots);
         await loadPrefs();
@@ -1227,7 +1237,7 @@ export default function App() {
    * and it takes effect between repositories.
    */
   const runBatch = useCallback(
-    async (kind: BatchKind, paths: string[]) => {
+    async (kind: BatchKind, paths: string[], whole = false) => {
       const targets = paths
         .map((path) => repos.find((repo) => repo.path === path))
         .filter((repo): repo is RepoState => repo != null);
@@ -1276,6 +1286,14 @@ export default function App() {
       setBatch((current) =>
         current ? { ...current, running: false, cancelled: stopped } : current,
       );
+      // The fleet counts as fetched when the run was aimed at all of it and
+      // reached the end. A stopped run leaves the rest at whatever the last
+      // fetch left them.
+      if (kind !== "prune" && whole && !stopped) {
+        const at = Math.floor(Date.now() / 1000);
+        setFetchedAt(at);
+        api.settingsSetFetchedAt(at).catch(() => undefined);
+      }
       setNoteState({
         text:
           `${verbFor[kind]} ran in ${acted} ${acted === 1 ? "repository" : "repositories"}` +
@@ -1302,8 +1320,41 @@ export default function App() {
     return runBatch(
       "fetch",
       batchCandidates.filter((repo) => !isSkip(fetchPlan(repo))).map((repo) => repo.path),
+      true,
     );
   }, [batchCandidates, runBatch, setNote]);
+
+  /**
+   * The button in the status bar. Sync, over the whole fleet, with no pick
+   * list: the dialog pre-checks every eligible row anyway, so the pick stage
+   * is a click that changes nothing. The transcript is written as always and
+   * the button turns into the way to open it.
+   */
+  const syncAll = useCallback(() => {
+    setBatchKind("sync");
+    setBatchEpoch((n) => n + 1);
+    setBatchOpen(false);
+    setTranscriptSeen(false);
+    return runBatch("sync", batchCandidates.map((repo) => repo.path), true);
+  }, [batchCandidates, runBatch]);
+
+  /**
+   * One fetch on launch when the last one has gone stale, under the same
+   * ten-minute rule the inbox uses.
+   *
+   * Every `↓n` chip and the whole attention sort come from the last fetch,
+   * and a scan does not fetch, so without this the sidebar could not see a
+   * repository that fell behind overnight. Fetch rather than sync: nothing in
+   * a working tree moves on its own at launch. It waits for the first sweep
+   * to resolve: the cached rows arrive a render before the preferences do,
+   * and a fetch planned from that render includes the hidden repositories.
+   */
+  const fetchLaunched = useRef(false);
+  useEffect(() => {
+    if (fetchLaunched.current || !swept || batchCandidates.length === 0) return;
+    fetchLaunched.current = true;
+    if (Math.floor(Date.now() / 1000) - fetchedAt > 600) fetchAll();
+  }, [swept, batchCandidates, fetchedAt, fetchAll]);
 
   /**
    * Opens a fresh pick stage.
@@ -1456,18 +1507,25 @@ export default function App() {
     }
 
     items.push({
-      id: "action:fetch-all",
-      label: "Fetch every repository",
+      id: "action:sync-all",
+      label: "Sync all",
       kind: "fleet",
-      hint: "git fetch --prune in each",
-      run: fetchAll,
+      hint: "git fetch --prune, then git pull --ff-only where it can",
+      run: syncAll,
     });
     items.push({
       id: "action:batch-sync",
-      label: "Sync several repositories",
+      label: "Sync several…",
       kind: "fleet",
-      hint: "fetch and fast-forward, with a transcript",
+      hint: "pick the repositories first",
       run: () => openBatch("sync"),
+    });
+    items.push({
+      id: "action:fetch-all",
+      label: "Fetch all",
+      kind: "fleet",
+      hint: "git fetch --prune in each, nothing pulled",
+      run: fetchAll,
     });
     // Ancestry only, and named apart from the single-repository `prunable`
     // above it, which also counts the squash-merged ones. The batch stays on
@@ -1482,7 +1540,7 @@ export default function App() {
       );
       items.push({
         id: "action:batch-prune",
-        label: `Prune merged branches across ${containedElsewhere.length} repositories`,
+        label: `Prune merged across ${containedElsewhere.length} repositories…`,
         kind: "fleet",
         hint: `${branches} branches, named before anything runs`,
         run: () => openBatch("prune"),
@@ -1569,6 +1627,7 @@ export default function App() {
     copyBlock,
     batchCandidates,
     openBatch,
+    syncAll,
     readerMode,
     fetchAll,
     inbox,
@@ -1625,6 +1684,8 @@ export default function App() {
     () => repos.filter((r) => prefs.get(r.path)?.hidden).length,
     [repos, prefs],
   );
+  // Hidden rows leave the summary as they leave the palette and the batches.
+  const summary = useMemo(() => fleetSummary(batchCandidates), [batchCandidates]);
   const shellReady = selected != null && live.has(selected.path);
 
   /**
@@ -2034,35 +2095,60 @@ gh pr view ${branchPr.number} --web`}
           </button>
         )}
         <span className="spacer" />
-        {info && (
-          <span
-            title={
-              info.gh.version
-                ? info.gh.loggedIn
-                  ? `${info.gh.version}, logged in. The inbox reads GitHub through it, so GitView never holds a token.`
-                  : `${info.gh.version}, not logged in. Run gh auth login.`
-                : "gh is not on PATH, so there is no inbox."
-            }
-          >
-            {info.gh.version ? (info.gh.loggedIn ? "gh" : "gh · no auth") : "no gh"}
+        {/* What the fleet needs, then the button that clears the front of the
+            list. The tooling that used to sit here (gh, git, the shell) only
+            speaks up now when something is wrong with it, since a version
+            string nobody acts on was the one thing on this bar without a
+            click behind it. */}
+        {info && !info.gh.version && (
+          <span title="gh is not on PATH, so there is no inbox.">no gh</span>
+        )}
+        {info?.gh.version && !info.gh.loggedIn && (
+          <span title={`${info.gh.version}, not logged in. Run gh auth login.`}>gh · no auth</span>
+        )}
+        {info && !info.shellIntegration && (
+          <span title="This shell reports nothing about the commands run in it, so there are no blocks.">
+            no blocks
           </span>
         )}
-        {info?.gitVersion && <span>{info.gitVersion}</span>}
-        {info && (
-          <span
-            title={
-              info.shellIntegration
-                ? "This shell reports where each command starts and ends, which is what fills the strip above the terminal."
-                : "This shell reports nothing about the commands run in it, so there are no blocks."
-            }
-          >
-            {info.shell.split(/[\\/]/).pop()}
-            {info.shellIntegration && " · blocks"}
-          </span>
-        )}
-        <span>
-          <kbd>Ctrl</kbd> <kbd>K</kbd>
+        <span
+          className="fleet-summary"
+          title={
+            fetchedAt
+              ? `As of the last fetch, ${relativeTime(fetchedAt)}. Each number counts repositories.`
+              : "Nothing has fetched yet, so this is as of the last time each repository was read."
+          }
+        >
+          {summary.length > 0
+            ? summary.join(" · ")
+            : `fleet in sync · fetched ${relativeTime(fetchedAt)}`}
         </span>
+        {batch?.running && batch.kind !== "prune" ? (
+          <span className="sync-all busy" aria-live="polite">
+            {batch.kind === "fetch" ? "Fetching" : "Syncing"} {Math.min(batch.done + 1, batch.rows.length)} of{" "}
+            {batch.rows.length}…
+          </span>
+        ) : batch && !batchOpen && batch.kind === "sync" && !transcriptSeen ? (
+          <button
+            className="sync-all"
+            onClick={() => {
+              setTranscriptSeen(true);
+              setBatchOpen(true);
+            }}
+            title="Every command the sync ran, and what git said"
+          >
+            Transcript
+          </button>
+        ) : (
+          <button
+            className="sync-all"
+            onClick={syncAll}
+            disabled={batchCandidates.length === 0 || batch?.running === true}
+            title="git fetch --prune, then git pull --ff-only in each repository it can fast-forward. The rest are fetched and left alone."
+          >
+            Sync all
+          </button>
+        )}
       </div>
 
       {paletteOpen && (
