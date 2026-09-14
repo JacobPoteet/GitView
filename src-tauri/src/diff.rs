@@ -484,6 +484,69 @@ pub fn read_commit_file(repo_path: &Path, sha: &str, file: &str) -> FileDiff {
     expand(&diff, idx, delta, FileDiff::empty(file, false))
 }
 
+/// Writes the file as one commit had it and hands back the path.
+///
+/// Opening a file from a commit cannot open the working tree's copy, which is
+/// the latest one, and the commit's copy exists only as a blob. So it goes out
+/// to `show/<short sha>/<path>` under GitView's data folder, never into the
+/// repository, with its directories kept so the editor's tab reads `shell.ts`
+/// and its language mode still fires. The frontend then types `Invoke-Item` on
+/// the path like the working tree's Open does, and a shift-click leaves the
+/// line readable at the prompt. A deleted file has no blob at that commit and
+/// is an error here; the row is disabled before it gets this far.
+pub fn export_commit_file(repo_path: &Path, sha: &str, file: &str) -> Result<String, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let commit = repo
+        .revparse_single(sha)
+        .and_then(|o| o.peel_to_commit())
+        .map_err(|e| e.message().to_string())?;
+    let entry = commit
+        .tree()
+        .and_then(|t| t.get_path(Path::new(file)))
+        .map_err(|_| format!("{file} is not in {}.", &sha[..sha.len().min(7)]))?;
+    let blob = repo
+        .find_blob(entry.id())
+        .map_err(|e| e.message().to_string())?;
+
+    let short: String = commit.id().to_string().chars().take(7).collect();
+    let dir = crate::cache::data_dir().join("show");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    sweep_dirs(&dir);
+
+    // The relative path is git's, forward slashes, joined a segment at a time
+    // so the line at the prompt reads one way through. `..` cannot come out of
+    // a tree entry, so nothing here escapes the folder.
+    let path = file
+        .split('/')
+        .fold(dir.join(short), |acc, part| acc.join(part));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, blob.content()).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// `sweep` for the per-commit folders `export_commit_file` leaves behind. A
+/// folder's own mtime moves when a file lands in it, so a commit somebody keeps
+/// opening stays and the rest go after a day.
+fn sweep_dirs(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .and_then(|t| now.duration_since(t).map_err(std::io::Error::other))
+            .map(|age| age.as_secs() as i64 > PATCH_KEEP_SECS)
+            .unwrap_or(false);
+        if stale {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 // ------------------------------------------------------------ hunk staging
 
 /// The mode a `new file mode` line has to carry, written out rather than cast
@@ -1193,5 +1256,41 @@ two
         let commit = read_commit(&fixture.dir, "deadbeef");
         assert!(commit.error.is_some());
         assert!(commit.files.is_empty());
+    }
+
+    /// Opening a file from a commit hands out that commit's bytes, not the
+    /// working tree's, at a path that ends the way the file's own does.
+    #[test]
+    fn export_writes_the_commits_copy_not_the_working_trees() {
+        let fixture = Fixture::new("export");
+        std::fs::create_dir_all(fixture.dir.join("src")).expect("mkdir");
+        fixture.write(
+            "src/a.txt",
+            "old
+",
+        );
+        fixture.stage("src/a.txt");
+        fixture.commit("first");
+        let first = fixture.repo.head().unwrap().target().unwrap().to_string();
+        fixture.write(
+            "src/a.txt",
+            "new
+",
+        );
+        fixture.stage("src/a.txt");
+        fixture.commit("second");
+
+        let path = export_commit_file(&fixture.dir, &first, "src/a.txt").expect("export");
+        assert!(path.ends_with("a.txt"), "{path}");
+        assert!(path.contains(&first[..7]), "{path}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "old
+"
+        );
+        let _ = std::fs::remove_dir_all(Path::new(&path).parent().unwrap().parent().unwrap());
+
+        let missing = export_commit_file(&fixture.dir, &first, "src/b.txt");
+        assert!(missing.is_err());
     }
 }

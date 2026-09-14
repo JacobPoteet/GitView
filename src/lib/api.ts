@@ -46,6 +46,9 @@ export const api = {
     invoke<CommitDiff>("repo_commit", { path, sha }),
   repoCommitFile: (path: string, sha: string, file: string) =>
     invoke<FileDiff>("repo_commit_file", { path, sha, file }),
+  /** The commit's copy of a file, written under the data folder. Returns the path. */
+  commitFileExport: (path: string, sha: string, file: string) =>
+    invoke<string>("commit_file_export", { path, sha, file }),
 
   repoPrefs: () => invoke<RepoPref[]>("repo_prefs"),
   repoSetHidden: (path: string, hidden: boolean) =>

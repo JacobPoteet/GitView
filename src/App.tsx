@@ -1970,7 +1970,12 @@ gh pr view ${branchPr.number} --web`}
           target={commitTarget}
           commit={commit}
           file={commitFile}
+          disabled={!shellReady}
+          shell={shell}
           onPick={setCommitFile}
+          onCommand={emit}
+          onCopy={copy}
+          onNote={setNote}
           onClose={() => setCommitTarget(null)}
         />
       ) : (

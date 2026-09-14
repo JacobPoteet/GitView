@@ -262,7 +262,7 @@ export default function ChangesPane({
       },
       { label: "Open diff", run: () => onOpenDiff(change.path, change.staged) },
       {
-        label: "Open in editor",
+        label: "Open",
         title: deleted ? "Nothing on disk to open." : opener,
         disabled: disabled || deleted,
         run: (typeOnly) => onCommand(opener, typeOnly),

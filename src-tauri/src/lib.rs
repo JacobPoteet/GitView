@@ -166,6 +166,17 @@ async fn repo_commit_file(path: String, sha: String, file: String) -> Result<Fil
     .map_err(|e| e.to_string())
 }
 
+/// Writes one file as a commit had it, under GitView's data folder, and hands
+/// back the path for the frontend to type `Invoke-Item` on. See `diff.rs`.
+#[tauri::command]
+async fn commit_file_export(path: String, sha: String, file: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        diff::export_commit_file(&PathBuf::from(&path), &sha, &file)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Writes one hunk out as a patch and hands back the path.
 ///
 /// Staging a hunk is the only action here whose argument cannot be typed, since
@@ -558,6 +569,7 @@ pub fn run() {
             repo_commit,
             repo_commit_file,
             diff_hunk_patch,
+            commit_file_export,
             repo_prefs,
             repo_set_hidden,
             repo_set_pinned,
