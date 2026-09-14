@@ -1,4 +1,8 @@
-import type { CommitDiff, CommitTarget, FileChange } from "../lib/types";
+import { useEffect } from "react";
+import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
+import { api } from "../lib/api";
+import { openFileCommand, type ShellKind } from "../lib/shell";
+import type { CommitDiff, CommitFile, CommitTarget, FileChange } from "../lib/types";
 
 interface Props {
   target: CommitTarget;
@@ -6,7 +10,14 @@ interface Props {
   commit: CommitDiff | null;
   /** The file whose hunks the main column is showing. */
   file: string | null;
+  /** No live shell means Open has nowhere to type. */
+  disabled: boolean;
+  shell: ShellKind;
   onPick: (file: string) => void;
+  onCommand: (command: string, typeOnly: boolean) => void;
+  onCopy: (text: string, what: string) => void;
+  /** The status bar, for a write that failed. */
+  onNote: (text: string) => void;
   onClose: () => void;
 }
 
@@ -33,8 +44,52 @@ const MARK: Record<FileChange["state"], string> = {
  * Rows here open and never stage: the same `.change-row` and mark as the
  * working tree, without the verb, plus the file's own counts.
  */
-export default function CommitFilesPane({ target, commit, file, onPick, onClose }: Props) {
+export default function CommitFilesPane({
+  target,
+  commit,
+  file,
+  disabled,
+  shell,
+  onPick,
+  onCommand,
+  onCopy,
+  onNote,
+  onClose,
+}: Props) {
   const files = commit?.files ?? [];
+  const menu = useContextMenu<CommitFile>();
+
+  useEffect(() => {
+    menu.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.id]);
+
+  /**
+   * The row's menu. Open is the commit's copy of the file, not the working
+   * tree's: the blob goes out under GitView's data folder and `Invoke-Item`
+   * on that path gets typed, so the line at the prompt says which version.
+   * The path is not known until the file is written, so the tooltip names the
+   * shape of the command rather than the line itself.
+   */
+  function rowMenu(entry: CommitFile): MenuEntry[] {
+    const deleted = entry.status === "deleted";
+    return [
+      {
+        label: "Open",
+        title: deleted
+          ? "Deleted in this commit, so there is nothing to open."
+          : `Invoke-Item on this file as ${target.short} had it, written under GitView's data folder.`,
+        disabled: disabled || deleted,
+        run: (typeOnly) => {
+          api
+            .commitFileExport(target.repoPath, target.id, entry.path)
+            .then((path) => onCommand(openFileCommand(path, shell), typeOnly))
+            .catch((err) => onNote(String(err)));
+        },
+      },
+      { label: "Copy path", run: () => onCopy(entry.path, "the path") },
+    ];
+  }
   return (
     <aside className="changes-pane commit-files-pane">
       <div className="pane-tab-bar">
@@ -73,6 +128,7 @@ export default function CommitFilesPane({ target, commit, file, onPick, onClose 
             <div
               key={entry.path}
               className={`change-row${entry.path === file ? " open" : ""}`}
+              onContextMenu={(event) => menu.open(event, entry)}
             >
               <button
                 className="change-open"
@@ -101,6 +157,15 @@ export default function CommitFilesPane({ target, commit, file, onPick, onClose 
           );
         })}
       </div>
+
+      {menu.menu && (
+        <ContextMenu
+          at={menu.menu.at}
+          label={`Actions for ${menu.menu.payload.path} at ${target.short}`}
+          entries={rowMenu(menu.menu.payload)}
+          onClose={menu.close}
+        />
+      )}
     </aside>
   );
 }

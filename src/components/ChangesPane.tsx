@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { isUntracked, type DiffTarget, type FileChange, type RepoState } from "../lib/types";
-import { commitCommand, quote, type ShellKind } from "../lib/shell";
+import { commitCommand, openFileCommand, quote, type ShellKind } from "../lib/shell";
 
 interface Props {
   repo: RepoState | null;
@@ -250,6 +250,9 @@ export default function ChangesPane({
     const arg = quote(change.path, shell);
     const verb = change.staged ? `git restore --staged -- ${arg}` : `git add -- ${arg}`;
     const conflicted = change.state === "conflicted";
+    // The desktop's own handler for the file type, typed like everything else.
+    const opener = openFileCommand(change.path, shell);
+    const deleted = change.state === "deleted";
     return [
       {
         label: change.staged ? "Unstage" : "Stage",
@@ -258,6 +261,12 @@ export default function ChangesPane({
         run: (typeOnly) => onCommand(verb, typeOnly),
       },
       { label: "Open diff", run: () => onOpenDiff(change.path, change.staged) },
+      {
+        label: "Open",
+        title: deleted ? "Nothing on disk to open." : opener,
+        disabled: disabled || deleted,
+        run: (typeOnly) => onCommand(opener, typeOnly),
+      },
       { label: "Copy path", run: () => onCopy(change.path, "the path") },
       "-",
       {

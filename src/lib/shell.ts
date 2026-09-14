@@ -204,6 +204,19 @@ export function openUrlCommand(url: string, kind: ShellKind): string {
 }
 
 /**
+ * Opening a file in whatever the desktop has registered for its type.
+ *
+ * `Invoke-Item` is the ShellExecute verb PowerShell gives a path, so a `.ts`
+ * lands in the editor the machine already opens `.ts` in, and GitView never
+ * has to hold an editor setting of its own. The path is relative to the
+ * repository, the same as every `git add` typed from the changes pane, and
+ * the same forward slashes: PowerShell takes them.
+ */
+export function openFileCommand(path: string, kind: ShellKind): string {
+  return kind === "powershell" ? `Invoke-Item ${quote(path, kind)}` : `open ${quote(path, kind)}`;
+}
+
+/**
  * Fetching a release's installer and running it, as one line.
  *
  * The alternative was `tauri-plugin-updater`, which downloads and swaps the
