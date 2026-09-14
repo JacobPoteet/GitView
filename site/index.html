@@ -479,7 +479,7 @@ footer a:hover{color:var(--text)}
       </a>
       <a class="btn" href="https://github.com/JacobPoteet/GitView#running-it">Build from source</a>
     </div>
-    <div class="cmdbox rv d2" id="cmdbox"><div class="lines"><span class="p">PS F:\GitHub&gt;</span> <span class="c">gh release download -R JacobPoteet/GitView -p "*setup.exe"</span><br><span class="p">PS F:\GitHub&gt;</span> <span class="c">Start-Process .\GitView_0.5.0_x64-setup.exe</span></div><button class="cp" id="copyCmd" type="button">copy</button></div>
+    <div class="cmdbox rv d2" id="cmdbox"><div class="lines"><span class="p">PS F:\GitHub&gt;</span> <span class="c">gh release download -R JacobPoteet/GitView -p "*setup.exe"</span><br><span class="p">PS F:\GitHub&gt;</span> <span class="c">Start-Process .\GitView_0.6.0_x64-setup.exe</span></div><button class="cp" id="copyCmd" type="button">copy</button></div>
     <div class="reqs rv d3">
       <span>Windows 10 / 11</span><span><code>git</code> on PATH</span><span><code>gh</code> logged in, for GitHub</span><span>PowerShell for command blocks</span><span>Installs per user, no elevation</span>
     </div>
@@ -611,14 +611,14 @@ once('#app',async()=>{
   await type(p,'npm run dev');c.remove();
   bar.className='bar run';blk.textContent='npm run dev';
   await sleep(400);
-  line(t,'<span style="color:var(--text-faint)">&gt; gitview@0.5.0 dev</span>');
+  line(t,'<span style="color:var(--text-faint)">&gt; gitview@0.6.0 dev</span>');
   line(t,'<span style="color:var(--text-faint)">&gt; tauri dev</span>');
   await sleep(600);
   line(t,'  <span class="ok">VITE v5.4</span>  ready in <b style="color:var(--text)">312 ms</b>');
   line(t,'  ➜  Local:   <span style="color:var(--blue);text-decoration:underline">http://localhost:5183/</span>');
   await sleep(300);chip.classList.add('show');
   await sleep(900);
-  line(t,'<span style="color:var(--text-faint)">   Compiling gitview v0.5.0 (F:\\GitHub\\gitview\\src-tauri)</span>');
+  line(t,'<span style="color:var(--text-faint)">   Compiling gitview v0.6.0 (F:\\GitHub\\gitview\\src-tauri)</span>');
   await sleep(1400);
   line(t,'<span style="color:var(--text-faint)">    Finished `dev` profile in 4.82s</span>');
   line(t,'<span style="color:var(--text-faint)">     Running `target\\debug\\gitview.exe`</span>');
