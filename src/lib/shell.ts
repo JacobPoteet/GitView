@@ -135,7 +135,12 @@ export function validRefName(name: string): boolean {
   if (name.startsWith("-") || name.startsWith("/") || name.endsWith("/")) return false;
   if (name.endsWith(".") || name.endsWith(".lock")) return false;
   if (name.includes("..") || name.includes("@{") || name.includes("//")) return false;
-  if (/[\s~^:?*[\\\x00-\x1f\x7f]/.test(name)) return false;
+  if (/[\s~^:?*[\\]/.test(name)) return false;
+  // Control characters, which the lint rule keeps out of a regex literal.
+  for (const ch of name) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
   return !name.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock"));
 }
 

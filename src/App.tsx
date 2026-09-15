@@ -731,6 +731,7 @@ export default function App() {
     confirmation,
     rootsOpen,
     pendingTask,
+    pendingTag,
     batchOpen,
     updateOpen,
     paletteOpen,
