@@ -10,6 +10,12 @@ export interface BranchSummary {
   tip: string | null;
 }
 
+/** One tag, and the commit it marks. Part of `refSignature`, like a branch tip. */
+export interface TagSummary {
+  name: string;
+  tip: string;
+}
+
 export interface RepoState {
   path: string;
   name: string;
@@ -28,6 +34,7 @@ export interface RepoState {
   mergedBranches: string[];
   localBranchCount: number;
   branches: BranchSummary[];
+  tags: TagSummary[];
   /** The ref the drift numbers were measured against, `origin/main` usually. */
   defaultBase: string | null;
   aheadOfDefault: number;
