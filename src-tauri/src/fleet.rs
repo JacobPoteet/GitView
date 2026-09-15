@@ -38,6 +38,18 @@ pub struct BranchSummary {
     pub tip: Option<String>,
 }
 
+/// One tag, and the commit it marks.
+///
+/// Here for the same reason `BranchSummary.tip` is: a tag created, deleted or
+/// moved has to reach `refSignature`, and nothing else in the sweep sees one.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TagSummary {
+    pub name: String,
+    /// The commit, with an annotated tag peeled to the one it wraps.
+    pub tip: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoState {
@@ -60,6 +72,9 @@ pub struct RepoState {
     /// Every local branch, newest first, with the current one leading.
     #[serde(default)]
     pub branches: Vec<BranchSummary>,
+    /// Every tag, by name. Part of `refSignature`, like `branches`.
+    #[serde(default)]
+    pub tags: Vec<TagSummary>,
     /// The ref every branch was measured against, `origin/main` where there is
     /// one. Named so the UI can say what the numbers mean.
     #[serde(default)]
@@ -101,6 +116,7 @@ impl RepoState {
             merged_branches: Vec::new(),
             local_branch_count: 0,
             branches: Vec::new(),
+            tags: Vec::new(),
             default_base: None,
             ahead_of_default: 0,
             behind_default: 0,
@@ -173,6 +189,7 @@ pub fn read_repo(path: &Path) -> RepoState {
     read_remote(&repo, &mut state);
     state.default_branch = default_branch(&repo);
     read_branches(&repo, &mut state);
+    read_tags(&repo, &mut state);
 
     state.scanned_at = now_secs();
     state
@@ -542,6 +559,29 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
     });
 }
 
+/// Every tag, peeled to its commit, by name.
+///
+/// Sorted so two sweeps of an unchanged repository build the same key, whatever
+/// order the reference iterator gave.
+fn read_tags(repo: &Repository, state: &mut RepoState) {
+    let _ = repo.tag_foreach(|oid, name| {
+        let name = String::from_utf8_lossy(name);
+        let name = name.strip_prefix("refs/tags/").unwrap_or(&name).to_string();
+        let tip = repo
+            .find_tag(oid)
+            .ok()
+            .and_then(|tag| tag.peel().ok())
+            .map(|obj| obj.id())
+            .unwrap_or(oid);
+        state.tags.push(TagSummary {
+            name,
+            tip: tip.to_string(),
+        });
+        true
+    });
+    state.tags.sort_by(|a, b| a.name.cmp(&b.name));
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_owner_repo;
@@ -588,5 +628,52 @@ mod tests {
     fn ignores_non_github_remotes() {
         assert_eq!(parse_owner_repo("https://gitlab.com/a/b.git"), None);
         assert_eq!(parse_owner_repo(""), None);
+    }
+
+    /// A lightweight tag is its commit; an annotated one has to be peeled to
+    /// reach it. Both come out as the commit, sorted by name, because the
+    /// frontend compares them with what `git ls-remote` peels to.
+    #[test]
+    fn tags_are_read_peeled_and_sorted() {
+        use git2::{Repository, Signature};
+        let dir = std::env::temp_dir().join(format!(
+            "gitview-fleet-tags-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let repo = Repository::init(&dir).expect("git init");
+        let sig = Signature::now("Test", "test@example.com").expect("signature");
+        let tree_id = repo
+            .treebuilder(None)
+            .expect("treebuilder")
+            .write()
+            .expect("tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        let commit = repo
+            .commit(Some("refs/heads/main"), &sig, &sig, "one", &tree, &[])
+            .expect("commit");
+        let object = repo.find_object(commit, None).expect("object");
+        repo.tag_lightweight("zeta", &object, false)
+            .expect("lightweight");
+        let annotated = repo
+            .tag("alpha", &object, &sig, "a release", false)
+            .expect("annotated");
+        assert_ne!(annotated, commit, "an annotated tag is its own object");
+
+        let state = super::read_repo(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let tags: Vec<(&str, &str)> = state
+            .tags
+            .iter()
+            .map(|t| (t.name.as_str(), t.tip.as_str()))
+            .collect();
+        let id = commit.to_string();
+        assert_eq!(tags, vec![("alpha", id.as_str()), ("zeta", id.as_str())]);
     }
 }

@@ -48,12 +48,53 @@ interface Props {
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Deleting asks first, and the app owns the dialog. */
   onDeleteBranch: (name: string) => void;
+  /** Tagging asks for a name first, and the app owns that dialog too. */
+  onTag: (commit: { id: string; short: string; summary: string }) => void;
+  /**
+   * What origin has under `refs/tags/`, by name, peeled to the commit. Null
+   * until `git ls-remote` has answered, or when there is no origin to ask,
+   * and a chip then says nothing about where its tag is.
+   */
+  remoteTags: Map<string, string> | null;
+  /** Whether there is an origin to push to. Without one Push is disabled, not hidden. */
+  hasRemote: boolean;
   onCopy: (text: string, what: string) => void;
   onError: (message: string) => void;
 }
 
 /** What a right-click landed on: a commit row, or a branch chip sitting on one. */
 type Target = { row: HistoryRow; ref: HistoryRef | null };
+
+/**
+ * Where a tag is, as far as origin is concerned.
+ *
+ * `here` rather than `local`, because `local` is already the class a branch
+ * chip wears. `unknown` is no answer yet, or no origin. `moved` is a name origin has on a
+ * different commit, which a push would refuse without `--force` and which is
+ * worth a mark of its own rather than passing as pushed.
+ */
+type TagPlace = "unknown" | "here" | "pushed" | "moved";
+
+function tagPlace(name: string, commit: string, remoteTags: Map<string, string> | null): TagPlace {
+  if (!remoteTags) return "unknown";
+  const at = remoteTags.get(name);
+  if (at === undefined) return "here";
+  return at === commit ? "pushed" : "moved";
+}
+
+/** What a tag chip says on hover, and what its mark means. */
+function tagTitle(name: string, place: TagPlace): string {
+  switch (place) {
+    case "pushed":
+      return `${name} is on origin at this commit.`;
+    case "here":
+      return `${name} is only here. git push origin ${name} sends it.`;
+    case "moved":
+      return `origin has a ${name} on a different commit. git push would refuse it; git push --force origin ${name} moves it.`;
+    default:
+      return name;
+  }
+}
 
 /**
  * The whole DAG, scrolling, over the main column.
@@ -123,6 +164,9 @@ export default function HistoryPane({
   onCommand,
   onOpen,
   onDeleteBranch,
+  onTag,
+  remoteTags,
+  hasRemote,
   onCopy,
   onError,
 }: Props) {
@@ -188,8 +232,39 @@ export default function HistoryPane({
         },
       ];
     }
+    // A tag chip offers the tag: sending it, and taking it back. Deleting
+    // does not ask first, unlike a branch: `git tag -d` prints the commit it
+    // was at, and a tag holds no work of its own to lose.
+    if (ref && ref.kind === "tag") {
+      const arg = quote(ref.name, shell);
+      const place = tagPlace(ref.name, row.id, remoteTags);
+      const push = `git push origin ${arg}`;
+      const remove = `git tag -d ${arg}`;
+      return [
+        {
+          label: "Push to origin",
+          title: !hasRemote
+            ? "No origin to push to."
+            : place === "pushed"
+              ? `${tagTitle(ref.name, place)} Nothing to push.`
+              : place === "moved"
+                ? `${push}\n\n${tagTitle(ref.name, place)}`
+                : push,
+          disabled: !hasRemote || place === "pushed",
+          run: (typeOnly) => onCommand(push, typeOnly),
+        },
+        { label: "Copy tag name", run: () => onCopy(ref.name, "the tag name") },
+        "-",
+        {
+          label: `Delete ${ref.name}`,
+          danger: true,
+          title: `${remove}\n\nHere only. A copy on origin stays until git push origin --delete ${arg}.`,
+          run: (typeOnly) => onCommand(remove, typeOnly),
+        },
+      ];
+    }
     const tips = row.refs.filter(isBranch).map((r) => ({ name: r.name, isHead: r.kind === "head" }));
-    return commitMenu(row, tips, shell, onCommand, onCopy);
+    return commitMenu(row, tips, shell, onCommand, onCopy, onTag);
   }
 
   const loadPage = useCallback(
@@ -440,6 +515,7 @@ export default function HistoryPane({
               gutter={gutter}
               swallowed={swallowed.get(row.id) ?? null}
               tipOf={row.refs.map((r) => isTipOf.get(r.name)).find(Boolean) ?? null}
+              remoteTags={remoteTags}
               disabled={disabled}
               onCommand={onCommand}
               onOpen={onOpen}
@@ -471,6 +547,7 @@ function Row({
   gutter,
   swallowed,
   tipOf,
+  remoteTags,
   disabled,
   onCommand,
   onOpen,
@@ -483,6 +560,7 @@ function Row({
   swallowed: Squashed[] | null;
   /** Set when this row is the tip of a branch that was squashed onto the trunk. */
   tipOf: Squashed | null;
+  remoteTags: Map<string, string> | null;
   disabled: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpen: (commit: { id: string; short: string }) => void;
@@ -510,15 +588,24 @@ function Row({
       title={`${row.isHead ? "You are on this commit.\n\n" : ""}${row.summary}\n\n${row.author} · ${new Date(row.time * 1000).toLocaleString()}\n${row.id}\n\nClick to read the commit.\nShift-click to type ${command} without running it.`}
     >
       <span className="history-lanes" style={{ width: gutter }} />
-      {row.refs.map((ref) => (
-        <span
-          key={`${ref.kind}:${ref.name}`}
-          className={`history-ref ${ref.kind}`}
-          onContextMenu={(event) => onMenu(event, { row, ref })}
-        >
-          {ref.name}
-        </span>
-      ))}
+      {row.refs.map((ref) => {
+        // A tag chip says whether origin has it. `↑` is the mark the sidebar
+        // uses for commits that have not been pushed, so it means the same
+        // thing on a tag; `≠` is a name origin has somewhere else.
+        const place = ref.kind === "tag" ? tagPlace(ref.name, row.id, remoteTags) : "unknown";
+        return (
+          <span
+            key={`${ref.kind}:${ref.name}`}
+            className={`history-ref ${ref.kind}${place === "unknown" ? "" : ` ${place}`}`}
+            title={ref.kind === "tag" ? tagTitle(ref.name, place) : undefined}
+            onContextMenu={(event) => onMenu(event, { row, ref })}
+          >
+            {place === "here" && <span className="history-ref-mark">↑</span>}
+            {place === "moved" && <span className="history-ref-mark">≠</span>}
+            {ref.name}
+          </span>
+        );
+      })}
       {swallowed?.map((entry) => (
         <span
           key={entry.branch}

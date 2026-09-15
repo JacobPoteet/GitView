@@ -28,7 +28,15 @@ import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { copyText } from "./lib/clipboard";
-import { discardCommands, openUrlCommand, pushCommand, quote, shellKind } from "./lib/shell";
+import {
+  discardCommands,
+  openUrlCommand,
+  pushCommand,
+  quote,
+  shellKind,
+  tagCommand,
+  validRefName,
+} from "./lib/shell";
 import {
   fetchPlan,
   isSkip,
@@ -89,6 +97,15 @@ interface PendingTask {
   repoPath: string;
   command: string;
   name: string;
+}
+
+/** A commit on its way to being tagged, waiting for the name. */
+interface PendingTag {
+  repoPath: string;
+  commit: { id: string; short: string; summary: string };
+  name: string;
+  message: string;
+  push: boolean;
 }
 
 const GRAPH_KEY = "gitview.graph.collapsed";
@@ -286,6 +303,7 @@ export default function App() {
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
+  const [pendingTag, setPendingTag] = useState<PendingTag | null>(null);
 
   const selected = useMemo(
     () => repos.find((r) => r.path === selectedPath) ?? null,
@@ -572,8 +590,48 @@ export default function App() {
         selected.behindDefault,
         selected.lastCommitAt,
         ...selected.branches.map((b) => `${b.name}@${b.tip}:${b.ahead}:${b.behind}`),
+        ...selected.tags.map((t) => `${t.name}@${t.tip}`),
       ].join("|")
     : "";
+
+  /**
+   * What origin has under `refs/tags/`, so a tag chip can say whether it was
+   * pushed. `git ls-remote` is a network read, run out of sight like fetch-all
+   * because its answer is a list and not a scrollback. It is asked again when
+   * a tag appears or goes, when a `git push` settles in this repository, and
+   * on Refresh; a commit or a branch switch does not ask, since neither moves
+   * a tag on origin. Null is no answer: no origin, no tags, or offline.
+   */
+  const [remoteTags, setRemoteTags] = useState<Map<string, string> | null>(null);
+  const [pushEpoch, setPushEpoch] = useState(0);
+  const tagNames = selected ? selected.tags.map((t) => t.name).join("|") : "";
+  const hasRemote = selected?.remoteUrl !== null && selected?.remoteUrl !== undefined;
+  useEffect(() => {
+    setRemoteTags(null);
+    if (!selectedPath || !hasRemote || tagNames === "") return;
+    let cancelled = false;
+    api
+      .gitRun(selectedPath, ["ls-remote", "--tags", "origin"])
+      .then((out) => {
+        if (cancelled || out.code !== 0) return;
+        // Two lines per annotated tag: the tag object, then `name^{}` with the
+        // commit it wraps. The peeled line wins where there is one, so every
+        // entry ends up as the commit, which is what a history row is.
+        const found = new Map<string, string>();
+        for (const line of out.stdout.split("\n")) {
+          const [sha, ref] = line.trim().split(/\s+/);
+          if (!sha || !ref?.startsWith("refs/tags/")) continue;
+          const peeled = ref.endsWith("^{}");
+          const name = ref.slice("refs/tags/".length, peeled ? -3 : undefined);
+          if (peeled || !found.has(name)) found.set(name, sha);
+        }
+        setRemoteTags(found);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPath, hasRemote, tagNames, refreshEpoch, pushEpoch]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -641,6 +699,7 @@ export default function App() {
           confirmation !== null ||
           rootsOpen ||
           pendingTask !== null ||
+          pendingTag !== null ||
           batchOpen ||
           updateOpen ||
           paletteOpen;
@@ -651,6 +710,7 @@ export default function App() {
         setConfirmation(null);
         setRootsOpen(false);
         setPendingTask(null);
+        setPendingTag(null);
         // A batch that is still running keeps its dialog: closing it would hide
         // the only place the commands it is about to run are reported.
         setBatchOpen((open) => (open && batch?.running === true ? open : false));
@@ -857,6 +917,7 @@ export default function App() {
   // last had a dev server print something.
   const selectedRef = useRef(selectedPath);
   selectedRef.current = selectedPath;
+  const lastPush = useRef<number | null>(null);
 
   const refreshRepo = useCallback(
     (path: string) => {
@@ -865,6 +926,17 @@ export default function App() {
       // next to the prompt it was typed at.
       if (path === selectedRef.current) {
         api.repoChanges(path).then(setChanges).catch(() => undefined);
+        // A push is the one command that changes what origin holds without
+        // moving anything here, so it is the one that asks `ls-remote` again.
+        // The block's id is kept so a dev server settling every few seconds
+        // behind a finished push does not ask on every one of them.
+        const pushed = [...getBlocks(path)]
+          .reverse()
+          .find((b) => b.endedAt !== null && /^git push\b/.test(b.command));
+        if (pushed && pushed.id !== lastPush.current) {
+          lastPush.current = pushed.id;
+          setPushEpoch((n) => n + 1);
+        }
       }
 
       // A `gh` write the inbox typed here has finished when its block has an
@@ -1249,6 +1321,37 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selected, squashed, shell],
   );
+
+  /**
+   * A tag, from a right-click on a commit. The dialog asks for the name, takes
+   * a message that makes it annotated, and offers the push as a checkbox, so
+   * the two lines a release needs come out of one dialog: `git tag` and then
+   * `git push origin <tag>`. The second is typed after the first, and a name
+   * git refuses fails in the scrollback before the push can send anything.
+   */
+  const askTag = useCallback(
+    (commit: { id: string; short: string; summary: string }) => {
+      if (selectedPath) setPendingTag({ repoPath: selectedPath, commit, name: "", message: "", push: false });
+    },
+    [selectedPath],
+  );
+
+  const tagLines = useMemo(() => {
+    if (!pendingTag) return [];
+    const name = pendingTag.name.trim();
+    const lines = [tagCommand(name || "<name>", pendingTag.message, pendingTag.commit.short, shell)];
+    if (pendingTag.push) lines.push(`git push origin ${quote(name || "<name>", shell)}`);
+    return lines;
+  }, [pendingTag, shell]);
+
+  const tagNameTaken = pendingTag ? selected?.tags.some((t) => t.name === pendingTag.name.trim()) ?? false : false;
+  const tagNameOk = pendingTag ? validRefName(pendingTag.name.trim()) && !tagNameTaken : false;
+
+  function createTag() {
+    if (!pendingTag || !tagNameOk) return;
+    tagLines.forEach((line) => emit(line));
+    setPendingTag(null);
+  }
 
   /**
    * A repository the fleet-wide actions are allowed to touch.
@@ -1828,6 +1931,9 @@ ${landing} ${cleanup}${warning}`,
       onCommand={emit}
       onOpen={openCommit}
       onDeleteBranch={askDeleteBranch}
+      onTag={askTag}
+      remoteTags={remoteTags}
+      hasRemote={hasRemote}
       onCopy={copy}
       onError={setNote}
     />
@@ -1992,6 +2098,7 @@ gh pr view ${branchPr.number} --web`}
               onCommand={emit}
               onOpen={openCommit}
               onCopy={copy}
+              onTag={askTag}
               branches={selected.branches}
               shell={shell}
             />
@@ -2268,6 +2375,96 @@ gh pr view ${branchPr.number} --web`}
               </button>
               <button type="submit" className="btn accent" disabled={!pendingTask.name.trim()}>
                 Save the task
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {pendingTag && (
+        <div
+          className="confirm-backdrop"
+          role="presentation"
+          onMouseDown={(e) => e.target === e.currentTarget && setPendingTag(null)}
+        >
+          <form
+            className="confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Tag ${pendingTag.commit.short}`}
+            onSubmit={(e) => {
+              e.preventDefault();
+              createTag();
+            }}
+          >
+            <h2>
+              Tag {pendingTag.commit.short}
+              <button
+                type="button"
+                className="pane-close"
+                onClick={() => setPendingTag(null)}
+                title="Close (Escape)"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </h2>
+            <p>
+              {pendingTag.commit.summary}
+              {"\n"}A message makes it an annotated tag, the kind a release wants. Without one it is
+              a lightweight tag, a name and nothing else.
+            </p>
+            <div className="tag-fields">
+              <input
+                className="text-input"
+                autoFocus
+                spellCheck={false}
+                value={pendingTag.name}
+                placeholder="v1.2.0"
+                title={
+                  tagNameTaken
+                    ? "A tag by that name already exists here."
+                    : pendingTag.name && !tagNameOk
+                      ? "git would refuse this name."
+                      : undefined
+                }
+                onChange={(e) => setPendingTag({ ...pendingTag, name: e.target.value })}
+              />
+              <textarea
+                value={pendingTag.message}
+                placeholder="Message, for an annotated tag. Leave it empty for a lightweight one."
+                onChange={(e) => setPendingTag({ ...pendingTag, message: e.target.value })}
+              />
+              <label className={hasRemote ? undefined : "off"}>
+                <input
+                  type="checkbox"
+                  checked={pendingTag.push && hasRemote}
+                  disabled={!hasRemote}
+                  onChange={(e) => setPendingTag({ ...pendingTag, push: e.target.checked })}
+                />
+                {hasRemote ? "Push it to origin too" : "No origin to push to"}
+              </label>
+            </div>
+            <pre>{tagLines.join("\n")}</pre>
+            <div className="confirm-actions">
+              <button type="button" className="btn" onClick={() => setPendingTag(null)}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn accent"
+                disabled={!tagNameOk || !shellReady}
+                title={
+                  !shellReady
+                    ? "Waiting for the shell"
+                    : tagNameTaken
+                      ? "A tag by that name already exists here."
+                      : !tagNameOk
+                        ? "Needs a name git would take."
+                        : tagLines.join("\n")
+                }
+              >
+                {pendingTag.push && hasRemote ? "Tag and push" : "Create tag"}
               </button>
             </div>
           </form>

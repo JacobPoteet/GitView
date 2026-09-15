@@ -1051,6 +1051,55 @@ select:focus-visible,
   padding: 0 16px 14px;
 }
 
+/* The tag dialog: a name, an optional message, and the push as a checkbox
+   rather than a second button, so one dialog types both lines. */
+.tag-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 0;
+}
+
+.tag-fields .text-input {
+  margin-top: 0;
+}
+
+.tag-fields textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.tag-fields textarea:focus {
+  border-color: var(--accent-line);
+}
+
+.tag-fields label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tag-fields label.off {
+  cursor: default;
+  color: var(--text-faint);
+}
+
+.tag-fields input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 /* The update dialog is the confirm dialog carrying two blocks instead of one:
    the release notes, which are prose, and the command, which is not. */
 .confirm.update {
@@ -3533,6 +3582,25 @@ button.inbox-check-name.link:hover {
 .history-ref.tag {
   background: color-mix(in oklch, var(--amber) 14%, transparent);
   color: var(--amber);
+}
+
+/* A tag origin has at this commit is solid; one origin has never seen is
+   dashed and marked ↑, the same arrow the sidebar puts on unpushed commits; a
+   name origin holds on another commit is dashed and marked ≠. Unknown, which
+   is no origin or no answer yet, looks like it did before there was a mark. */
+.history-ref.tag.pushed {
+  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
+}
+
+.history-ref.tag.here,
+.history-ref.tag.moved {
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--amber) 60%, transparent);
+}
+
+.history-ref-mark {
+  font-weight: 700;
+  margin-right: 3px;
 }
 
 /* A branch the trunk swallowed through a squash. git records no link between

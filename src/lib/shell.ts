@@ -101,6 +101,45 @@ export function pushCommand(branch: string, hasUpstream: boolean, kind: ShellKin
 }
 
 /**
+ * `git tag`, as one line.
+ *
+ * A message makes it annotated, which is the kind `git describe` and GitHub's
+ * release page read, and the kind that carries a tagger and a date. Without
+ * one it is a lightweight tag, a name on a commit and nothing else. The message
+ * goes the way a commit's does, one `-m` per paragraph. The sha is always
+ * named, even when it is HEAD, so the line says what it tagged.
+ */
+export function tagCommand(name: string, message: string, sha: string, kind: ShellKind): string {
+  const parts = ["git", "tag"];
+  const paragraphs = message
+    .split(/\n\s*\n/)
+    .map((part) => part.trim().replace(/\s*\n\s*/g, " "))
+    .filter(Boolean);
+  if (paragraphs.length > 0) {
+    parts.push("-a");
+    for (const paragraph of paragraphs) parts.push("-m", quote(paragraph, kind));
+  }
+  parts.push(quote(name, kind), sha);
+  return parts.join(" ");
+}
+
+/**
+ * Whether git would take the name, by `git check-ref-format`'s rules.
+ *
+ * The dialog checks before typing so the shell never prints "not a valid tag
+ * name" for a space or a colon. Not every rule is here: the ones that are
+ * cover what somebody types by hand, and git has the last word.
+ */
+export function validRefName(name: string): boolean {
+  if (!name || name === "@") return false;
+  if (name.startsWith("-") || name.startsWith("/") || name.endsWith("/")) return false;
+  if (name.endsWith(".") || name.endsWith(".lock")) return false;
+  if (name.includes("..") || name.includes("@{") || name.includes("//")) return false;
+  if (/[\s~^:?*[\\\x00-\x1f\x7f]/.test(name)) return false;
+  return !name.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock"));
+}
+
+/**
  * `gh pr create`, as one line.
  *
  * No `--repo` and no `--head`: the line is typed into that repository's shell,

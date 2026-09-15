@@ -28,6 +28,8 @@ interface Props {
   /** Opens the commit pane on a node. The click itself types nothing. */
   onOpen: (commit: { id: string; short: string }) => void;
   onCopy: (text: string, what: string) => void;
+  /** Opens the tag dialog on a commit. The app owns it, as it owns the delete. */
+  onTag: (commit: { id: string; short: string; summary: string }) => void;
   /** Every local branch, so a commit that is a branch tip offers the branch. */
   branches: BranchSummary[];
   shell: ShellKind;
@@ -54,11 +56,17 @@ export function commitMenu(
   shell: ShellKind,
   onCommand: (command: string, typeOnly: boolean) => void,
   onCopy: (text: string, what: string) => void,
+  onTag: (commit: { id: string; short: string; summary: string }) => void,
 ): MenuEntry[] {
   const show = `git --no-pager show --stat ${commit.short}`;
   const checkout = `git checkout ${commit.short}`;
   return [
     { label: "Show", title: show, run: (typeOnly) => onCommand(show, typeOnly) },
+    {
+      label: "Tag this commit",
+      title: `git tag <name> ${commit.short}\n\nAsks for the name first, and offers the push.`,
+      run: () => onTag(commit),
+    },
     ...tips.map((tip): MenuEntry => {
       const command = `git switch ${quote(tip.name, shell)}`;
       return {
@@ -137,6 +145,7 @@ export default function BranchGraph({
   onCommand,
   onOpen,
   onCopy,
+  onTag,
   branches,
   shell,
 }: Props) {
@@ -272,7 +281,7 @@ export default function BranchGraph({
         <ContextMenu
           at={menu.menu.at}
           label={`Actions for ${menu.menu.payload.short}`}
-          entries={commitMenu(menu.menu.payload, tipsOf(menu.menu.payload), shell, onCommand, onCopy)}
+          entries={commitMenu(menu.menu.payload, tipsOf(menu.menu.payload), shell, onCommand, onCopy, onTag)}
           onClose={menu.close}
         />
       )}
