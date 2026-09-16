@@ -40,6 +40,9 @@ jobs:
       - name: Lint the frontend
         run: npm run lint
 
+      - name: TypeScript tests
+        run: npm test
+
       - name: Check Rust formatting
         working-directory: src-tauri
         run: cargo fmt --all --check

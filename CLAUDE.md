@@ -133,7 +133,8 @@ names neither Rust nor Visual Studio.
 npm install
 npm run dev                            # Tauri dev, opens a window
 npm run build:vite                     # typecheck and bundle the frontend
-cd src-tauri && cargo test             # unit tests
+cd src-tauri && cargo test             # Rust unit tests
+npm test                               # TypeScript unit tests, vitest over src/lib/*.test.ts
 cd src-tauri && cargo fmt --all        # CI checks this
 cd src-tauri && cargo run --example scan -- F:\GitHub
 ```
@@ -147,8 +148,8 @@ timings, which is where a slow project shows up.
 
 ## Verifying a change
 
-There is no UI test harness. The loop is: `cargo test` for the pure functions, the scan example for
-the scanner, then `npm run dev` and look at the window. Record what you measured in the wiki note
+There is no UI test harness. The loop is: `cargo test` and `npm test` for the pure functions, the
+scan example for the scanner, then `npm run dev` and look at the window. Record what you measured in the wiki note
 rather than in a comment here.
 
 Opening the app is not optional. Every bug found in this project so far survived clippy, `cargo
