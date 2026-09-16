@@ -687,6 +687,24 @@ export default function App() {
         setPaletteOpen((open) => !open);
       }
       if (event.key === "Escape") {
+        // Escape in a text field means the field, not the window. Writing a
+        // commit message while reading the diff it describes, Escape closed
+        // the diff; typed into the sidebar filter, it closed whatever pane was
+        // open in the main column. A field inside a dialog is the exception:
+        // there Escape means close, and the dialog is what the eye is on.
+        const target = event.target;
+        if (isEditable(target) && !(target as HTMLElement).closest('[role="dialog"]')) {
+          const field = target as HTMLInputElement | HTMLTextAreaElement;
+          if (field.closest(".sidebar-search") && field.value !== "") setQuery("");
+          else field.blur();
+          return;
+        }
+        // The palette closes itself on Escape, and that is all Escape there
+        // means: the history you opened it over is still where you left it.
+        // Read from the DOM rather than `paletteOpen`: React flushes the
+        // palette's own close before this listener runs, so the state already
+        // says closed by the time the event gets here.
+        if (target instanceof Element && target.closest(".palette")) return;
         // The commit pane sits over the history it was opened from, so Escape
         // peels it and leaves the history where it was. A second Escape closes
         // everything, as before. Only when it is the thing on screen, though:
