@@ -560,8 +560,11 @@ export default function App() {
         if (cancelled) return;
         setCommit(next);
         // The first file opens on its own, so a one-file commit reads as a
-        // diff without a second click.
-        setCommitFile(next.files[0]?.path ?? null);
+        // diff without a second click. A commit opened from a file's blame
+        // gutter opens on that file, since that is the line being followed.
+        const asked = commitTarget.file;
+        const wanted = asked && next.files.some((f) => f.path === asked) ? asked : null;
+        setCommitFile(wanted ?? next.files[0]?.path ?? null);
       })
       .catch((err) => {
         if (!cancelled) setNote(String(err));
@@ -603,9 +606,9 @@ export default function App() {
   );
 
   const openCommit = useCallback(
-    (commit: { id: string; short: string }) => {
+    (commit: { id: string; short: string; file?: string }) => {
       if (!selectedPath) return;
-      setCommitTarget({ repoPath: selectedPath, id: commit.id, short: commit.short });
+      setCommitTarget({ repoPath: selectedPath, id: commit.id, short: commit.short, file: commit.file });
     },
     [selectedPath],
   );
@@ -2182,6 +2185,7 @@ ${landing} ${cleanup}${warning}`,
       shell={shell}
       onClose={() => setCommitTarget(null)}
       onCommand={emit}
+      onOpenCommit={openCommit}
     />
   ) : historyOpen && selected ? (
     <HistoryPane
