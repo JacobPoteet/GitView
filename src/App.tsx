@@ -26,7 +26,7 @@ import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
-import { settings } from "./lib/settings";
+import { settings, updateSettings, useSetting } from "./lib/settings";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -109,7 +109,6 @@ interface PendingTag {
   push: boolean;
 }
 
-const GRAPH_KEY = "gitview.graph.collapsed";
 
 /**
  * How long the splash stays up at the least.
@@ -210,9 +209,7 @@ export default function App() {
    */
   const [commit, setCommit] = useState<CommitDiff | null>(null);
   const [commitFile, setCommitFile] = useState<string | null>(null);
-  const [graphCollapsed, setGraphCollapsed] = useState(
-    () => localStorage.getItem(GRAPH_KEY) === "1",
-  );
+  const graphCollapsed = useSetting((s) => s.graph.collapsed);
   const [roots, setRoots] = useState<string[]>([]);
   /** The settings dialog, and the section it opens on. Null while closed. */
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
@@ -1024,10 +1021,7 @@ export default function App() {
   }, []);
 
   const toggleGraph = useCallback(() => {
-    setGraphCollapsed((collapsed) => {
-      localStorage.setItem(GRAPH_KEY, collapsed ? "0" : "1");
-      return !collapsed;
-    });
+    updateSettings("graph", { collapsed: !settings().graph.collapsed });
   }, []);
 
   const setPinned = useCallback(
