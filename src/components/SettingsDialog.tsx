@@ -88,25 +88,29 @@ export default function SettingsDialog({
 
 /** A switch with its name and the one sentence that says what it costs. */
 function Toggle({
+  id,
   label,
   hint,
   checked,
   disabled,
   onChange,
 }: {
+  id: string;
   label: string;
   hint: string;
   checked: boolean;
   disabled?: boolean;
   onChange: (on: boolean) => void;
 }) {
+  // The row is the label, so a click anywhere on it flips the switch. The
+  // text sits one span deep because the lint rule reads no deeper than that,
+  // and the grid puts the switch in a column of its own.
   return (
-    <label className={`setting-row${disabled ? " disabled" : ""}`}>
-      <span className="setting-text">
-        <span className="setting-label">{label}</span>
-        <span className="setting-hint">{hint}</span>
-      </span>
+    <label htmlFor={id} className={`setting-row${disabled ? " disabled" : ""}`}>
+      <span className="setting-label">{label}</span>
+      <span className="setting-hint">{hint}</span>
       <input
+        id={id}
         type="checkbox"
         role="switch"
         checked={checked}
@@ -232,11 +236,9 @@ function TerminalSection() {
     <>
       <h3>Terminal</h3>
       <div className="setting-row">
-        <span className="setting-text">
-          <span className="setting-label">Type size</span>
-          <span className="setting-hint">
-            {FONT_SIZE_MIN} to {FONT_SIZE_MAX} points. Every open shell refits as it changes.
-          </span>
+        <span className="setting-label">Type size</span>
+        <span className="setting-hint">
+          {FONT_SIZE_MIN} to {FONT_SIZE_MAX} points. Every open shell refits as it changes.
         </span>
         <span className="setting-number">
           <input
@@ -265,6 +267,7 @@ function TerminalSection() {
         </span>
       </div>
       <Toggle
+        id="setting-screen-reader"
         label="Screen reader mode"
         hint="A live region a reader can follow, in every shell. The renderer pays for it on every line a build prints, so it stays off until asked for."
         checked={terminal.screenReader}
@@ -282,12 +285,14 @@ function LaunchSection({ gh }: { gh: boolean }) {
     <>
       <h3>Launch</h3>
       <Toggle
+        id="setting-launch-fetch"
         label="Fetch every repository"
         hint="git fetch across the fleet when the window opens and the last fetch is more than ten minutes old. Fetch and never pull: nothing in a working tree moves without a click."
         checked={launch.fetch}
         onChange={(on) => updateSettings("launch", { fetch: on })}
       />
       <Toggle
+        id="setting-launch-update"
         label="Check for a new GitView"
         hint={
           gh

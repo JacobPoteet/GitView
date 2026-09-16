@@ -1635,13 +1635,30 @@ select:focus-visible,
   white-space: normal;
 }
 
+/* Text in the first column, the control in the second, spanning both rows.
+   A grid rather than a wrapping span because the toggle's label is the row,
+   and the lint rule for a label reads no deeper than one element. */
 .setting-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 16px;
+  column-gap: 16px;
+  row-gap: 2px;
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
   cursor: pointer;
+}
+
+/* The type size row is a div, since a label may hold only one control. */
+div.setting-row {
+  cursor: default;
+}
+
+.setting-row > input,
+.setting-row > .setting-number {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .setting-row:last-child {
@@ -1651,14 +1668,6 @@ select:focus-visible,
 .setting-row.disabled {
   cursor: default;
   color: var(--text-faint);
-}
-
-.setting-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .setting-label {
