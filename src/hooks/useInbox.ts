@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { settings, useSetting } from "../lib/settings";
 import { getBlocks } from "../components/TerminalPane";
-import { itemKey } from "../components/InboxPane";
+import { itemKey } from "../lib/inbox";
 import type { AppInfo, Inbox } from "../lib/types";
 
 /**
