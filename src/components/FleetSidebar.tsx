@@ -1,6 +1,13 @@
 import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
-import { attentionScore, isClean, unpushed, type RepoPref, type RepoState } from "../lib/types";
+import {
+  attentionScore,
+  isClean,
+  operationTitle,
+  unpushed,
+  type RepoPref,
+  type RepoState,
+} from "../lib/types";
 
 /** What the inbox knows about one repository, merged in the way prefs are. */
 export interface RepoGithub {
@@ -99,6 +106,11 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
   const base = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
   return (
     <span className="chips">
+      {repo.operation && (
+        <span className="chip conflict" title={operationTitle(repo.operation)}>
+          {repo.operation.kind}
+        </span>
+      )}
       {repo.conflicted > 0 && (
         <span className="chip conflict" title="conflicted files">
           !{repo.conflicted}

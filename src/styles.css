@@ -4060,3 +4060,58 @@ button.inbox-check-name.link:hover {
   background: none;
   padding-inline: 0;
 }
+
+/* -------------------------------------------------------------- operation */
+/* The strip that says git is paused. Under the header, above the graph, and
+   never hidden by a pane: the state outranks whatever the pane shows. Red
+   because the app already uses red for the thing that needs dealing with
+   before anything else, and this is that. */
+
+.operation-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--red) 30%, var(--line));
+  background: color-mix(in oklch, var(--red) 9%, var(--bg));
+  color: var(--text);
+  font-size: 12px;
+  flex: none;
+  min-width: 0;
+}
+
+.operation-mark {
+  color: var(--red);
+  font-size: 14px;
+  line-height: 1;
+  flex: none;
+}
+
+.operation-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.operation-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.operation-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.btn.danger {
+  border-color: color-mix(in oklch, var(--red) 40%, var(--line));
+  color: var(--red);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--red) 16%, transparent);
+}
