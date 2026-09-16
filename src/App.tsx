@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import FleetSidebar, { drawnOrder, groupRepos } from "./components/FleetSidebar";
 import TerminalPane, {
   blockOutput,
@@ -9,9 +9,11 @@ import TerminalPane, {
   revealBlock,
   sendCommand,
   subscribeBlocks,
+  widthForColumns,
 } from "./components/TerminalPane";
 import BlockBar from "./components/BlockBar";
 import Dialog from "./components/Dialog";
+import Splitter from "./components/Splitter";
 import TaskList from "./components/TaskList";
 import BranchGraph, { type ResetMode } from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
@@ -29,7 +31,16 @@ import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
-import { settings, updateSettings, useSetting } from "./lib/settings";
+import {
+  CHANGES_MAX,
+  CHANGES_MIN,
+  DEFAULTS,
+  settings,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
+  updateSettings,
+  useSetting,
+} from "./lib/settings";
 import { chordOf, repoChord } from "./lib/keys";
 import { sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
 import { copyText } from "./lib/clipboard";
@@ -733,6 +744,23 @@ export default function App() {
     }
     return subscribeBlocks(sessionId, setBlocks);
   }, [sessionId, closedShell]);
+
+  /**
+   * The column widths. Dragging writes the CSS variable straight onto the
+   * frame, so a drag is a style change and not a render of everything in
+   * the grid; the drop is what reaches the settings and re-renders once.
+   */
+  const layout = useSetting((s) => s.layout);
+  const appRef = useRef<HTMLDivElement>(null);
+  const setColumn = useCallback((name: "--sidebar-w" | "--changes-w", width: number) => {
+    appRef.current?.style.setProperty(name, `${width}px`);
+  }, []);
+  /**
+   * The narrowest the main column goes: 80 columns of the terminal, read off
+   * a shell that is on screen. The fallback is that width at the shipped type
+   * size, measured: 7 px a cell and 25 px of padding and scrollbar.
+   */
+  const mainMin = useCallback(() => widthForColumns(80) ?? 585, []);
 
   // The sidebar's rows in the order it draws them, for Ctrl+1 to Ctrl+9.
   const drawn = useMemo(() => drawnOrder(groupRepos(repos, prefs, query)), [repos, prefs, query]);
@@ -2202,7 +2230,38 @@ ${landing} ${cleanup}${warning}`,
   ) : null;
 
   return (
-    <div className={`app${arriving ? " arriving" : ""}`}>
+    <div
+      ref={appRef}
+      className={`app${arriving ? " arriving" : ""}`}
+      style={
+        {
+          "--sidebar-w": `${layout.sidebar}px`,
+          "--changes-w": `${layout.changes}px`,
+        } as CSSProperties
+      }
+    >
+      <Splitter
+        side="sidebar"
+        width={layout.sidebar}
+        other={layout.changes}
+        min={SIDEBAR_MIN}
+        max={SIDEBAR_MAX}
+        mainMin={mainMin}
+        onDrag={(w) => setColumn("--sidebar-w", w)}
+        onDrop={(sidebar) => updateSettings("layout", { sidebar })}
+        onReset={() => updateSettings("layout", { sidebar: DEFAULTS.layout.sidebar })}
+      />
+      <Splitter
+        side="changes"
+        width={layout.changes}
+        other={layout.sidebar}
+        min={CHANGES_MIN}
+        max={CHANGES_MAX}
+        mainMin={mainMin}
+        onDrag={(w) => setColumn("--changes-w", w)}
+        onDrop={(changes) => updateSettings("layout", { changes })}
+        onReset={() => updateSettings("layout", { changes: DEFAULTS.layout.changes })}
+      />
       {/* The fleet and the tasks share the left rail. Tasks belong to whichever
           repository is selected, which is chosen immediately above them, and
           moving them here freed the right-hand column for the working tree. */}

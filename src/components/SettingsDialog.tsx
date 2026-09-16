@@ -3,9 +3,13 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { api } from "../lib/api";
 import {
+  CHANGES_MAX,
+  CHANGES_MIN,
   DEFAULTS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
   INBOX_READ_COST,
   MINUTES_MAX,
   MINUTES_MIN,
@@ -17,7 +21,14 @@ import type { AppInfo } from "../lib/types";
 import { SHORTCUTS } from "../lib/keys";
 import Dialog from "./Dialog";
 
-export type SettingsSection = "folders" | "terminal" | "launch" | "github" | "keyboard" | "about";
+export type SettingsSection =
+  | "folders"
+  | "layout"
+  | "terminal"
+  | "launch"
+  | "github"
+  | "keyboard"
+  | "about";
 
 interface Props {
   section: SettingsSection;
@@ -31,6 +42,7 @@ interface Props {
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "folders", label: "Folders" },
+  { id: "layout", label: "Layout" },
   { id: "terminal", label: "Terminal" },
   { id: "launch", label: "Launch" },
   { id: "github", label: "GitHub" },
@@ -71,6 +83,7 @@ export default function SettingsDialog({
         </nav>
         <div className="settings-page">
           {section === "folders" && <Folders roots={roots} onChange={onRoots} />}
+          {section === "layout" && <LayoutSection />}
           {section === "terminal" && <TerminalSection />}
           {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
           {section === "github" && <GitHubSection info={info} />}
@@ -281,6 +294,44 @@ function Folders({ roots, onChange }: { roots: string[]; onChange: (roots: strin
       </div>
 
       {error && <p className="root-error">{error}</p>}
+    </>
+  );
+}
+
+// ----------------------------------------------------------------- layout
+
+/**
+ * The two column widths. The handles on the column edges are the usual way
+ * to set them; the numbers are here so the dialog shows every setting the
+ * app keeps and so a width can be typed or put back without finding the
+ * edge.
+ */
+function LayoutSection() {
+  const { layout } = useSettings();
+  return (
+    <>
+      <h3>Layout</h3>
+      <NumberRow
+        label="Sidebar width"
+        hint={`${SIDEBAR_MIN} to ${SIDEBAR_MAX} pixels. Drag the edge beside the repositories, or double-click it for the default.`}
+        value={layout.sidebar}
+        fallback={DEFAULTS.layout.sidebar}
+        min={SIDEBAR_MIN}
+        max={SIDEBAR_MAX}
+        step={1}
+        onChange={(sidebar) => updateSettings("layout", { sidebar })}
+      />
+      <NumberRow
+        label="Changes column width"
+        hint={`${CHANGES_MIN} to ${CHANGES_MAX} pixels. Drag the edge beside the working tree, or double-click it for the default.`}
+        value={layout.changes}
+        fallback={DEFAULTS.layout.changes}
+        min={CHANGES_MIN}
+        max={CHANGES_MAX}
+        step={1}
+        onChange={(changes) => updateSettings("layout", { changes })}
+      />
+      <p>The middle column takes what is left, and never less than the terminal needs for 80 columns.</p>
     </>
   );
 }

@@ -38,6 +38,12 @@ export interface Settings {
     /** The branch graph folded to its strip. */
     collapsed: boolean;
   };
+  layout: {
+    /** The sidebar's width in pixels. */
+    sidebar: number;
+    /** The changes column's width in pixels. */
+    changes: number;
+  };
   inbox: {
     /** Rows grouped by repository, or by what each one needs. */
     mode: "repo" | "need";
@@ -67,6 +73,7 @@ export const DEFAULTS: Settings = {
   terminal: { fontSize: 12.5, screenReader: false },
   launch: { fetch: true, checkUpdate: true },
   graph: { collapsed: false },
+  layout: { sidebar: 296, changes: 300 },
   inbox: { mode: "repo", collapsed: [] },
   github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
 };
@@ -76,6 +83,15 @@ export const FONT_SIZE_MAX = 20;
 /** An interval under a minute is a poll GitHub would notice; over a day is off with extra steps. */
 export const MINUTES_MIN = 1;
 export const MINUTES_MAX = 1440;
+/**
+ * What a column may be dragged to. The sidebar's floor keeps a repository
+ * name and its chips on one row; the changes column's keeps a path readable.
+ * The ceilings are where a column stops being a column.
+ */
+export const SIDEBAR_MIN = 220;
+export const SIDEBAR_MAX = 480;
+export const CHANGES_MIN = 240;
+export const CHANGES_MAX = 560;
 /**
  * What one read of the inbox costs against GitHub's 5000 points an hour,
  * measured over ten repositories with the check contexts in the query. The
@@ -88,6 +104,11 @@ export const RATE_LIMIT_PER_HOUR = 5000;
 function minutes(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(MINUTES_MAX, Math.max(MINUTES_MIN, Math.round(value)));
+}
+
+function pixels(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 const KEY = "gitview.settings";
@@ -136,6 +157,7 @@ function read(): Settings {
     terminal: { ...DEFAULTS.terminal, ...stored.terminal },
     launch: { ...DEFAULTS.launch, ...stored.launch },
     graph: { ...DEFAULTS.graph, ...stored.graph },
+    layout: { ...DEFAULTS.layout, ...stored.layout },
     inbox: { ...DEFAULTS.inbox, ...stored.inbox },
     github: { ...DEFAULTS.github, ...stored.github },
   };
@@ -175,6 +197,9 @@ function read(): Settings {
     FONT_SIZE_MAX,
     Math.max(FONT_SIZE_MIN, settings.terminal.fontSize),
   );
+  const layout = settings.layout;
+  layout.sidebar = pixels(layout.sidebar, SIDEBAR_MIN, SIDEBAR_MAX, DEFAULTS.layout.sidebar);
+  layout.changes = pixels(layout.changes, CHANGES_MIN, CHANGES_MAX, DEFAULTS.layout.changes);
   const gh = settings.github;
   gh.busyMinutes = minutes(gh.busyMinutes, DEFAULTS.github.busyMinutes);
   gh.idleMinutes = minutes(gh.idleMinutes, DEFAULTS.github.idleMinutes);
