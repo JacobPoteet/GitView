@@ -5,9 +5,7 @@ import TerminalPane, {
   closeSession,
   getBlocks,
   revealBlock,
-  screenReaderMode,
   sendCommand,
-  setScreenReaderMode,
   subscribeBlocks,
 } from "./components/TerminalPane";
 import BlockBar from "./components/BlockBar";
@@ -20,13 +18,14 @@ import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
 import ContextMenu, { isEditable, type MenuAt } from "./components/ContextMenu";
-import RootsDialog from "./components/RootsDialog";
+import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane, { itemKey } from "./components/InboxPane";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
+import { settings } from "./lib/settings";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -192,7 +191,8 @@ export default function App() {
     () => localStorage.getItem(GRAPH_KEY) === "1",
   );
   const [roots, setRoots] = useState<string[]>([]);
-  const [rootsOpen, setRootsOpen] = useState(false);
+  /** The settings dialog, and the section it opens on. Null while closed. */
+  const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(0);
@@ -277,8 +277,6 @@ export default function App() {
   const [ownShell, setOwnShell] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxReading, setInboxReading] = useState(false);
-  /** Mirrors the terminal module's flag, so the palette label follows a toggle. */
-  const [readerMode, setReaderMode] = useState(screenReaderMode);
   /** A row the inbox opens expanded, when the header's PR button brought you there. */
   const [inboxFocus, setInboxFocus] = useState<string | null>(null);
   /**
@@ -697,7 +695,7 @@ export default function App() {
         const covered =
           inboxOpen ||
           confirmation !== null ||
-          rootsOpen ||
+          settingsOpen !== null ||
           pendingTask !== null ||
           pendingTag !== null ||
           batchOpen ||
@@ -708,7 +706,7 @@ export default function App() {
           return;
         }
         setConfirmation(null);
-        setRootsOpen(false);
+        setSettingsOpen(null);
         setPendingTask(null);
         setPendingTag(null);
         // A batch that is still running keeps its dialog: closing it would hide
@@ -729,7 +727,7 @@ export default function App() {
     commitTarget,
     inboxOpen,
     confirmation,
-    rootsOpen,
+    settingsOpen,
     pendingTask,
     pendingTag,
     batchOpen,
@@ -799,8 +797,10 @@ export default function App() {
   // After the first paint rather than beside the cached fleet, so a slow gh
   // never holds up the window. No gh, no check and nothing said about it: the
   // status bar already reports whether it is there.
+  // Asked from the palette it still answers when the launch check is off:
+  // the setting is about being asked, not about asking.
   useEffect(() => {
-    if (!info?.gh.version) return;
+    if (!info?.gh.version || !settings().launch.checkUpdate) return;
     checkUpdate();
   }, [info?.gh.version, checkUpdate]);
 
@@ -1490,6 +1490,7 @@ export default function App() {
   useEffect(() => {
     if (fetchLaunched.current || !swept || batchCandidates.length === 0) return;
     fetchLaunched.current = true;
+    if (!settings().launch.fetch) return;
     if (Math.floor(Date.now() / 1000) - fetchedAt > 600) fetchAll();
   }, [swept, batchCandidates, fetchedAt, fetchAll]);
 
@@ -1731,19 +1732,14 @@ export default function App() {
       label: "Watched folders",
       kind: "fleet",
       hint: "add or remove a folder GitView scans",
-      run: () => setRootsOpen(true),
+      run: () => setSettingsOpen("folders"),
     });
-    // The one setting with no other home. The label says which way it will go.
     items.push({
-      id: "action:screen-reader",
-      label: readerMode ? "Terminal: screen reader mode off" : "Terminal: screen reader mode on",
+      id: "action:settings",
+      label: "Settings",
       kind: "fleet",
-      hint: "a live region a reader can follow; costs the renderer",
-      run: () => {
-        setScreenReaderMode(!readerMode);
-        setReaderMode(!readerMode);
-        setNote(readerMode ? "Screen reader mode off." : "Screen reader mode on in every terminal.");
-      },
+      hint: "terminal, launch, and the folders GitView watches",
+      run: () => setSettingsOpen("terminal"),
     });
 
     return items;
@@ -1765,7 +1761,6 @@ export default function App() {
     batchCandidates,
     openBatch,
     syncAll,
-    readerMode,
     fetchAll,
     inbox,
     info,
@@ -1979,7 +1974,8 @@ ${landing} ${cleanup}${warning}`,
           onHide={setHidden}
           onCopy={copy}
           onCloseShell={askCloseShell}
-          onManageRoots={() => setRootsOpen(true)}
+          onManageRoots={() => setSettingsOpen("folders")}
+          onOpenSettings={() => setSettingsOpen("terminal")}
         />
         <TaskList
           tasks={selected ? tasks : []}
@@ -2296,14 +2292,17 @@ gh pr view ${branchPr.number} --web`}
         <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />
       )}
 
-      {rootsOpen && (
-        <RootsDialog
+      {settingsOpen && (
+        <SettingsDialog
+          section={settingsOpen}
+          onSection={setSettingsOpen}
           roots={roots}
-          onChange={(next) => {
+          onRoots={(next) => {
             setRoots(next);
             scan();
           }}
-          onClose={() => setRootsOpen(false)}
+          info={info}
+          onClose={() => setSettingsOpen(null)}
         />
       )}
 
