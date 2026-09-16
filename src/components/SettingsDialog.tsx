@@ -340,6 +340,11 @@ function LayoutSection() {
 
 function TerminalSection() {
   const { terminal } = useSettings();
+  // What the saved scrollback takes on disk, read once when the section opens.
+  const [size, setSize] = useState<number | null>(null);
+  useEffect(() => {
+    api.scrollbackSize().then(setSize, () => setSize(0));
+  }, []);
   return (
     <>
       <h3>Terminal</h3>
@@ -360,8 +365,41 @@ function TerminalSection() {
         checked={terminal.screenReader}
         onChange={(on) => updateSettings("terminal", { screenReader: on })}
       />
+      <Toggle
+        id="setting-restore-scrollback"
+        label="Keep the scrollback across restarts"
+        hint="Each shell's buffer is written out as it settles and on close, and read back above the first prompt of the next launch. Off, nothing is written and what is saved stays until cleared."
+        checked={terminal.restoreScrollback}
+        onChange={(on) => updateSettings("terminal", { restoreScrollback: on })}
+      />
+      <div className="setting-row">
+        <span className="setting-label">Saved scrollback</span>
+        <span className="setting-hint">
+          {size === null ? "…" : size === 0 ? "Nothing saved." : `${formatBytes(size)}, one file per shell, under the data folder.`}
+        </span>
+        <span className="setting-number">
+          <button
+            className="btn tiny"
+            disabled={!size}
+            onClick={async () => {
+              await api.scrollbackClear().catch(() => undefined);
+              setSize(await api.scrollbackSize().catch(() => 0));
+            }}
+            title="Remove every saved scrollback. The open shells keep theirs until they next save."
+          >
+            Clear
+          </button>
+        </span>
+      </div>
     </>
   );
+}
+
+/** "12.4 KB", "3.1 MB": the size the row states. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
 // ----------------------------------------------------------------- launch

@@ -27,6 +27,11 @@ export interface Settings {
      * prints.
      */
     screenReader: boolean;
+    /**
+     * Write each shell's scrollback out on close and read it back on the next
+     * launch, so yesterday's build output is still above the cursor.
+     */
+    restoreScrollback: boolean;
   };
   launch: {
     /** `git fetch` in every repository at launch, when the last one is stale. */
@@ -70,7 +75,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  terminal: { fontSize: 12.5, screenReader: false },
+  terminal: { fontSize: 12.5, screenReader: false, restoreScrollback: true },
   launch: { fetch: true, checkUpdate: true },
   graph: { collapsed: false },
   layout: { sidebar: 296, changes: 300 },

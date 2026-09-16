@@ -71,6 +71,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |
 | `src-tauri/src/update.rs` | The launch check against the latest GitHub release, through the same `gh` invocation |
 | `src-tauri/src/pty.rs` | Terminal sessions, and the base64 that hands the shell its prompt hook |
+| `src-tauri/src/scrollback.rs` | A shell's buffer and its blocks on disk, written as the shell settles and on close, read back above the next launch's first prompt |
 | `src-tauri/src/scratch.rs` | The files a typed command names because its argument cannot be typed: the folder under the data dir, the one sweep, the slug, and the commit message writer |
 | `src-tauri/src/shell_integration.ps1` | The OSC 133 hook. Source, not an asset: `include_str!` puts it in the binary |
 | `src-tauri/src/tasks.rs` | Task discovery across manifests |
@@ -85,6 +86,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | --- | --- |
 | Repository reads go through `git2`, network operations go through `git.exe`, GitHub goes through `gh` | Credential helpers and SSH agents work for free through the CLI. Reimplementing auth is where other GUIs collect "cannot push" reports. The same argument covers the API: `gh api graphql` means GitView never sources, stores or redacts a token, and there is no HTTP client in the binary to add one with |
 | A terminal session is never closed on a view change | Closing it would kill a dev server every time the user looked at another project |
+| The window's close is a request Rust holds | `on_window_event` prevents the close and emits `closing`; the frontend writes every shell's scrollback and calls `app_quit`. Closing outright would end the buffers before the write began. The hold is bounded at three seconds in `saveAllSessions`, so a save that hangs cannot keep the app open |
 | Every action names the command it runs | The GUI accelerates a habit of typing git rather than hiding it. Shift-click types instead of running |
 | No generated commit messages, no agent panel, no account, no telemetry | These are the features that made the tool being replaced feel bloated |
 | GitHub is read out of sight, but written by typing | A fleet-wide read has nowhere to type, the same as fetch-all. A write does: `gh issue create` and `gh pr merge` get typed into that repository's shell like every other action. An issue body has paragraphs and a newline at a prompt submits the line, so a multi-line body goes out to a file under GitView's data folder and `--body-file` carries the path, the same answer hunk staging gives |

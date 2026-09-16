@@ -14,6 +14,8 @@ import type {
   RepoState,
   ScanReport,
   Squashed,
+  StoredBlock,
+  StoredScrollback,
   Task,
   UpdateCheck,
 } from "./types";
@@ -127,6 +129,17 @@ export const api = {
   /** Whether the shell behind a session is still running. */
   ptyAlive: (id: string) => invoke<boolean>("pty_alive", { id }),
   ptyLive: () => invoke<string[]>("pty_live"),
+
+  /** A session's buffer and its anchored blocks, written for the next launch. */
+  scrollbackWrite: (id: string, text: string, blocks: StoredBlock[]) =>
+    invoke<void>("scrollback_write", { id, text, blocks }),
+  scrollbackRead: (id: string) => invoke<StoredScrollback | null>("scrollback_read", { id }),
+  scrollbackRemove: (id: string) => invoke<void>("scrollback_remove", { id }),
+  /** Bytes on disk across every saved scrollback. */
+  scrollbackSize: () => invoke<number>("scrollback_size"),
+  scrollbackClear: () => invoke<void>("scrollback_clear"),
+  /** Ends the process, once every scrollback has been written. */
+  appQuit: () => invoke<void>("app_quit"),
 
   settingsRoots: () => invoke<string[]>("settings_roots"),
   settingsSetRoots: (roots: string[]) => invoke<void>("settings_set_roots", { roots }),

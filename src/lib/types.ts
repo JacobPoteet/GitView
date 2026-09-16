@@ -537,6 +537,23 @@ export interface CommandBlock {
   endedAt: number | null;
   /** Null while it is still running. */
   exitCode: number | null;
+  /** Read back from a saved scrollback: a record of a previous session, not something that just ran. */
+  restored?: boolean;
+}
+
+/** A block as it is saved beside the scrollback: the command and the line it sat on. */
+export interface StoredBlock {
+  command: string;
+  startedAt: number;
+  endedAt: number | null;
+  exitCode: number | null;
+  line: number;
+}
+
+export interface StoredScrollback {
+  text: string;
+  blocks: StoredBlock[];
+  savedAt: number;
 }
 
 export function blockDuration(block: CommandBlock): string {
