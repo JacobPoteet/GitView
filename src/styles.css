@@ -4205,6 +4205,18 @@ button.inbox-check-name.link:hover {
   color: var(--text-faint);
 }
 
+.terminal-search {
+  margin-left: auto;
+}
+
+.terminal-search-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .history-filter-clear {
   color: var(--text-faint);
   font-size: 10px;
