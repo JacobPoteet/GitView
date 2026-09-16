@@ -79,6 +79,18 @@ describe("settings", () => {
     expect(settings().inbox.collapsed).toEqual([]);
   });
 
+  it("clamps an interval to whole minutes and falls back from anything else", async () => {
+    const { settings, MINUTES_MAX } = await load({
+      "gitview.settings": JSON.stringify({
+        github: { busyMinutes: 0, idleMinutes: 2.6, launchStaleMinutes: "soon" },
+      }),
+    });
+    expect(settings().github.busyMinutes).toBe(1);
+    expect(settings().github.idleMinutes).toBe(3);
+    expect(settings().github.launchStaleMinutes).toBe(10);
+    expect(MINUTES_MAX).toBe(1440);
+  });
+
   it("tells a subscriber once per write and replaces the object", async () => {
     const { settings, updateSettings, subscribeSettings } = await load({});
     const before = settings();

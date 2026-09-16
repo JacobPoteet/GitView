@@ -6,13 +6,17 @@ import {
   DEFAULTS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  INBOX_READ_COST,
+  MINUTES_MAX,
+  MINUTES_MIN,
+  RATE_LIMIT_PER_HOUR,
   updateSettings,
   useSettings,
 } from "../lib/settings";
 import type { AppInfo } from "../lib/types";
 import Dialog from "./Dialog";
 
-export type SettingsSection = "folders" | "terminal" | "launch" | "about";
+export type SettingsSection = "folders" | "terminal" | "launch" | "github" | "about";
 
 interface Props {
   section: SettingsSection;
@@ -28,6 +32,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "folders", label: "Folders" },
   { id: "terminal", label: "Terminal" },
   { id: "launch", label: "Launch" },
+  { id: "github", label: "GitHub" },
   { id: "about", label: "About" },
 ];
 
@@ -66,6 +71,7 @@ export default function SettingsDialog({
           {section === "folders" && <Folders roots={roots} onChange={onRoots} />}
           {section === "terminal" && <TerminalSection />}
           {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
+          {section === "github" && <GitHubSection info={info} />}
           {section === "about" && <About info={info} />}
         </div>
       </div>
@@ -107,6 +113,81 @@ function Toggle({
         onChange={(e) => onChange(e.target.checked)}
       />
     </label>
+  );
+}
+
+/**
+ * A number with its name, its hint, and a Reset that appears once it has
+ * moved. The field holds text while it is being edited, so a size typed one
+ * digit at a time never lands as "1" on the way to "14"; it commits on Enter
+ * or blur, clamped to the range.
+ */
+function NumberRow({
+  label,
+  hint,
+  value,
+  fallback,
+  min,
+  max,
+  step,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  fallback: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [typed, setTyped] = useState(String(value));
+  useEffect(() => setTyped(String(value)), [value]);
+
+  function commit() {
+    const next = Number(typed);
+    if (!Number.isFinite(next)) {
+      setTyped(String(value));
+      return;
+    }
+    const clamped = Math.min(max, Math.max(min, next));
+    onChange(clamped);
+    setTyped(String(clamped));
+  }
+
+  return (
+    <div className={`setting-row${disabled ? " disabled" : ""}`}>
+      <span className="setting-label">{label}</span>
+      <span className="setting-hint">{hint}</span>
+      <span className="setting-number">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={min}
+          max={max}
+          step={step}
+          value={typed}
+          disabled={disabled}
+          onChange={(e) => setTyped(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+          }}
+          aria-label={label}
+        />
+        {value !== fallback && !disabled && (
+          <button
+            className="btn tiny"
+            onClick={() => onChange(fallback)}
+            title={`Back to ${fallback}`}
+          >
+            Reset
+          </button>
+        )}
+      </span>
+    </div>
   );
 }
 
@@ -205,56 +286,19 @@ function Folders({ roots, onChange }: { roots: string[]; onChange: (roots: strin
 
 function TerminalSection() {
   const { terminal } = useSettings();
-  // The field holds text while it is being edited, so a size typed one digit
-  // at a time never lands on the terminal as "1" on the way to "14".
-  const [typed, setTyped] = useState(String(terminal.fontSize));
-  useEffect(() => setTyped(String(terminal.fontSize)), [terminal.fontSize]);
-
-  function commitSize() {
-    const size = Number(typed);
-    if (!Number.isFinite(size)) {
-      setTyped(String(terminal.fontSize));
-      return;
-    }
-    const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size));
-    updateSettings("terminal", { fontSize: clamped });
-    setTyped(String(clamped));
-  }
-
   return (
     <>
       <h3>Terminal</h3>
-      <div className="setting-row">
-        <span className="setting-label">Type size</span>
-        <span className="setting-hint">
-          {FONT_SIZE_MIN} to {FONT_SIZE_MAX} points. Every open shell refits as it changes.
-        </span>
-        <span className="setting-number">
-          <input
-            type="number"
-            inputMode="decimal"
-            min={FONT_SIZE_MIN}
-            max={FONT_SIZE_MAX}
-            step={0.5}
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            onBlur={commitSize}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitSize();
-            }}
-            aria-label="Type size in points"
-          />
-          {terminal.fontSize !== DEFAULTS.terminal.fontSize && (
-            <button
-              className="btn tiny"
-              onClick={() => updateSettings("terminal", { fontSize: DEFAULTS.terminal.fontSize })}
-              title={`Back to ${DEFAULTS.terminal.fontSize}`}
-            >
-              Reset
-            </button>
-          )}
-        </span>
-      </div>
+      <NumberRow
+        label="Type size"
+        hint={`${FONT_SIZE_MIN} to ${FONT_SIZE_MAX} points. Every open shell refits as it changes.`}
+        value={terminal.fontSize}
+        fallback={DEFAULTS.terminal.fontSize}
+        min={FONT_SIZE_MIN}
+        max={FONT_SIZE_MAX}
+        step={0.5}
+        onChange={(fontSize) => updateSettings("terminal", { fontSize })}
+      />
       <Toggle
         id="setting-screen-reader"
         label="Screen reader mode"
@@ -291,6 +335,83 @@ function LaunchSection({ gh }: { gh: boolean }) {
         checked={launch.checkUpdate}
         disabled={!gh}
         onChange={(on) => updateSettings("launch", { checkUpdate: on })}
+      />
+    </>
+  );
+}
+
+// ----------------------------------------------------------------- github
+
+/** "6 reads an hour, 48 of 5000 points", for an interval in minutes. */
+function costOf(minutes: number): string {
+  const reads = 60 / minutes;
+  const shown = reads >= 1 ? Math.round(reads) : reads.toFixed(2).replace(/0+$/, "");
+  const points = Math.round(reads * INBOX_READ_COST);
+  return `${shown} ${reads === 1 ? "read" : "reads"} an hour, ${points} of ${RATE_LIMIT_PER_HOUR} points`;
+}
+
+/**
+ * The inbox's timers, each with what it costs beside it.
+ *
+ * The rate limit is 5000 points an hour and a read of the fleet measured cost
+ * 8, so the numbers here are affordable by a wide margin; they are shown so
+ * the trade is visible where it is made, and so a laptop on a metered
+ * connection can turn the timer off without losing the button.
+ */
+function GitHubSection({ info }: { info: AppInfo | null }) {
+  const { github } = useSettings();
+  const gh = info?.gh.version != null && info.gh.loggedIn;
+  const why = !info?.gh.version
+    ? "Needs gh, which this machine does not have."
+    : !info.gh.loggedIn
+      ? "gh is not logged in, so the inbox has nothing to read."
+      : null;
+  return (
+    <>
+      <h3>GitHub</h3>
+      <Toggle
+        id="setting-github-poll"
+        label="Read the inbox on a timer"
+        hint={
+          why ??
+          "One GraphQL query for the whole fleet, out of sight. Off, the inbox reads at launch, after a command, and when the refresh button asks."
+        }
+        checked={github.poll}
+        disabled={!gh}
+        onChange={(on) => updateSettings("github", { poll: on })}
+      />
+      <NumberRow
+        label="Minutes between reads"
+        hint={`While nothing is running: ${costOf(github.idleMinutes)}.`}
+        value={github.idleMinutes}
+        fallback={DEFAULTS.github.idleMinutes}
+        min={MINUTES_MIN}
+        max={MINUTES_MAX}
+        step={1}
+        disabled={!gh || !github.poll}
+        onChange={(idleMinutes) => updateSettings("github", { idleMinutes })}
+      />
+      <NumberRow
+        label="Minutes between reads while checks run"
+        hint={`While a pull request that moved in the last hour has checks running: ${costOf(github.busyMinutes)}.`}
+        value={github.busyMinutes}
+        fallback={DEFAULTS.github.busyMinutes}
+        min={MINUTES_MIN}
+        max={MINUTES_MAX}
+        step={1}
+        disabled={!gh || !github.poll}
+        onChange={(busyMinutes) => updateSettings("github", { busyMinutes })}
+      />
+      <NumberRow
+        label="Read at launch when older than"
+        hint="Minutes. The cached inbox shows straight away either way; this is when it is read again behind it."
+        value={github.launchStaleMinutes}
+        fallback={DEFAULTS.github.launchStaleMinutes}
+        min={MINUTES_MIN}
+        max={MINUTES_MAX}
+        step={1}
+        disabled={!gh}
+        onChange={(launchStaleMinutes) => updateSettings("github", { launchStaleMinutes })}
       />
     </>
   );
