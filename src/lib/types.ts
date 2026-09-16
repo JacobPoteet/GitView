@@ -8,6 +8,10 @@ export interface BranchSummary {
   lastCommitAt: number | null;
   /** The commit it points at. Part of `refSignature`, see App.tsx. */
   tip: string | null;
+  /** What it tracks. Null is a branch that has never been pushed. */
+  upstream: string | null;
+  /** Commits the upstream does not have. Zero without one; see `ahead` for that case. */
+  aheadOfUpstream: number;
 }
 
 /** One tag, and the commit it marks. Part of `refSignature`, like a branch tip. */
@@ -537,8 +541,31 @@ export function portsIn(output: string): number[] {
  * was there to catch. Measured against the default branch instead, and only
  * when there is no upstream, so a pushed branch is not counted twice.
  */
+/**
+ * Commits that exist on this disk and nowhere else, across every local branch.
+ *
+ * HEAD's branch with an upstream is left out, because `ahead` already counts
+ * it and wears its own chip. Everything else counts: a branch with an
+ * upstream by how far past it it has run, and a branch with none by how far
+ * past the default branch it is, since that is the nearest thing to "pushed"
+ * it can be measured against. Until 16 Sep 2026 only HEAD's branch counted,
+ * and a branch switched away from with work on it sorted as Clean.
+ */
 export function unpushed(repo: RepoState): number {
-  return repo.upstream ? 0 : repo.aheadOfDefault;
+  if (repo.branches.length === 0) return repo.upstream ? 0 : repo.aheadOfDefault;
+  return repo.branches.reduce((sum, b) => {
+    if (b.isHead && repo.upstream) return sum;
+    if (b.merged) return sum;
+    return sum + (b.upstream ? b.aheadOfUpstream : b.ahead);
+  }, 0);
+}
+
+/** The branches `unpushed` counted, for a tooltip. */
+export function unpushedBranches(repo: RepoState): string[] {
+  return repo.branches
+    .filter((b) => !(b.isHead && repo.upstream) && !b.merged)
+    .filter((b) => (b.upstream ? b.aheadOfUpstream : b.ahead) > 0)
+    .map((b) => `${b.name}: ${b.upstream ? b.aheadOfUpstream : b.ahead} ${b.upstream ? `past ${b.upstream}` : "with no upstream"}`);
 }
 
 /** What the sidebar sorts on. Higher wants attention sooner. */

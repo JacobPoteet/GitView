@@ -6,6 +6,7 @@ import {
   operationTitle,
   stashTitle,
   unpushed,
+  unpushedBranches,
   type RepoPref,
   type RepoState,
 } from "../lib/types";
@@ -127,12 +128,15 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
           ↑{repo.ahead}
         </span>
       )}
-      {/* No upstream, so `ahead` reads zero however far this has run. These
-          commits are on this disk and nowhere else. */}
+      {/* Commits on this disk and nowhere else, on any local branch: a branch
+          with no upstream by its lead over the default, one with an upstream
+          by its lead over that. `ahead` only ever sees HEAD's. */}
       {local > 0 && (
         <span
           className="chip unpushed"
-          title={`${local} commits ahead of ${base}, on a branch with no upstream`}
+          title={`${local} ${local === 1 ? "commit" : "commits"} not on any remote\n${
+            unpushedBranches(repo).join("\n") || `ahead of ${base} with no upstream`
+          }`}
         >
           ⇡{local}
         </span>
