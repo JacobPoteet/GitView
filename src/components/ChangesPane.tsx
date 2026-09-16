@@ -248,6 +248,17 @@ export default function ChangesPane({
   // did. Once opened it stays open for this repository, since typing into it
   // and then losing it on the next commit would be worse than the box.
   const [bodyOpen, setBodyOpen] = useState(false);
+  /**
+   * Rewriting the last commit instead of adding one.
+   *
+   * The one place amend earns a control rather than a typed line: the message
+   * is composed here, and amend is about the message as often as the files.
+   * Turning it on fills the fields from HEAD, so the usual case of fixing a
+   * typo in the subject is a click and an edit. `head` is what was read, so
+   * an untouched message becomes `--no-edit` rather than repeating itself.
+   */
+  const [amend, setAmend] = useState(false);
+  const [head, setHead] = useState<{ subject: string; body: string } | null>(null);
   const menu = useContextMenu<FileChange>();
 
   // A message belongs to the repository it was written for. Carrying a draft to
@@ -256,9 +267,52 @@ export default function ChangesPane({
     setTitle("");
     setBody("");
     setBodyOpen(false);
+    setAmend(false);
+    setHead(null);
     menu.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo?.path]);
+
+  /**
+   * Whether the last commit is one to rewrite.
+   *
+   * Off when there is no commit, and off when the branch tracks something and
+   * is level with it: the last commit is on origin, and amending it means a
+   * force push. Said in the tooltip rather than hidden, since the reason is
+   * the useful part.
+   */
+  const pushed = repo?.upstream != null && repo.ahead === 0 && !repo.detached;
+  const amendable = repo?.lastCommitAt != null && !pushed;
+  const amendTitle = !repo?.lastCommitAt
+    ? "Nothing to amend: there is no commit yet."
+    : pushed
+      ? `The last commit is already on ${repo.upstream}. Amending it would need a force push.`
+      : amend
+        ? "Back to a new commit."
+        : "Rewrite the last commit instead of adding one. Fills the message from it.";
+
+  async function toggleAmend() {
+    if (!repo || !amendable) return;
+    if (amend) {
+      setAmend(false);
+      return;
+    }
+    try {
+      const last = await api.repoCommit(repo.path, "HEAD");
+      const read = { subject: last.summary, body: last.body };
+      setHead(read);
+      // A draft already typed is kept: the click meant "make it an amend",
+      // not "throw away what I wrote".
+      if (!title.trim() && !body.trim()) {
+        setTitle(read.subject);
+        setBody(read.body);
+        if (read.body) setBodyOpen(true);
+      }
+      setAmend(true);
+    } catch (err) {
+      onNote(String(err));
+    }
+  }
 
   /**
    * The row's menu. The verb the row already shows, the diff, the path, and
@@ -329,25 +383,37 @@ export default function ChangesPane({
   // file; the typed line has the real path in it.
   const subject = title.trim();
   const described = body.trim().length > 0;
-  const command = subject ? commitCommand(subject, described ? "<message file>" : null, shell) : "";
+  // An amend whose message is what HEAD already says is `--no-edit`: the
+  // files changed, the words did not, and the line says so.
+  const untouched =
+    amend && head !== null && subject === head.subject && body.trim() === head.body.trim();
+  const command = untouched
+    ? "git commit --amend --no-edit"
+    : subject
+      ? commitCommand(subject, described ? "<message file>" : null, shell, amend)
+      : "";
   // git refuses an empty commit anyway, and a message with nothing staged is the
-  // mistake worth catching before it reaches the prompt.
-  const ready = staged.length > 0 && subject.length > 0 && !disabled;
+  // mistake worth catching before it reaches the prompt. An amend is the
+  // exception: reworking the message alone is the usual case.
+  const ready = (staged.length > 0 || amend) && subject.length > 0 && !disabled;
 
   async function commit() {
     if (!ready || !repo) return;
-    let messageFile: string | null = null;
-    if (described) {
+    let line = command;
+    if (!untouched && described) {
       try {
-        messageFile = await api.commitMessageFile(repo.path, `${subject}\n\n${body.trim()}\n`);
+        const file = await api.commitMessageFile(repo.path, `${subject}\n\n${body.trim()}\n`);
+        line = commitCommand(subject, file, shell, amend);
       } catch (err) {
         onNote(String(err));
         return;
       }
     }
-    onCommand(commitCommand(subject, messageFile, shell), false);
+    onCommand(line, false);
     setTitle("");
     setBody("");
+    setAmend(false);
+    setHead(null);
   }
 
   // Ctrl+Enter commits from either field. Enter alone never does: in the
@@ -430,7 +496,9 @@ export default function ChangesPane({
           className="commit-title"
           value={title}
           spellCheck
-          placeholder={staged.length > 0 ? "Commit message" : "Stage something first"}
+          placeholder={
+            amend ? "New subject for the last commit" : staged.length > 0 ? "Commit message" : "Stage something first"
+          }
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={onKeyDown}
         />
@@ -467,6 +535,15 @@ export default function ChangesPane({
             <bdi>{command || "git commit"}</bdi>
           </span>
           <button
+            className={`commit-amend${amend ? " on" : ""}`}
+            disabled={!amendable}
+            onClick={toggleAmend}
+            title={amendTitle}
+            aria-pressed={amend}
+          >
+            amend
+          </button>
+          <button
             className="btn accent"
             disabled={!ready}
             onClick={commit}
@@ -482,7 +559,7 @@ Ctrl+Enter does the same.`
                     : "Write a message."
             }
           >
-            Commit {staged.length > 0 && `(${staged.length})`}
+            {amend ? "Amend" : "Commit"} {staged.length > 0 && `(${staged.length})`}
           </button>
         </div>
       </div>
