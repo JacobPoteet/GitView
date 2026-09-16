@@ -29,6 +29,9 @@ import BatchDialog from "./components/BatchDialog";
 import InboxPane, { itemKey } from "./components/InboxPane";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
+import { useBatch } from "./hooks/useBatch";
+import { useInbox } from "./hooks/useInbox";
+import { useUpdate } from "./hooks/useUpdate";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import {
@@ -53,18 +56,7 @@ import {
   tagCommand,
   validRefName,
 } from "./lib/shell";
-import {
-  fetchPlan,
-  isSkip,
-  newRun,
-  pruneCommands,
-  pruneSplit,
-  runRepo,
-  verbFor,
-  type BatchKind,
-  type BatchRow,
-  type BatchRun,
-} from "./lib/batch";
+import { pruneCommands, pruneSplit } from "./lib/batch";
 import {
   fleetSummary,
   isUntracked,
@@ -77,12 +69,10 @@ import {
   type CommitTarget,
   type DiffTarget,
   type FileChange,
-  type Inbox,
   type RepoPref,
   type RepoState,
   type Squashed,
   type Task,
-  type UpdateCheck,
 } from "./lib/types";
 
 interface Confirmation {
@@ -286,28 +276,10 @@ export default function App() {
   const [closedShell, setClosedShell] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  /** The last batch, running or finished, and whether its transcript is up. */
-  const [batch, setBatch] = useState<BatchRun | null>(null);
-  const [batchKind, setBatchKind] = useState<BatchKind>("sync");
-  const [batchOpen, setBatchOpen] = useState(false);
-  /** Bumped to remount the dialog, which is what clears a stale selection. */
-  const [batchEpoch, setBatchEpoch] = useState(0);
-  // Read between repositories, so stopping never interrupts a command that has
-  // already started. A ref rather than state: the loop has to see the change.
-  const batchStopped = useRef(false);
-  // Fetch-all is one palette keystroke and the palette opens over the dialog,
-  // so a second batch can be started on top of a running one. Whichever ran
-  // last owns the transcript, and the older loop stops writing to it.
-  const batchToken = useRef(0);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [note, setNoteState] = useState<Note | null>(null);
   const setNote = useCallback((text: string) => setNoteState({ text }), []);
   const [blocks, setBlocks] = useState<CommandBlock[]>([]);
-  const [inbox, setInbox] = useState<Inbox | null>(null);
-  /** Seconds since the epoch at which the fleet was last fetched, 0 for never. */
-  const [fetchedAt, setFetchedAt] = useState(0);
-  /** Whether the last Sync all's transcript has been opened, so the button can go back to being Sync all. */
-  const [transcriptSeen, setTranscriptSeen] = useState(true);
   /**
    * A command waiting for its repository's shell to exist.
    *
@@ -322,9 +294,6 @@ export default function App() {
     /** Shift was held, so it is left at the prompt rather than run. */
     typeOnly: boolean;
   } | null>(null);
-  /** The launch check against the latest GitHub release, and its dialog. */
-  const [update, setUpdate] = useState<UpdateCheck | null>(null);
-  const [updateOpen, setUpdateOpen] = useState(false);
   /**
    * A shell of GitView's own, in its data folder, for the one command that
    * belongs to no repository: its own update. Opened by that command when
@@ -333,29 +302,6 @@ export default function App() {
    * without ending it, the same as any other session.
    */
   const [ownShell, setOwnShell] = useState(false);
-  const [inboxOpen, setInboxOpen] = useState(false);
-  const [inboxReading, setInboxReading] = useState(false);
-  /** A row the inbox opens expanded, when the header's PR button brought you there. */
-  const [inboxFocus, setInboxFocus] = useState<string | null>(null);
-  /**
-   * A typed `gh` write whose exit the inbox is waiting on.
-   *
-   * A merge or a re-run changes what GitHub would answer, and the pane has no
-   * way to know the command finished except the block it left behind in that
-   * shell. `refreshRepo` runs when the shell's output settles and checks here.
-   *
-   * `drops` names the row the command removes when it exits 0. A merge is
-   * final the moment `gh pr merge` returns, and the row goes on that rather
-   * than on the read that follows, because the read is not always right: a
-   * poll that started a second before the merge landed answers with the list
-   * as it was, and GitHub's own answer can lag the merge by a few seconds.
-   */
-  const inboxAfter = useRef<{ path: string; command: string; drops?: string } | null>(null);
-  /**
-   * Rows a command has removed, keyed like `itemKey`. A read that still lists
-   * one was answered from before the command, and the row stays gone.
-   */
-  const inboxGone = useRef<Set<string>>(new Set());
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
@@ -395,6 +341,45 @@ export default function App() {
       return next;
     });
   }, []);
+
+  /**
+   * A note with something to click, for the one place that wants one: the
+   * batch's summary opens its transcript.
+   */
+  const setNoteWith = useCallback(
+    (text: string, onClick: () => void) => setNoteState({ text, onClick }),
+    [],
+  );
+  const { update, updateOpen, setUpdateOpen, checkUpdate } = useUpdate(info, setNote);
+  const {
+    inbox,
+    setInbox,
+    inboxOpen,
+    setInboxOpen,
+    inboxReading,
+    inboxFocus,
+    setInboxFocus,
+    refreshInbox,
+    armAfter,
+    settled: inboxSettled,
+  } = useInbox(info, setNote);
+  const {
+    batch,
+    batchKind,
+    batchOpen,
+    setBatchOpen,
+    batchEpoch,
+    batchCandidates,
+    runBatch,
+    fetchAll,
+    syncAll,
+    openBatch,
+    stopBatch,
+    fetchedAt,
+    setFetchedAt,
+    transcriptSeen,
+    setTranscriptSeen,
+  } = useBatch({ repos, prefs, swept, upsert, setNote, setNoteWith });
 
   const loadPrefs = useCallback(async () => {
     try {
@@ -488,7 +473,9 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [scan, loadPrefs, setNote]);
+    // The two setters come out of hooks, so the lint cannot see they are
+    // React's own and stable.
+  }, [scan, loadPrefs, setNote, setInbox, setFetchedAt]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -884,6 +871,9 @@ export default function App() {
     historyOpen,
     openHistory,
     info?.gh.version,
+    setBatchOpen,
+    setInboxOpen,
+    setUpdateOpen,
   ]);
 
   // The webview's own right-click menu is Back, Reload, Print and Share, none
@@ -925,86 +915,7 @@ export default function App() {
     noteTimer.current = window.setTimeout(() => setNoteState(null), 6000);
   }, [note]);
 
-  /**
-   * Whether a newer GitView has been released.
-   *
-   * Quiet at launch on purpose. A dialog on startup is the behaviour that makes
-   * an updater the first thing people turn off, so an available release becomes
-   * one word in the status bar and nothing else. Asked from the palette it
-   * announces either answer, because somebody who asked wants to be told.
-   */
-  const checkUpdate = useCallback(
-    async (announce = false) => {
-      try {
-        const found = await api.updateCheck();
-        setUpdate(found);
-        if (!announce) return;
-        if (found.error) setNote(`Could not ask GitHub: ${found.error}`);
-        else if (found.available) setUpdateOpen(true);
-        else setNote(`GitView ${found.current} is the latest release.`);
-      } catch (err) {
-        if (announce) setNote(String(err));
-      }
-    },
-    [setNote],
-  );
 
-  // After the first paint rather than beside the cached fleet, so a slow gh
-  // never holds up the window. No gh, no check and nothing said about it: the
-  // status bar already reports whether it is there.
-  // Asked from the palette it still answers when the launch check is off:
-  // the setting is about being asked, not about asking.
-  useEffect(() => {
-    if (!info?.gh.version || !settings().launch.checkUpdate) return;
-    checkUpdate();
-  }, [info?.gh.version, checkUpdate]);
-
-  /**
-   * One GraphQL request for the whole fleet, through the gh CLI.
-   *
-   * A failed read keeps the last good list on screen rather than emptying the
-   * pane, because the usual reason is a laptop that was off the network.
-   */
-  const inboxInFlight = useRef<Promise<void> | null>(null);
-  const inboxAgain = useRef(false);
-  const refreshInbox = useCallback((after = false): Promise<void> => {
-    // The poll, a settled command and the button can all ask at once, and one
-    // read answers all three. The promise is shared so a caller that arrived
-    // second still waits for the read it got. A caller whose command just
-    // finished is the exception: a read already on the wire was asked before
-    // the command ran, so it gets another read after this one rather than
-    // that one's answer.
-    if (inboxInFlight.current) {
-      if (after) inboxAgain.current = true;
-      return inboxInFlight.current;
-    }
-    const read = (async () => {
-      setInboxReading(true);
-      try {
-        const next = await api.githubRefresh();
-        const gone = inboxGone.current;
-        if (gone.size > 0) next.items = next.items.filter((item) => !gone.has(itemKey(item)));
-        setInbox((current) => (next.error && current ? { ...current, error: next.error } : next));
-        if (next.error) setNote(next.error);
-        else if (next.unresolved.length > 0) {
-          setNote(`Read the inbox. ${next.unresolved.length} did not resolve.`);
-        }
-      } catch (err) {
-        setNote(String(err));
-      } finally {
-        inboxInFlight.current = null;
-        setInboxReading(false);
-      }
-      if (inboxAgain.current) {
-        inboxAgain.current = false;
-        await refreshInboxRef.current();
-      }
-    })();
-    inboxInFlight.current = read;
-    return read;
-  }, [setNote]);
-  const refreshInboxRef = useRef(refreshInbox);
-  refreshInboxRef.current = refreshInbox;
 
   /**
    * The one refresh button, in the sidebar head beside the folders button.
@@ -1036,37 +947,6 @@ export default function App() {
     }
   }, [scan, refreshInbox, info?.gh.version, refreshing]);
 
-  /**
-   * The interval read.
-   *
-   * Once a minute while a pull request in the list has checks running, no
-   * checks reported yet, or a merge GitHub is still computing, and otherwise
-   * every ten, both from the GitHub section of the settings. The whole fleet
-   * reads at cost 8 of 5000 an hour, so the fast rate is affordable, but it is
-   * held to pull requests that moved in the last hour: a stranger's PR whose
-   * checks never ran would otherwise keep the fast rate on for good. The null
-   * rollup counts because Actions takes a moment to register a check after a
-   * push, and the first read after `gh pr create` lands inside that moment.
-   */
-  const github = useSetting((s) => s.github);
-  useEffect(() => {
-    if (!info?.gh.version || !info.gh.loggedIn || !github.poll) return;
-    const hourAgo = Date.now() - 3_600_000;
-    const busy = (inbox?.items ?? []).some(
-      (item) =>
-        item.kind === "pr" &&
-        Date.parse(item.updatedAt) > hourAgo &&
-        (item.checks === null ||
-          item.checks === "PENDING" ||
-          item.checks === "EXPECTED" ||
-          item.mergeable === "UNKNOWN"),
-    );
-    const every = (busy ? github.busyMinutes : github.idleMinutes) * 60_000;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") refreshInbox();
-    }, every);
-    return () => window.clearInterval(timer);
-  }, [info, inbox, refreshInbox, github]);
 
   // Read through a ref so `refreshRepo` keeps one identity. Each session holds
   // the copy it was handed when its pane was open, and a copy that had the
@@ -1098,27 +978,11 @@ export default function App() {
         }
       }
 
-      // A `gh` write the inbox typed here has finished when its block has an
-      // exit code. A shell with no prompt hook leaves no blocks at all, and
-      // there the first settle is the best signal there is.
-      const waiting = inboxAfter.current;
-      if (waiting && waiting.path === path) {
-        const blocks = getBlocks(id);
-        const block = [...blocks].reverse().find((b) => b.command === waiting.command);
-        if (blocks.length === 0 || (block && block.endedAt !== null)) {
-          inboxAfter.current = null;
-          if (waiting.drops && block?.exitCode === 0) {
-            const key = waiting.drops;
-            inboxGone.current.add(key);
-            setInbox((current) =>
-              current ? { ...current, items: current.items.filter((item) => itemKey(item) !== key) } : current,
-            );
-          }
-          refreshInbox(true);
-        }
-      }
+      // A `gh` write the inbox typed here may have finished; the inbox
+      // reads the block and decides.
+      inboxSettled(path, id);
     },
-    [upsert, refreshInbox],
+    [upsert, inboxSettled],
   );
   /** A session settled; the repository it belongs to is what wants re-reading. */
   const settled = useCallback((id: string) => refreshRepo(sessionRepo(id), id), [refreshRepo]);
@@ -1577,177 +1441,8 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
     setPendingTag(null);
   }
 
-  /**
-   * A repository the fleet-wide actions are allowed to touch.
-   *
-   * A hidden repository is one the user has said they are not thinking about,
-   * so it stays out of a sweep as well as out of the list.
-   */
-  const batchCandidates = useMemo(
-    () => repos.filter((repo) => !prefs.get(repo.path)?.hidden),
-    [repos, prefs],
-  );
 
-  /**
-   * Runs a batch, one repository at a time, keeping a transcript as it goes.
-   *
-   * Sequential on purpose: twelve concurrent fetches would finish sooner and
-   * arrive as twelve interleaved reports, and the point of the transcript is
-   * that it reads in the order the work happened. Stopping is offered instead,
-   * and it takes effect between repositories.
-   */
-  const runBatch = useCallback(
-    async (kind: BatchKind, paths: string[], whole = false) => {
-      const targets = paths
-        .map((path) => repos.find((repo) => repo.path === path))
-        .filter((repo): repo is RepoState => repo != null);
-      if (targets.length === 0) return;
 
-      batchStopped.current = false;
-      const token = (batchToken.current += 1);
-      setBatch(newRun(kind, targets));
-
-      const patch = (path: string, change: (row: BatchRow) => BatchRow) => {
-        if (batchToken.current !== token) return;
-        setBatch((current) =>
-          current
-            ? {
-                ...current,
-                rows: current.rows.map((row) => (row.path === path ? change(row) : row)),
-              }
-            : current,
-        );
-      };
-
-      let failures = 0;
-      let acted = 0;
-      for (const repo of targets) {
-        if (batchStopped.current || batchToken.current !== token) break;
-        patch(repo.path, (row) => ({ ...row, state: "running" }));
-
-        const result = await runRepo(kind, repo, upsert);
-        if (result.failed) failures += 1;
-        else if (result.steps.some((step) => step.outcome)) acted += 1;
-
-        patch(repo.path, (row) => ({
-          ...row,
-          state: "done",
-          steps: result.steps,
-          headline: result.headline,
-          failed: result.failed,
-        }));
-        if (batchToken.current === token) {
-          setBatch((current) => (current ? { ...current, done: current.done + 1 } : current));
-        }
-      }
-
-      if (batchToken.current !== token) return;
-      const stopped = batchStopped.current;
-      setBatch((current) =>
-        current ? { ...current, running: false, cancelled: stopped } : current,
-      );
-      // The fleet counts as fetched when the run was aimed at all of it and
-      // reached the end. A stopped run leaves the rest at whatever the last
-      // fetch left them.
-      if (kind !== "prune" && whole && !stopped) {
-        const at = Math.floor(Date.now() / 1000);
-        setFetchedAt(at);
-        api.settingsSetFetchedAt(at).catch(() => undefined);
-      }
-      setNoteState({
-        text:
-          `${verbFor[kind]} ran in ${acted} ${acted === 1 ? "repository" : "repositories"}` +
-          (failures > 0 ? `, ${failures} failed` : "") +
-          (stopped ? ", then stopped" : "") +
-          ".",
-        onClick: () => setBatchOpen(true),
-      });
-    },
-    [repos, upsert],
-  );
-
-  /**
-   * The one operation allowed to run out of sight, so the one that has to be
-   * honest about failing.
-   *
-   * No dialog and no picking: the value of this action is that it is one
-   * keystroke over the whole fleet. The transcript is written anyway, and the
-   * note in the status bar opens it.
-   */
-  const fetchAll = useCallback(() => {
-    setBatchKind("fetch");
-    setNote("Fetching every repository…");
-    return runBatch(
-      "fetch",
-      batchCandidates.filter((repo) => !isSkip(fetchPlan(repo))).map((repo) => repo.path),
-      true,
-    );
-  }, [batchCandidates, runBatch, setNote]);
-
-  /**
-   * The button in the status bar. Sync, over the whole fleet, with no pick
-   * list: the dialog pre-checks every eligible row anyway, so the pick stage
-   * is a click that changes nothing. The transcript is written as always and
-   * the button turns into the way to open it.
-   */
-  const syncAll = useCallback(() => {
-    setBatchKind("sync");
-    setBatchEpoch((n) => n + 1);
-    setBatchOpen(false);
-    setTranscriptSeen(false);
-    return runBatch("sync", batchCandidates.map((repo) => repo.path), true);
-  }, [batchCandidates, runBatch]);
-
-  /**
-   * One fetch on launch when the last one has gone stale, under the same
-   * ten-minute rule the inbox uses.
-   *
-   * Every `↓n` chip and the whole attention sort come from the last fetch,
-   * and a scan does not fetch, so without this the sidebar could not see a
-   * repository that fell behind overnight. Fetch rather than sync: nothing in
-   * a working tree moves on its own at launch. It waits for the first sweep
-   * to resolve: the cached rows arrive a render before the preferences do,
-   * and a fetch planned from that render includes the hidden repositories.
-   */
-  const fetchLaunched = useRef(false);
-  useEffect(() => {
-    if (fetchLaunched.current || !swept || batchCandidates.length === 0) return;
-    fetchLaunched.current = true;
-    if (!settings().launch.fetch) return;
-    if (Math.floor(Date.now() / 1000) - fetchedAt > 600) fetchAll();
-  }, [swept, batchCandidates, fetchedAt, fetchAll]);
-
-  /**
-   * Opens a fresh pick stage.
-   *
-   * The epoch is what remounts the dialog. Ctrl+K reaches the palette over an
-   * open transcript, so asking for a prune while a finished sync was still on
-   * screen left the dialog mounted and holding the sixteen repositories the
-   * sync had selected.
-   */
-  /**
-   * One read on launch when the cached copy has gone stale.
-   *
-   * Without it the sidebar badge stays at whatever it was when the app last
-   * closed, which is a number that looks live and is not. Ten minutes by
-   * default, from the GitHub section of the settings, because a read costs
-   * eight points of five thousand an hour.
-   */
-  const inboxLaunched = useRef(false);
-  useEffect(() => {
-    if (inboxLaunched.current) return;
-    if (!info?.gh.version || !info.gh.loggedIn) return;
-    inboxLaunched.current = true;
-    const age = inbox ? Math.floor(Date.now() / 1000) - inbox.fetchedAt : Infinity;
-    if (age > settings().github.launchStaleMinutes * 60) refreshInbox();
-  }, [info, inbox, refreshInbox]);
-
-  const openBatch = useCallback((kind: BatchKind) => {
-    setBatchKind(kind);
-    setBatch(null);
-    setBatchEpoch((n) => n + 1);
-    setBatchOpen(true);
-  }, []);
 
   const paletteItems = useMemo<PaletteItem[]>(() => {
     const items: PaletteItem[] = [];
@@ -2136,7 +1831,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         setPendingCommand({ path, command, typeOnly });
         // Anything `gh` writes changes the next read. A line left at the
         // prompt has not been run, so it arms nothing.
-        if (!typeOnly && command.startsWith("gh ")) inboxAfter.current = { path, command };
+        if (!typeOnly && command.startsWith("gh ")) armAfter(path, command);
       }}
       onMerge={(item, method, command) => {
         const base = item.baseRef ?? "the base branch";
@@ -2168,7 +1863,7 @@ ${landing} ${cleanup}${warning}`,
           onConfirm: () => {
             setSelectedPath(item.repoPath);
             setPendingCommand({ path: item.repoPath, command, typeOnly: false });
-            inboxAfter.current = { path: item.repoPath, command, drops: itemKey(item) };
+            armAfter(item.repoPath, command, itemKey(item));
           },
         });
       }}
@@ -2663,9 +2358,7 @@ gh pr view ${branchPr.number} --web`}
           candidates={batchCandidates}
           run={batch}
           onStart={(paths) => runBatch(batchKind, paths)}
-          onCancel={() => {
-            batchStopped.current = true;
-          }}
+          onCancel={stopBatch}
           onSelect={(path) => {
             setSelectedPath(path);
             setBatchOpen(false);

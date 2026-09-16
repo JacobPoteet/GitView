@@ -62,6 +62,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | Path | Holds |
 | --- | --- |
 | `src/` | React frontend. Components, plus `lib/api.ts` mirroring the Rust command surface, `lib/shell.ts` quoting the commands that get typed at a prompt, and `lib/settings.ts` holding the app's own settings in `localStorage` |
+| `src/hooks/` | State that left `App.tsx`: `useInbox`, `useBatch`, `useUpdate`. Each owns its state and returns what the render needs; a feature that grows a handful of state goes here rather than into `App` |
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
 | `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index, and one commit against its first parent |
