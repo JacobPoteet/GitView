@@ -79,6 +79,14 @@ export const api = {
   githubIssue: (ownerRepo: string, number: number) =>
     invoke<IssueDetail>("github_issue", { ownerRepo, number }),
 
+  /**
+   * Writes a commit message out under GitView's data folder and hands back
+   * the path, which is the argument the typed `git commit -F` needs. Only a
+   * message with a body comes here; a subject alone is quoted inline.
+   */
+  commitMessageFile: (path: string, message: string) =>
+    invoke<string>("commit_message_file", { path, message }),
+
   /** The latest release, read through gh. One call, at launch. */
   updateCheck: () => invoke<UpdateCheck>("update_check"),
 

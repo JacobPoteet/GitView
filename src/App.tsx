@@ -2187,6 +2187,7 @@ gh pr view ${branchPr.number} --web`}
           onOpenDiff={openDiff}
           onDiscard={askDiscard}
           onCopy={copy}
+          onNote={setNote}
         />
       )}
 

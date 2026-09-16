@@ -38,20 +38,22 @@ export function quote(value: string, kind: ShellKind): string {
  * `git commit` with a message, as one line.
  *
  * A newline typed at a prompt submits the command, so a message with a body
- * becomes one `-m` per paragraph, which is how git assembles a body anyway. A
- * message that is only a subject stays a single `-m`.
+ * cannot be typed as it was written. A subject alone is `-m` and reads at the
+ * prompt. A subject with a body goes out to a file under GitView's data folder
+ * and `-F` carries the path, the same answer an issue body gets, so a list in
+ * the body keeps its line breaks: one `-m` per paragraph, the shape this took
+ * until 16 Sep 2026, joined the lines inside a paragraph with spaces.
  */
-export function commitCommand(message: string, kind: ShellKind, amend = false): string {
-  const paragraphs = message
-    .split(/\n\s*\n/)
-    .map((part) => part.trim().replace(/\s*\n\s*/g, " "))
-    .filter(Boolean);
-
+export function commitCommand(
+  subject: string,
+  messageFile: string | null,
+  kind: ShellKind,
+  amend = false,
+): string {
   const parts = ["git", "commit"];
   if (amend) parts.push("--amend");
-  for (const paragraph of paragraphs) {
-    parts.push("-m", quote(paragraph, kind));
-  }
+  if (messageFile) parts.push("-F", quote(messageFile, kind));
+  else parts.push("-m", quote(subject.trim(), kind));
   return parts.join(" ");
 }
 

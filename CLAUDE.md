@@ -71,6 +71,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |
 | `src-tauri/src/update.rs` | The launch check against the latest GitHub release, through the same `gh` invocation |
 | `src-tauri/src/pty.rs` | Terminal sessions, and the base64 that hands the shell its prompt hook |
+| `src-tauri/src/scratch.rs` | The files a typed command names because its argument cannot be typed: the folder under the data dir, the one sweep, the slug, and the commit message writer |
 | `src-tauri/src/shell_integration.ps1` | The OSC 133 hook. Source, not an asset: `include_str!` puts it in the binary |
 | `src-tauri/src/tasks.rs` | Task discovery across manifests |
 | `src-tauri/src/cache.rs` | SQLite. Cached scans, saved tasks, settings, and the pin and hide preferences |
@@ -98,6 +99,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | Staging and committing type their commands too | A single-repository action always has a shell to type into, and the output belongs where the user already looks. Only a fleet-wide action may run out of sight, because one shell would serialise twelve repositories behind whatever is at that prompt |
 | A fleet-wide operation keeps a transcript, and the transcript holds what a scrollback would | Fetch-all got away with a count because it has no output worth reading. Sync and prune do, so `lib/batch.ts` records the command as typed, the exit code and both streams per repository, and `git branch -d`'s `(was abc1234)` lines can be copied out. A batch with no transcript is an action that happened where nobody can see it |
 | An operation that runs out of sight reports what failed | `git_run` resolves with an exit code rather than throwing, so catching the promise sees almost nothing. Read `code` |
+| An argument nobody can type goes out as a file under GitView's data folder, through `scratch.rs` | A hunk, an issue body and a commit message with a description are the three so far. Each writer used to carry its own sweep; `scratch::dir` is the one that remains, and a new one calls it rather than copying the loop. A subject-only commit stays `-m`, because that reads at the prompt and `-F` for one line would not |
 | A batch reads the repository again between its commands | `ahead` and `behind` come from the last sweep, and a fetch is what changes them. Planning the pull from cached counts skips the repository that became fast-forwardable one command ago |
 | The prompt hook wraps the user's prompt and touches nothing on disk | Overwriting `prompt` discards Starship and oh-my-posh. The script is handed over as `-EncodedCommand` after the profile has loaded, so it captures whatever is there. Never write to a profile without asking |
 | A terminal line number is checked against the command text before it is used | ConPTY repaints on resize and can duplicate a line, and `cls` rewrites lines in place, so a marker stops describing what it was taken from. `anchor` in `TerminalPane.tsx` is the only way to turn a block into a line |

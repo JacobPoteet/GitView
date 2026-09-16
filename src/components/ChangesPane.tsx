@@ -7,6 +7,7 @@ import {
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { isUntracked, type DiffTarget, type FileChange, type RepoState } from "../lib/types";
+import { api } from "../lib/api";
 import { commitCommand, openFileCommand, quote, type ShellKind } from "../lib/shell";
 
 interface Props {
@@ -32,6 +33,8 @@ interface Props {
   onDiscard: (rows: FileChange[], all: boolean) => void;
   /** Copies, and says so in the status bar. `what` finishes "Copied …". */
   onCopy: (text: string, what: string) => void;
+  /** One line in the status bar, for a message file that could not be written. */
+  onNote: (text: string) => void;
 }
 
 /**
@@ -236,6 +239,7 @@ export default function ChangesPane({
   onOpenDiff,
   onDiscard,
   onCopy,
+  onNote,
 }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -318,20 +322,30 @@ export default function ChangesPane({
     );
   }
 
-  // The subject and the body go to git the way it wants them: one `-m` each.
-  // `commitCommand` splits on the blank line and adds one per paragraph after.
+  // A subject alone is `-m` and reads at the prompt. A body goes out to a file
+  // under GitView's data folder and `-F` carries the path, so a list in it
+  // keeps its line breaks. The path is only known once the file is written,
+  // which is at the click, so the hint names the file's place rather than the
+  // file; the typed line has the real path in it.
   const subject = title.trim();
-  const message = body.trim() ? `${subject}
-
-${body.trim()}` : subject;
-  const command = subject ? commitCommand(message, shell) : "";
+  const described = body.trim().length > 0;
+  const command = subject ? commitCommand(subject, described ? "<message file>" : null, shell) : "";
   // git refuses an empty commit anyway, and a message with nothing staged is the
   // mistake worth catching before it reaches the prompt.
   const ready = staged.length > 0 && subject.length > 0 && !disabled;
 
-  function commit() {
-    if (!ready) return;
-    onCommand(command, false);
+  async function commit() {
+    if (!ready || !repo) return;
+    let messageFile: string | null = null;
+    if (described) {
+      try {
+        messageFile = await api.commitMessageFile(repo.path, `${subject}\n\n${body.trim()}\n`);
+      } catch (err) {
+        onNote(String(err));
+        return;
+      }
+    }
+    onCommand(commitCommand(subject, messageFile, shell), false);
     setTitle("");
     setBody("");
   }
@@ -434,7 +448,7 @@ ${body.trim()}` : subject;
           <button
             className="commit-body-toggle"
             onClick={() => setBodyOpen(true)}
-            title="Add a description under the subject, one -m per paragraph"
+            title="Add a description under the subject. It goes to git as a file, so line breaks survive."
           >
             <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path
