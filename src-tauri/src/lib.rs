@@ -231,9 +231,14 @@ async fn repo_graph(path: String) -> Result<BranchGraph, String> {
 /// could not work them out from what it holds. The walk runs from the top each
 /// time and only the window is turned into rows.
 #[tauri::command]
-async fn repo_history(path: String, offset: usize, limit: usize) -> Result<History, String> {
+async fn repo_history(
+    path: String,
+    offset: usize,
+    limit: usize,
+    filter: Option<history::Filter>,
+) -> Result<History, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        history::read(&PathBuf::from(&path), offset, limit)
+        history::read(&PathBuf::from(&path), offset, limit, filter.as_ref())
     })
     .await
     .map_err(|e| e.to_string())

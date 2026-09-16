@@ -10,7 +10,15 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { commitMenu } from "./BranchGraph";
 import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
-import { relativeTime, signedTitle, type HistoryRef, type HistoryRow, type Squashed } from "../lib/types";
+import {
+  parseHistoryFilter,
+  relativeTime,
+  signedTitle,
+  type HistoryFilter,
+  type HistoryRef,
+  type HistoryRow,
+  type Squashed,
+} from "../lib/types";
 
 interface Props {
   repoPath: string;
@@ -180,8 +188,30 @@ export default function HistoryPane({
   const [head, setHead] = useState<string | null>(null);
   const [reading, setReading] = useState(true);
   const [done, setDone] = useState(false);
-
+  /**
+   * The filter field's text, and the filter it parses to. The field is what
+   * is typed; the filter is what the read takes, and it is re-read on a
+   * short debounce rather than a keystroke, since each read walks every
+   * commit to test it. Kept per pane rather than per repository: a filter
+   * is a question about the history on screen, not a preference.
+   */
   const scroller = useRef<HTMLDivElement | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<HistoryFilter | null>(null);
+  const [filtered, setFiltered] = useState(false);
+  useEffect(() => {
+    const next = parseHistoryFilter(query);
+    const timer = window.setTimeout(() => {
+      setFilter((was) => {
+        // A new question starts at the top: the place kept for the unfiltered
+        // list means nothing in a list of forty matches.
+        if (JSON.stringify(was) !== JSON.stringify(next)) scroller.current?.scrollTo(0, 0);
+        return next;
+      });
+    }, next ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(600);
@@ -273,7 +303,7 @@ export default function HistoryPane({
       const mine = offset === 0 ? ++generation.current : generation.current;
       loading.current = true;
       try {
-        const page = await api.repoHistory(repoPath, offset, limit);
+        const page = await api.repoHistory(repoPath, offset, limit, filter);
         if (mine !== generation.current) return;
         if (page.error) {
           onError(page.error);
@@ -285,6 +315,7 @@ export default function HistoryPane({
         setCrowded((was) => was || page.crowded);
         setLanes((was) => Math.max(was, page.lanes));
         setHead(page.head);
+        setFiltered(page.filtered);
         setRows((current) =>
           offset === 0 ? page.rows : [...current, ...page.rows],
         );
@@ -300,7 +331,7 @@ export default function HistoryPane({
         }
       }
     },
-    [repoPath, onError],
+    [repoPath, onError, filter],
   );
 
   // The first run is the mount, and it reads far enough to cover the place
@@ -444,7 +475,8 @@ export default function HistoryPane({
     }
   }, [rows, first, last, scrollTop, viewport, lanes]);
 
-  const gutter = Math.min(lanes, 16) * LANE + LANE;
+  // A filtered list is flat, and one lane's worth of gutter is all it needs.
+  const gutter = (filtered ? 1 : Math.min(lanes, 16)) * LANE + LANE;
 
   // Both ends of the join, by the two things a row knows about itself: its own
   // id, and the branch names sitting on it.
@@ -470,7 +502,27 @@ export default function HistoryPane({
             crowded
           </span>
         )}
-        <span className="history-count">
+        <span className="history-filter">
+          <input
+            value={query}
+            spellCheck={false}
+            placeholder="Filter: text, author:name, path:src/lib"
+            title="Matches the message. author: matches the name or email, path: keeps commits that changed that file or folder, like git log -- path."
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              className="history-filter-clear"
+              onClick={() => setQuery("")}
+              title="Clear the filter"
+              aria-label="Clear the filter"
+            >
+              ✕
+            </button>
+          )}
+        </span>
+        <span className="history-count" title={filtered ? "Commits matching the filter" : undefined}>
+          {filtered && "matching "}
           {rows.length.toLocaleString()} of {total.toLocaleString()}
           {capped && "+"}
         </span>
@@ -503,7 +555,9 @@ export default function HistoryPane({
             allocates a forty-thousand-row bitmap. */}
         <canvas className="history-canvas" ref={canvas} aria-hidden />
 
-        {rows.length === 0 && !reading && <p className="empty">No commits here yet.</p>}
+        {rows.length === 0 && !reading && (
+          <p className="empty">{filtered ? "Nothing matches." : "No commits here yet."}</p>
+        )}
         {rows.length === 0 && reading && <p className="empty">Reading the history…</p>}
 
         <div className="history-rows" style={{ height: rows.length * ROW }}>

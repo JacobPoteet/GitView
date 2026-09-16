@@ -283,6 +283,34 @@ export interface HistoryRow {
 }
 
 /** One page of the whole DAG, with its lanes already packed by the backend. */
+/**
+ * What narrows the history. Every field is a case-insensitive substring, and
+ * a commit has to satisfy all of them. See `Filter` in history.rs.
+ */
+export interface HistoryFilter {
+  text?: string;
+  author?: string;
+  path?: string;
+}
+
+/**
+ * One field's text into the three filters, the way the palette reads kinds:
+ * `author:` and `path:` prefixes take the word after them, and everything
+ * else is matched against the message. `path:src/lib` keeps the slashes.
+ */
+export function parseHistoryFilter(query: string): HistoryFilter | null {
+  const filter: HistoryFilter = {};
+  const words: string[] = [];
+  for (const token of query.trim().split(/\s+/)) {
+    if (!token) continue;
+    const m = /^(author|path):(.*)$/i.exec(token);
+    if (m && m[2]) filter[m[1].toLowerCase() as "author" | "path"] = m[2];
+    else if (!m) words.push(token);
+  }
+  if (words.length > 0) filter.text = words.join(" ");
+  return filter.text || filter.author || filter.path ? filter : null;
+}
+
 export interface History {
   rows: HistoryRow[];
   offset: number;
@@ -294,6 +322,8 @@ export interface History {
   /** Some commit wanted a seventeenth lane and got the sixteenth. */
   crowded: boolean;
   head: string | null;
+  /** A filter was applied: the rows are the matches, flat, in one lane. */
+  filtered: boolean;
   error: string | null;
 }
 
