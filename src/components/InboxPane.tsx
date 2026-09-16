@@ -7,6 +7,7 @@ import {
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
+import { settings, updateSettings } from "../lib/settings";
 import {
   issueCommentCommand,
   issueCreateCommand,
@@ -76,8 +77,6 @@ interface Group {
 /** Which question the groups are answering. */
 type Mode = "need" | "repo";
 
-const MODE_KEY = "gitview.inbox.mode";
-const COLLAPSED_KEY = "gitview.inbox.collapsed";
 
 /** The three colours a check can be. Skipped and cancelled read as neither passed nor failed. */
 function checkTone(state: InboxItem["checks"] | CheckRun["state"]): "ok" | "bad" | "pending" | "off" {
@@ -99,17 +98,10 @@ function CheckMark({ state }: { state: InboxItem["checks"] }) {
   );
 }
 
-const METHOD_KEY = "gitview.inbox.mergeMethod";
-
 /** The merge method last picked for this repository, if the repository still allows it. */
 function storedMethod(item: InboxItem): MergeMethod {
-  let picked: string | null = null;
-  try {
-    picked = localStorage.getItem(`${METHOD_KEY}:${item.ownerRepo}`);
-  } catch {
-    picked = null;
-  }
-  if (picked && item.mergeMethods.includes(picked as MergeMethod)) return picked as MergeMethod;
+  const picked = settings().github.mergeMethod[item.ownerRepo];
+  if (picked && item.mergeMethods.includes(picked)) return picked;
   return item.mergeMethods[0] ?? "squash";
 }
 
@@ -151,11 +143,9 @@ function Desk({
 
   const pick = (next: MergeMethod) => {
     setMethod(next);
-    try {
-      localStorage.setItem(`${METHOD_KEY}:${item.ownerRepo}`, next);
-    } catch {
-      // A private window. The choice lasts the session.
-    }
+    updateSettings("github", {
+      mergeMethod: { ...settings().github.mergeMethod, [item.ownerRepo]: next },
+    });
   };
 
   const block = mergeBlock(item);
@@ -1046,16 +1036,10 @@ Typed into ${item.repoName}'s shell.`;
   // By repo to start with. A fleet's inbox is mostly one repository's backlog
   // at a time, and reading it in project order is what somebody opening it asks
   // for; the need groups are one click away and the choice sticks.
-  const [mode, setMode] = useState<Mode>(
-    () => (localStorage.getItem(MODE_KEY) === "need" ? "need" : "repo"),
+  const [mode, setMode] = useState<Mode>(() => settings().inbox.mode);
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(settings().inbox.collapsed),
   );
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as string[]);
-    } catch {
-      return new Set();
-    }
-  });
   const [composing, setComposing] = useState<"issue" | "pr" | null>(null);
   // Which desks are showing. Not persisted: a desk is opened to act on a row,
   // and the next time the pane opens the question is a new one.
@@ -1066,11 +1050,11 @@ Typed into ${item.repoName}'s shell.`;
   }, [openKey]);
 
   useEffect(() => {
-    localStorage.setItem(MODE_KEY, mode);
+    updateSettings("inbox", { mode });
   }, [mode]);
 
   useEffect(() => {
-    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+    updateSettings("inbox", { collapsed: [...collapsed] });
   }, [collapsed]);
 
   const groups = useMemo<Group[]>(() => {

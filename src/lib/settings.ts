@@ -2,17 +2,20 @@
  * The app's own settings, in one place.
  *
  * Every choice here is about this window and this install: how big the
- * terminal's type is, whether the app fetches on launch. None of it is about
- * a repository, which is why it lives in `localStorage` beside the graph's
- * collapsed flag rather than in SQLite beside the pins. The watched folders
+ * terminal's type is, whether the app fetches on launch, whether the graph is
+ * folded away. None of it is about a repository, which is why it lives in
+ * `localStorage` rather than in SQLite beside the pins. The watched folders
  * stay in the database because the scanner reads them from Rust.
  *
  * One JSON blob under one key, merged over the defaults on read, so a setting
  * added later reads as its default on an install that never saw it and a
- * setting removed later is ignored rather than crashing the parse.
+ * setting removed later is ignored rather than crashing the parse. This is the
+ * only module that touches `localStorage`: a key written anywhere else is a
+ * setting the dialog cannot show.
  */
 
 import { useSyncExternalStore } from "react";
+import type { MergeMethod } from "./types";
 
 export interface Settings {
   terminal: {
@@ -31,37 +34,115 @@ export interface Settings {
     /** Ask GitHub for the latest release at launch. Only a word in the status bar either way. */
     checkUpdate: boolean;
   };
+  graph: {
+    /** The branch graph folded to its strip. */
+    collapsed: boolean;
+  };
+  inbox: {
+    /** Rows grouped by repository, or by what each one needs. */
+    mode: "repo" | "need";
+    /** The group headings folded shut, by their key. */
+    collapsed: string[];
+  };
+  github: {
+    /**
+     * The merge method last picked per `owner/repo`. About a repository, but
+     * about this person's habit with it rather than its state, and the desk
+     * reads it synchronously when it opens, so it sits here rather than in
+     * SQLite.
+     */
+    mergeMethod: Record<string, MergeMethod>;
+  };
 }
 
 export const DEFAULTS: Settings = {
   terminal: { fontSize: 12.5, screenReader: false },
   launch: { fetch: true, checkUpdate: true },
+  graph: { collapsed: false },
+  inbox: { mode: "repo", collapsed: [] },
+  github: { mergeMethod: {} },
 };
 
 export const FONT_SIZE_MIN = 9;
 export const FONT_SIZE_MAX = 20;
 
 const KEY = "gitview.settings";
-/** The key screen reader mode had before there was a settings object. */
-const LEGACY_READER_KEY = "gitview.terminal.screenReader";
+
+/**
+ * The keys each setting had before it joined the object. Read once, when the
+ * object has nothing for that setting yet, and removed on the next write.
+ */
+const LEGACY = {
+  /** Screen reader mode, from the palette before the settings dialog existed. */
+  reader: "gitview.terminal.screenReader",
+  graph: "gitview.graph.collapsed",
+  inboxMode: "gitview.inbox.mode",
+  inboxCollapsed: "gitview.inbox.collapsed",
+  /** A prefix: one key per repository, `:owner/repo` after it. */
+  mergeMethod: "gitview.inbox.mergeMethod",
+};
 
 type Stored = { [K in keyof Settings]?: Partial<Settings[K]> };
+
+function getItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** Every `localStorage` key, for the one legacy setting that was a family of keys. */
+function keys(): string[] {
+  try {
+    return Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? "");
+  } catch {
+    return [];
+  }
+}
 
 function read(): Settings {
   let stored: Stored = {};
   try {
-    stored = JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {};
+    stored = JSON.parse(getItem(KEY) ?? "{}") ?? {};
   } catch {
     stored = {};
   }
   const settings: Settings = {
     terminal: { ...DEFAULTS.terminal, ...stored.terminal },
     launch: { ...DEFAULTS.launch, ...stored.launch },
+    graph: { ...DEFAULTS.graph, ...stored.graph },
+    inbox: { ...DEFAULTS.inbox, ...stored.inbox },
+    github: { ...DEFAULTS.github, ...stored.github },
   };
-  // A choice made through the palette before the settings dialog existed.
-  const legacy = localStorage.getItem(LEGACY_READER_KEY);
-  if (legacy !== null && stored.terminal?.screenReader === undefined) {
-    settings.terminal.screenReader = legacy === "1";
+  const reader = getItem(LEGACY.reader);
+  if (reader !== null && stored.terminal?.screenReader === undefined) {
+    settings.terminal.screenReader = reader === "1";
+  }
+  const graph = getItem(LEGACY.graph);
+  if (graph !== null && stored.graph?.collapsed === undefined) {
+    settings.graph.collapsed = graph === "1";
+  }
+  const mode = getItem(LEGACY.inboxMode);
+  if (mode === "need" && stored.inbox?.mode === undefined) {
+    settings.inbox.mode = "need";
+  }
+  const collapsed = getItem(LEGACY.inboxCollapsed);
+  if (collapsed !== null && stored.inbox?.collapsed === undefined) {
+    try {
+      const parsed: unknown = JSON.parse(collapsed);
+      if (Array.isArray(parsed)) settings.inbox.collapsed = parsed.filter((k) => typeof k === "string");
+    } catch {
+      // Not what it wrote. The default stands.
+    }
+  }
+  if (stored.github?.mergeMethod === undefined) {
+    const prefix = `${LEGACY.mergeMethod}:`;
+    for (const key of keys()) {
+      if (!key.startsWith(prefix)) continue;
+      const picked = getItem(key);
+      if (picked) settings.github.mergeMethod[key.slice(prefix.length)] = picked as MergeMethod;
+    }
   }
   if (!Number.isFinite(settings.terminal.fontSize)) {
     settings.terminal.fontSize = DEFAULTS.terminal.fontSize;
@@ -88,8 +169,17 @@ export function settings(): Settings {
  */
 export function updateSettings<K extends keyof Settings>(key: K, patch: Partial<Settings[K]>) {
   current = { ...current, [key]: { ...current[key], ...patch } };
-  localStorage.setItem(KEY, JSON.stringify(current));
-  localStorage.removeItem(LEGACY_READER_KEY);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(current));
+    // The object now holds everything the old keys did.
+    for (const legacy of keys()) {
+      if (Object.values(LEGACY).some((old) => legacy === old || legacy.startsWith(`${old}:`))) {
+        localStorage.removeItem(legacy);
+      }
+    }
+  } catch {
+    // A private window. The choice lasts the session.
+  }
   for (const listener of listeners) listener();
 }
 
@@ -104,4 +194,13 @@ export function subscribeSettings(listener: () => void) {
 /** The settings, re-rendering whoever asked when any of them change. */
 export function useSettings(): Settings {
   return useSyncExternalStore(subscribeSettings, settings);
+}
+
+/**
+ * One value out of the settings, re-rendering only when that value changes.
+ * For `App`, which wants the graph's flag and not a render per step of the
+ * type-size slider.
+ */
+export function useSetting<T>(select: (settings: Settings) => T): T {
+  return useSyncExternalStore(subscribeSettings, () => select(current));
 }
