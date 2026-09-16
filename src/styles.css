@@ -4114,6 +4114,8 @@ button.inbox-check-name.link:hover {
 
 .btn.danger:hover:not(:disabled) {
   background: color-mix(in oklch, var(--red) 16%, transparent);
+}
+
 /* The amend toggle beside Commit. A bare word rather than a button, on until
    the next commit, so the row still reads as one action and its modifier. */
 .commit-amend {
