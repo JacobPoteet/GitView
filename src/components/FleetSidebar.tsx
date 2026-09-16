@@ -38,6 +38,7 @@ interface Props {
   /** Copies, and says so in the status bar. `what` finishes "Copied …". */
   onCopy: (text: string, what: string) => void;
   onManageRoots: () => void;
+  onOpenSettings: () => void;
 }
 
 function BranchIcon() {
@@ -386,6 +387,7 @@ export default function FleetSidebar({
   onCloseShell,
   onCopy,
   onManageRoots,
+  onOpenSettings,
 }: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const menu = useContextMenu<RepoState>();
@@ -575,6 +577,24 @@ export default function FleetSidebar({
             {inboxWaiting > 0 && <span className="badge-count">{inboxWaiting}</span>}
           </button>
         )}
+        {/* Settings sit beside the inbox: both are about the app rather than
+            about the repository that happens to be open. */}
+        <button
+          className="icon-btn"
+          onClick={onOpenSettings}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.3" />
+            <path
+              d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         {/* The one refresh. It lives beside the folders button because that is
             the one row on screen whether or not a repository is open. */}
         <button

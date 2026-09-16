@@ -7,6 +7,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { api } from "../lib/api";
 import type { CommandBlock } from "../lib/types";
+import { settings, subscribeSettings } from "../lib/settings";
 
 /**
  * Sessions live in this module rather than in component state, so switching to
@@ -49,27 +50,32 @@ interface Session {
 const sessions = new Map<string, Session>();
 
 /**
- * Whether every terminal keeps a live region a screen reader can follow.
+ * The settings every terminal shares: the type size and whether xterm keeps
+ * a live region a screen reader can follow.
  *
- * The WebGL renderer draws to a canvas, so without this there is no terminal
- * text in the DOM at all. xterm's mode mirrors each line into an off-screen
- * element as it is written, which costs on every frame a dev server prints,
- * so it stays off until someone asks. The palette toggles it and the choice
- * survives a restart.
+ * `lib/settings` owns the values. This applies them to every open session
+ * when they change, and `getSession` reads them for every session opened
+ * after. A size change refits the attached session so the shell learns its
+ * new column count, and the rest refit when they next attach.
  */
-const READER_KEY = "gitview.terminal.screenReader";
-let screenReader = localStorage.getItem(READER_KEY) === "1";
-
-export function screenReaderMode(): boolean {
-  return screenReader;
+function applyTerminalSettings() {
+  const { fontSize, screenReader } = settings().terminal;
+  for (const session of sessions.values()) {
+    session.term.options.screenReaderMode = screenReader;
+    if (session.term.options.fontSize !== fontSize) {
+      session.term.options.fontSize = fontSize;
+      if (session.host.isConnected) {
+        try {
+          session.fit.fit();
+          api.ptyResize(session.id, session.term.cols, session.term.rows).catch(() => undefined);
+        } catch {
+          // Measured mid-transition. The ResizeObserver refits on the next frame.
+        }
+      }
+    }
+  }
 }
-
-/** Applies to every open session and to every one opened after. */
-export function setScreenReaderMode(on: boolean) {
-  screenReader = on;
-  localStorage.setItem(READER_KEY, on ? "1" : "0");
-  for (const session of sessions.values()) session.term.options.screenReaderMode = on;
-}
+subscribeSettings(applyTerminalSettings);
 
 // Driving the window over the WebView2 debug port is how this project checks a
 // terminal change, and none of the state worth checking is in the DOM. Vite
@@ -451,7 +457,7 @@ function getSession(id: string): Session {
 
   const term = new Terminal({
     fontFamily: 'Cascadia Code, JetBrains Mono, Consolas, ui-monospace, monospace',
-    fontSize: 12.5,
+    fontSize: settings().terminal.fontSize,
     lineHeight: 1.35,
     letterSpacing: 0,
     cursorBlink: true,
@@ -459,7 +465,7 @@ function getSession(id: string): Session {
     scrollback: 20000,
     theme: THEME,
     allowProposedApi: true,
-    screenReaderMode: screenReader,
+    screenReaderMode: settings().terminal.screenReader,
   });
 
   const fit = new FitAddon();
