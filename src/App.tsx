@@ -10,7 +10,7 @@ import TerminalPane, {
 } from "./components/TerminalPane";
 import BlockBar from "./components/BlockBar";
 import TaskList from "./components/TaskList";
-import BranchGraph from "./components/BranchGraph";
+import BranchGraph, { type ResetMode } from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
 import ChangesPane from "./components/ChangesPane";
 import CommitFilesPane from "./components/CommitFilesPane";
@@ -734,6 +734,9 @@ export default function App() {
         // palette's own close before this listener runs, so the state already
         // says closed by the time the event gets here.
         if (target instanceof Element && target.closest(".palette")) return;
+        // A right-click menu closes itself on Escape too, and the pane it was
+        // opened over stays. Read from the DOM for the same reason.
+        if (document.querySelector(".row-menu")) return;
         // The commit pane sits over the history it was opened from, so Escape
         // peels it and leaves the history where it was. A second Escape closes
         // everything, as before. Only when it is the thing on screen, though:
@@ -1412,6 +1415,36 @@ export default function App() {
     [selectedPath],
   );
 
+  /**
+   * Moving the branch to a commit. Asks first, once per mode, with one
+   * sentence on what that mode keeps: soft leaves everything staged, mixed
+   * leaves it unstaged, and hard throws it away, which is the discard rule.
+   * The commits left behind stay in the reflog, and the dialog says how to
+   * find them.
+   */
+  const askReset = useCallback(
+    (commit: { id: string; short: string; summary: string }, mode: ResetMode) => {
+      if (!selected?.branch || selected.detached) return;
+      const command = `git reset --${mode} ${commit.short}`;
+      const keeps =
+        mode === "soft"
+          ? "Everything between here and the current tip stays in the working tree and in the index, staged, as if it had been added and never committed."
+          : mode === "mixed"
+            ? "Everything between here and the current tip stays in the working tree, unstaged. The index is reset."
+            : "The working tree and the index are set to this commit. Every uncommitted change is thrown away, and there is no reflog for those.";
+      setConfirmation({
+        title: `Reset ${selected.branch} to ${commit.short}`,
+        body: `${commit.summary}
+
+${keeps} The commits above it are no longer on ${selected.branch}, and git reflog is where they stay reachable.`,
+        command,
+        confirmLabel: mode === "hard" ? "Reset and discard" : "Reset",
+        onConfirm: () => emit(command),
+      });
+    },
+    [selected, emit],
+  );
+
   const tagLines = useMemo(() => {
     if (!pendingTag) return [];
     const name = pendingTag.name.trim();
@@ -2052,6 +2085,8 @@ ${landing} ${cleanup}${warning}`,
       onOpen={openCommit}
       onDeleteBranch={askDeleteBranch}
       onTag={askTag}
+      onReset={askReset}
+      headBranch={selected.detached ? null : selected.branch}
       remoteTags={remoteTags}
       hasRemote={hasRemote}
       onCopy={copy}
@@ -2249,6 +2284,7 @@ gh pr view ${branchPr.number} --web`}
               onOpen={openCommit}
               onCopy={copy}
               onTag={askTag}
+              onReset={askReset}
               branches={selected.branches}
               shell={shell}
             />

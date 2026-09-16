@@ -273,6 +273,8 @@ export interface HistoryRow {
   signature: SignatureKind | null;
   /** The commit HEAD is on, on a branch or detached. */
   isHead: boolean;
+  /** Reachable from HEAD. A cherry-pick of it would apply nothing. */
+  inHead: boolean;
   /** The column this commit's node sits in. */
   lane: number;
   /**

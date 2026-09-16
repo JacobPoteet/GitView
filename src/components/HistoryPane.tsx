@@ -7,7 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
-import { commitMenu } from "./BranchGraph";
+import { commitMenu, type ResetMode } from "./BranchGraph";
 import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
 import {
@@ -58,6 +58,9 @@ interface Props {
   onDeleteBranch: (name: string) => void;
   /** Tagging asks for a name first, and the app owns that dialog too. */
   onTag: (commit: { id: string; short: string; summary: string }) => void;
+  onReset: (commit: { id: string; short: string; summary: string }, mode: ResetMode) => void;
+  /** The branch HEAD is on, for the menu's labels. Null when detached. */
+  headBranch: string | null;
   /**
    * What origin has under `refs/tags/`, by name, peeled to the commit. Null
    * until `git ls-remote` has answered, or when there is no origin to ask,
@@ -180,6 +183,8 @@ export default function HistoryPane({
   onOpen,
   onDeleteBranch,
   onTag,
+  onReset,
+  headBranch,
   remoteTags,
   hasRemote,
   onCopy,
@@ -305,7 +310,7 @@ export default function HistoryPane({
       ];
     }
     const tips = row.refs.filter(isBranch).map((r) => ({ name: r.name, isHead: r.kind === "head" }));
-    return commitMenu(row, tips, shell, onCommand, onCopy, onTag);
+    return commitMenu(row, tips, { shell, headBranch, onCommand, onCopy, onTag, onReset });
   }
 
   const loadPage = useCallback(
