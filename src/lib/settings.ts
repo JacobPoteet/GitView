@@ -45,6 +45,14 @@ export interface Settings {
     collapsed: string[];
   };
   github: {
+    /** Read the inbox on a timer at all. Off for a laptop on a metered connection. */
+    poll: boolean;
+    /** Minutes between reads while a recent pull request has checks running. */
+    busyMinutes: number;
+    /** Minutes between reads otherwise. */
+    idleMinutes: number;
+    /** How old the cached inbox can be at launch before it is read again. Minutes. */
+    launchStaleMinutes: number;
     /**
      * The merge method last picked per `owner/repo`. About a repository, but
      * about this person's habit with it rather than its state, and the desk
@@ -60,11 +68,27 @@ export const DEFAULTS: Settings = {
   launch: { fetch: true, checkUpdate: true },
   graph: { collapsed: false },
   inbox: { mode: "repo", collapsed: [] },
-  github: { mergeMethod: {} },
+  github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
 };
 
 export const FONT_SIZE_MIN = 9;
 export const FONT_SIZE_MAX = 20;
+/** An interval under a minute is a poll GitHub would notice; over a day is off with extra steps. */
+export const MINUTES_MIN = 1;
+export const MINUTES_MAX = 1440;
+/**
+ * What one read of the inbox costs against GitHub's 5000 points an hour,
+ * measured over ten repositories with the check contexts in the query. The
+ * dialog states it beside each interval, so the trade is visible where it is
+ * made.
+ */
+export const INBOX_READ_COST = 8;
+export const RATE_LIMIT_PER_HOUR = 5000;
+
+function minutes(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(MINUTES_MAX, Math.max(MINUTES_MIN, Math.round(value)));
+}
 
 const KEY = "gitview.settings";
 
@@ -151,6 +175,10 @@ function read(): Settings {
     FONT_SIZE_MAX,
     Math.max(FONT_SIZE_MIN, settings.terminal.fontSize),
   );
+  const gh = settings.github;
+  gh.busyMinutes = minutes(gh.busyMinutes, DEFAULTS.github.busyMinutes);
+  gh.idleMinutes = minutes(gh.idleMinutes, DEFAULTS.github.idleMinutes);
+  gh.launchStaleMinutes = minutes(gh.launchStaleMinutes, DEFAULTS.github.launchStaleMinutes);
   return settings;
 }
 

@@ -935,15 +935,16 @@ export default function App() {
    *
    * Once a minute while a pull request in the list has checks running, no
    * checks reported yet, or a merge GitHub is still computing, and otherwise
-   * every ten. The whole fleet reads at cost 8 of 5000 an hour, so the fast
-   * rate is affordable, but it is held to pull requests that moved in the
-   * last hour: a stranger's PR whose checks never ran would otherwise keep
-   * the fast rate on for good. The null rollup counts because Actions takes
-   * a moment to register a check after a push, and the first read after
-   * `gh pr create` lands inside that moment.
+   * every ten, both from the GitHub section of the settings. The whole fleet
+   * reads at cost 8 of 5000 an hour, so the fast rate is affordable, but it is
+   * held to pull requests that moved in the last hour: a stranger's PR whose
+   * checks never ran would otherwise keep the fast rate on for good. The null
+   * rollup counts because Actions takes a moment to register a check after a
+   * push, and the first read after `gh pr create` lands inside that moment.
    */
+  const github = useSetting((s) => s.github);
   useEffect(() => {
-    if (!info?.gh.version || !info.gh.loggedIn) return;
+    if (!info?.gh.version || !info.gh.loggedIn || !github.poll) return;
     const hourAgo = Date.now() - 3_600_000;
     const busy = (inbox?.items ?? []).some(
       (item) =>
@@ -954,12 +955,12 @@ export default function App() {
           item.checks === "EXPECTED" ||
           item.mergeable === "UNKNOWN"),
     );
-    const every = busy ? 60_000 : 600_000;
+    const every = (busy ? github.busyMinutes : github.idleMinutes) * 60_000;
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") refreshInbox();
     }, every);
     return () => window.clearInterval(timer);
-  }, [info, inbox, refreshInbox]);
+  }, [info, inbox, refreshInbox, github]);
 
   // Read through a ref so `refreshRepo` keeps one identity. Each session holds
   // the copy it was handed when its pane was open, and a copy that had the
@@ -1609,8 +1610,9 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
    * One read on launch when the cached copy has gone stale.
    *
    * Without it the sidebar badge stays at whatever it was when the app last
-   * closed, which is a number that looks live and is not. Ten minutes because
-   * the query costs one point out of five thousand an hour.
+   * closed, which is a number that looks live and is not. Ten minutes by
+   * default, from the GitHub section of the settings, because a read costs
+   * eight points of five thousand an hour.
    */
   const inboxLaunched = useRef(false);
   useEffect(() => {
@@ -1618,7 +1620,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
     if (!info?.gh.version || !info.gh.loggedIn) return;
     inboxLaunched.current = true;
     const age = inbox ? Math.floor(Date.now() / 1000) - inbox.fetchedAt : Infinity;
-    if (age > 600) refreshInbox();
+    if (age > settings().github.launchStaleMinutes * 60) refreshInbox();
   }, [info, inbox, refreshInbox]);
 
   const openBatch = useCallback((kind: BatchKind) => {
