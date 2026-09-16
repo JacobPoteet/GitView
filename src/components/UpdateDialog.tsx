@@ -1,5 +1,6 @@
 import { installUpdateCommand, openUrlCommand, type ShellKind } from "../lib/shell";
 import { relativeTime, type UpdateCheck } from "../lib/types";
+import Dialog from "./Dialog";
 
 interface Props {
   check: UpdateCheck;
@@ -40,58 +41,12 @@ export default function UpdateDialog({
   const size = release.assetSize ? `${(release.assetSize / 1_048_576).toFixed(1)} MB` : null;
 
   return (
-    <div
-      className="confirm-backdrop"
-      role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <div
-        className="confirm update"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`GitView ${release.version}`}
-      >
-        <h2>
-          GitView {release.version}
-          <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-            ✕
-          </button>
-        </h2>
-        <p>
-          You are on {check.current}. Released{" "}
-          {Number.isNaN(published) ? "recently" : relativeTime(Math.floor(published / 1000))}
-          {size ? `, ${size}` : ""}.
-        </p>
-
-        {release.notes && <pre className="update-notes">{release.notes}</pre>}
-
-        {command ? (
-          <>
-            <pre>{command}</pre>
-            <p>
-              {target ? (
-                <>
-                  It gets typed at <b>{target}</b>&apos;s prompt, so the download is visible while
-                  it happens.
-                </>
-              ) : (
-                <>
-                  Nothing is open, so GitView opens a shell of its own in its data folder and
-                  types it there, where the download is visible while it happens.
-                </>
-              )}{" "}
-              Hold <kbd>Shift</kbd> to type the line without running it.{" "}
-              The installer asks to close GitView before it replaces it.
-            </p>
-          </>
-        ) : (
-          <p>
-            The release is up but has no installer attached yet, which is what the release build
-            uploads when it finishes. The notes are on the release page in the meantime.
-          </p>
-        )}
-
-        <div className="confirm-actions">
+    <Dialog
+      label={`GitView ${release.version}`}
+      className="update"
+      onClose={onClose}
+      actions={
+        <>
           <button
             className="btn"
             title={openUrlCommand(release.url, shell)}
@@ -113,8 +68,42 @@ export default function UpdateDialog({
               Install {release.version}
             </button>
           )}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p>
+        You are on {check.current}. Released{" "}
+        {Number.isNaN(published) ? "recently" : relativeTime(Math.floor(published / 1000))}
+        {size ? `, ${size}` : ""}.
+      </p>
+
+      {release.notes && <pre className="update-notes">{release.notes}</pre>}
+
+      {command ? (
+        <>
+          <pre>{command}</pre>
+          <p>
+            {target ? (
+              <>
+                It gets typed at <b>{target}</b>&apos;s prompt, so the download is visible while
+                it happens.
+              </>
+            ) : (
+              <>
+                Nothing is open, so GitView opens a shell of its own in its data folder and
+                types it there, where the download is visible while it happens.
+              </>
+            )}{" "}
+            Hold <kbd>Shift</kbd> to type the line without running it.{" "}
+            The installer asks to close GitView before it replaces it.
+          </p>
+        </>
+      ) : (
+        <p>
+          The release is up but has no installer attached yet, which is what the release build
+          uploads when it finishes. The notes are on the release page in the meantime.
+        </p>
+      )}
+    </Dialog>
   );
 }

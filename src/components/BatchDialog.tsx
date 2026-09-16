@@ -12,6 +12,7 @@ import {
   type BatchRun,
 } from "../lib/batch";
 import type { RepoState } from "../lib/types";
+import Dialog from "./Dialog";
 
 interface Props {
   kind: BatchKind;
@@ -120,71 +121,12 @@ export default function BatchDialog({
   if (!run) {
     const verb = verbFor[kind];
     return (
-      <div
-        className="confirm-backdrop"
-        role="presentation"
-        onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      >
-        <div
-          className="confirm wide"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${verb} ${picked.size} of ${candidates.length} repositories`}
-        >
-          <h2>
-            {verb} {picked.size} of {candidates.length} repositories
-            <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-              ✕
-            </button>
-          </h2>
-          <p>{BLURB[kind]}</p>
-
-          <div className="batch-pick-head">
-            <button
-              className="link-btn"
-              onClick={() => setPicked(new Set(eligible.map((r) => r.path)))}
-            >
-              All {eligible.length}
-            </button>
-            <button className="link-btn" onClick={() => setPicked(new Set())}>
-              None
-            </button>
-            {eligible.length < candidates.length && (
-              <span className="batch-muted-note">
-                {candidates.length - eligible.length} cannot be picked
-              </span>
-            )}
-          </div>
-
-          <div className="batch-list">
-            {listed.map((repo) => {
-              const blocked = isSkip(gate(kind, repo));
-              const on = picked.has(repo.path);
-              return (
-                <label
-                  key={repo.path}
-                  className={`batch-pick${blocked ? " blocked" : ""}`}
-                  title={repo.path}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={blocked}
-                    onChange={() => toggle(repo.path)}
-                  />
-                  <span className="batch-pick-name">{repo.name}</span>
-                  <span className="batch-pick-hint">{previewOf(kind, repo)}</span>
-                  {kind === "prune" && repo.mergedBranches.length > 0 && (
-                    <code className="batch-pick-command">
-                      git branch -d {repo.mergedBranches.join(" ")}
-                    </code>
-                  )}
-                </label>
-              );
-            })}
-          </div>
-
-          <div className="confirm-actions">
+      <Dialog
+        label={`${verb} ${picked.size} of ${candidates.length} repositories`}
+        className="wide"
+        onClose={onClose}
+        actions={
+          <>
             <button className="btn" onClick={onClose}>
               Cancel
             </button>
@@ -197,9 +139,56 @@ export default function BatchDialog({
                 ? `Delete ${branchTotal} ${branchTotal === 1 ? "branch" : "branches"}`
                 : `${verb} ${picked.size}`}
             </button>
-          </div>
+          </>
+        }
+      >
+        <p>{BLURB[kind]}</p>
+
+        <div className="batch-pick-head">
+          <button
+            className="link-btn"
+            onClick={() => setPicked(new Set(eligible.map((r) => r.path)))}
+          >
+            All {eligible.length}
+          </button>
+          <button className="link-btn" onClick={() => setPicked(new Set())}>
+            None
+          </button>
+          {eligible.length < candidates.length && (
+            <span className="batch-muted-note">
+              {candidates.length - eligible.length} cannot be picked
+            </span>
+          )}
         </div>
-      </div>
+
+        <div className="batch-list">
+          {listed.map((repo) => {
+            const blocked = isSkip(gate(kind, repo));
+            const on = picked.has(repo.path);
+            return (
+              <label
+                key={repo.path}
+                className={`batch-pick${blocked ? " blocked" : ""}`}
+                title={repo.path}
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={blocked}
+                  onChange={() => toggle(repo.path)}
+                />
+                <span className="batch-pick-name">{repo.name}</span>
+                <span className="batch-pick-hint">{previewOf(kind, repo)}</span>
+                {kind === "prune" && repo.mergedBranches.length > 0 && (
+                  <code className="batch-pick-command">
+                    git branch -d {repo.mergedBranches.join(" ")}
+                  </code>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      </Dialog>
     );
   }
 
@@ -218,86 +207,23 @@ export default function BatchDialog({
   if (skipped > 0) tally.push(`${skipped} skipped`);
   if (failed > 0) tally.push(`${failed} failed`);
   return (
-    <div
-      className="confirm-backdrop"
-      role="presentation"
-      onMouseDown={(e) => !run.running && e.target === e.currentTarget && onClose()}
-    >
-      <div
-        className="confirm wide"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${verbFor[run.kind]} ${run.running ? "running" : "finished"}`}
-      >
-        <h2>
+    <Dialog
+      label={`${verbFor[run.kind]} ${run.running ? "running" : "finished"}`}
+      title={
+        <>
           {run.running
             ? `${verbFor[run.kind]}ing ${run.done + 1} of ${run.rows.length}`
             : `${verbFor[run.kind]} finished · ${tally.join(", ")}`}
           {run.cancelled && " · stopped"}
-          {/* A run still going keeps its dialog: this is the only place the
-              commands it is about to type are named. */}
-          {!run.running && (
-            <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-              ✕
-            </button>
-          )}
-        </h2>
-        <p>
-          Every command it ran is here with its exit code and its output, which is what a shell would
-          have shown. Clicking a name opens that repository, where the same command can be run by
-          hand.
-        </p>
-
-        <div className="batch-list transcript">
-          {run.rows.map((row) => {
-            const open = opened.has(row.path) || row.failed || run.kind === "prune";
-            return (
-              <div key={row.path} className={`batch-row ${row.state}`}>
-                <div className="batch-row-head">
-                  <span
-                    className={`dot ${
-                      row.state === "waiting"
-                        ? "clean"
-                        : row.state === "running"
-                          ? "live"
-                          : row.failed
-                            ? "error"
-                            : "clean"
-                    }`}
-                  />
-                  <button className="report-name" onClick={() => onSelect(row.path)} title={row.path}>
-                    {row.name}
-                  </button>
-                  <span className={row.failed ? "batch-headline bad" : "batch-headline"}>
-                    {row.state === "waiting"
-                      ? run.cancelled
-                        ? "not reached"
-                        : "waiting"
-                      : row.headline || "running"}
-                  </span>
-                  {row.steps.length > 0 && !row.failed && run.kind !== "prune" && (
-                    <button
-                      className="link-btn"
-                      onClick={() =>
-                        setOpened((current) => {
-                          const next = new Set(current);
-                          if (next.has(row.path)) next.delete(row.path);
-                          else next.add(row.path);
-                          return next;
-                        })
-                      }
-                    >
-                      {open ? "hide" : "commands"}
-                    </button>
-                  )}
-                </div>
-                {open && row.steps.length > 0 && <StepList row={row} />}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="confirm-actions">
+        </>
+      }
+      className="wide"
+      // A run still going keeps its dialog: this is the only place the
+      // commands it is about to type are named.
+      closable={!run.running}
+      onClose={onClose}
+      actions={
+        <>
           <button className="btn" onClick={() => onCopy(transcriptText(run))}>
             Copy transcript
           </button>
@@ -306,8 +232,63 @@ export default function BatchDialog({
               Stop after this one
             </button>
           )}
-        </div>
+        </>
+      }
+    >
+      <p>
+        Every command it ran is here with its exit code and its output, which is what a shell would
+        have shown. Clicking a name opens that repository, where the same command can be run by
+        hand.
+      </p>
+
+      <div className="batch-list transcript">
+        {run.rows.map((row) => {
+          const open = opened.has(row.path) || row.failed || run.kind === "prune";
+          return (
+            <div key={row.path} className={`batch-row ${row.state}`}>
+              <div className="batch-row-head">
+                <span
+                  className={`dot ${
+                    row.state === "waiting"
+                      ? "clean"
+                      : row.state === "running"
+                        ? "live"
+                        : row.failed
+                          ? "error"
+                          : "clean"
+                  }`}
+                />
+                <button className="report-name" onClick={() => onSelect(row.path)} title={row.path}>
+                  {row.name}
+                </button>
+                <span className={row.failed ? "batch-headline bad" : "batch-headline"}>
+                  {row.state === "waiting"
+                    ? run.cancelled
+                      ? "not reached"
+                      : "waiting"
+                    : row.headline || "running"}
+                </span>
+                {row.steps.length > 0 && !row.failed && run.kind !== "prune" && (
+                  <button
+                    className="link-btn"
+                    onClick={() =>
+                      setOpened((current) => {
+                        const next = new Set(current);
+                        if (next.has(row.path)) next.delete(row.path);
+                        else next.add(row.path);
+                        return next;
+                      })
+                    }
+                  >
+                    {open ? "hide" : "commands"}
+                  </button>
+                )}
+              </div>
+              {open && row.steps.length > 0 && <StepList row={row} />}
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </Dialog>
   );
 }

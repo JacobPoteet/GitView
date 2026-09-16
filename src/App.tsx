@@ -9,6 +9,7 @@ import TerminalPane, {
   subscribeBlocks,
 } from "./components/TerminalPane";
 import BlockBar from "./components/BlockBar";
+import Dialog from "./components/Dialog";
 import TaskList from "./components/TaskList";
 import BranchGraph, { type ResetMode } from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
@@ -2515,124 +2516,44 @@ gh pr view ${branchPr.number} --web`}
       )}
 
       {pendingTask && (
-        <div
-          className="confirm-backdrop"
-          role="presentation"
-          onMouseDown={(e) => e.target === e.currentTarget && setPendingTask(null)}
-        >
-          <form
-            className="confirm"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Keep this command as a task"
-            onSubmit={(e) => {
-              e.preventDefault();
-              saveTask();
-            }}
-          >
-            <h2>
-              Keep this command as a task
-              <button
-                type="button"
-                className="pane-close"
-                onClick={() => setPendingTask(null)}
-                title="Close (Escape)"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </h2>
-            <p>
-              It joins this repository's list above anything discovery found, and running it types
-              the same line you just typed. Nothing is written into the repository: the task lives
-              in GitView's own database, keyed on this folder.
-            </p>
-            <pre>{pendingTask.command}</pre>
-            <input
-              className="text-input"
-              autoFocus
-              value={pendingTask.name}
-              placeholder="A name for it"
-              onChange={(e) => setPendingTask({ ...pendingTask, name: e.target.value })}
-            />
-            <div className="confirm-actions">
+        <Dialog
+          label="Keep this command as a task"
+          onClose={() => setPendingTask(null)}
+          onSubmit={saveTask}
+          actions={
+            <>
               <button type="button" className="btn" onClick={() => setPendingTask(null)}>
                 Cancel
               </button>
               <button type="submit" className="btn accent" disabled={!pendingTask.name.trim()}>
                 Save the task
               </button>
-            </div>
-          </form>
-        </div>
+            </>
+          }
+        >
+          <p>
+            It joins this repository's list above anything discovery found, and running it types
+            the same line you just typed. Nothing is written into the repository: the task lives
+            in GitView's own database, keyed on this folder.
+          </p>
+          <pre>{pendingTask.command}</pre>
+          <input
+            className="text-input"
+            autoFocus
+            value={pendingTask.name}
+            placeholder="A name for it"
+            onChange={(e) => setPendingTask({ ...pendingTask, name: e.target.value })}
+          />
+        </Dialog>
       )}
 
       {pendingTag && (
-        <div
-          className="confirm-backdrop"
-          role="presentation"
-          onMouseDown={(e) => e.target === e.currentTarget && setPendingTag(null)}
-        >
-          <form
-            className="confirm"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Tag ${pendingTag.commit.short}`}
-            onSubmit={(e) => {
-              e.preventDefault();
-              createTag();
-            }}
-          >
-            <h2>
-              Tag {pendingTag.commit.short}
-              <button
-                type="button"
-                className="pane-close"
-                onClick={() => setPendingTag(null)}
-                title="Close (Escape)"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </h2>
-            <p>
-              {pendingTag.commit.summary}
-              {"\n"}A message makes it an annotated tag, the kind a release wants. Without one it is
-              a lightweight tag, a name and nothing else.
-            </p>
-            <div className="tag-fields">
-              <input
-                className="text-input"
-                autoFocus
-                spellCheck={false}
-                value={pendingTag.name}
-                placeholder="v1.2.0"
-                title={
-                  tagNameTaken
-                    ? "A tag by that name already exists here."
-                    : pendingTag.name && !tagNameOk
-                      ? "git would refuse this name."
-                      : undefined
-                }
-                onChange={(e) => setPendingTag({ ...pendingTag, name: e.target.value })}
-              />
-              <textarea
-                value={pendingTag.message}
-                placeholder="Message, for an annotated tag. Leave it empty for a lightweight one."
-                onChange={(e) => setPendingTag({ ...pendingTag, message: e.target.value })}
-              />
-              <label className={hasRemote ? undefined : "off"}>
-                <input
-                  type="checkbox"
-                  checked={pendingTag.push && hasRemote}
-                  disabled={!hasRemote}
-                  onChange={(e) => setPendingTag({ ...pendingTag, push: e.target.checked })}
-                />
-                {hasRemote ? "Push it to origin too" : "No origin to push to"}
-              </label>
-            </div>
-            <pre>{tagLines.join("\n")}</pre>
-            <div className="confirm-actions">
+        <Dialog
+          label={`Tag ${pendingTag.commit.short}`}
+          onClose={() => setPendingTag(null)}
+          onSubmit={createTag}
+          actions={
+            <>
               <button type="button" className="btn" onClick={() => setPendingTag(null)}>
                 Cancel
               </button>
@@ -2652,9 +2573,47 @@ gh pr view ${branchPr.number} --web`}
               >
                 {pendingTag.push && hasRemote ? "Tag and push" : "Create tag"}
               </button>
-            </div>
-          </form>
-        </div>
+            </>
+          }
+        >
+          <p>
+            {pendingTag.commit.summary}
+            {"\n"}A message makes it an annotated tag, the kind a release wants. Without one it is
+            a lightweight tag, a name and nothing else.
+          </p>
+          <div className="tag-fields">
+            <input
+              className="text-input"
+              autoFocus
+              spellCheck={false}
+              value={pendingTag.name}
+              placeholder="v1.2.0"
+              title={
+                tagNameTaken
+                  ? "A tag by that name already exists here."
+                  : pendingTag.name && !tagNameOk
+                    ? "git would refuse this name."
+                    : undefined
+              }
+              onChange={(e) => setPendingTag({ ...pendingTag, name: e.target.value })}
+            />
+            <textarea
+              value={pendingTag.message}
+              placeholder="Message, for an annotated tag. Leave it empty for a lightweight one."
+              onChange={(e) => setPendingTag({ ...pendingTag, message: e.target.value })}
+            />
+            <label className={hasRemote ? undefined : "off"}>
+              <input
+                type="checkbox"
+                checked={pendingTag.push && hasRemote}
+                disabled={!hasRemote}
+                onChange={(e) => setPendingTag({ ...pendingTag, push: e.target.checked })}
+              />
+              {hasRemote ? "Push it to origin too" : "No origin to push to"}
+            </label>
+          </div>
+          <pre>{tagLines.join("\n")}</pre>
+        </Dialog>
       )}
 
       {updateOpen && update && (
@@ -2693,26 +2652,11 @@ gh pr view ${branchPr.number} --web`}
       )}
 
       {confirmation && (
-        <div
-          className="confirm-backdrop"
-          role="presentation"
-          onMouseDown={(e) => e.target === e.currentTarget && setConfirmation(null)}
-        >
-          <div className="confirm" role="dialog" aria-modal="true" aria-label={confirmation.title}>
-            <h2>
-              {confirmation.title}
-              <button
-                className="pane-close"
-                onClick={() => setConfirmation(null)}
-                title="Close (Escape)"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </h2>
-            <p>{confirmation.body}</p>
-            {confirmation.command && <pre>{confirmation.command}</pre>}
-            <div className="confirm-actions">
+        <Dialog
+          label={confirmation.title}
+          onClose={() => setConfirmation(null)}
+          actions={
+            <>
               <button className="btn" onClick={() => setConfirmation(null)}>
                 Cancel
               </button>
@@ -2725,9 +2669,12 @@ gh pr view ${branchPr.number} --web`}
               >
                 {confirmation.confirmLabel}
               </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          <p>{confirmation.body}</p>
+          {confirmation.command && <pre>{confirmation.command}</pre>}
+        </Dialog>
       )}
       <Splash done={booted} />
     </div>
