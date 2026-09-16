@@ -35,6 +35,8 @@ interface Props {
   onCopy: (text: string, what: string) => void;
   /** One line in the status bar, for a message file that could not be written. */
   onNote: (text: string) => void;
+  /** Opens the history filtered to this path. */
+  onFileHistory: (file: string) => void;
 }
 
 /**
@@ -240,6 +242,7 @@ export default function ChangesPane({
   onDiscard,
   onCopy,
   onNote,
+  onFileHistory,
 }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -333,6 +336,11 @@ export default function ChangesPane({
         run: (typeOnly) => onCommand(verb, typeOnly),
       },
       { label: "Open diff", run: () => onOpenDiff(change.path, change.staged) },
+      {
+        label: "History of this file",
+        title: `git log -- ${arg}, as the history pane's path: filter`,
+        run: () => onFileHistory(change.path),
+      },
       {
         label: "Open",
         title: deleted ? "Nothing on disk to open." : opener,

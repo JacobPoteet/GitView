@@ -172,6 +172,27 @@ export default function App() {
    */
   const [historyOpen, setHistoryOpen] = useState(false);
   /**
+   * A filter the history opens on, from "History of this file" in the
+   * changes column, the commit's file list or the diff pane. The epoch is
+   * bumped per ask so the same file can be asked for again after the
+   * filter was cleared; see HistoryPane's `seed`.
+   */
+  const [historySeed, setHistorySeed] = useState<{ query: string; epoch: number } | null>(null);
+  /** The whole history, with no filter left over from a file's. */
+  const openHistory = useCallback(() => {
+    setHistorySeed(null);
+    setHistoryOpen(true);
+  }, []);
+  const openFileHistory = useCallback((file: string) => {
+    // A path with a space in it would split into two words at the field.
+    // None here has one, and the filter would still match on the first
+    // half; the field is a filter rather than a form.
+    setHistorySeed((was) => ({ query: `path:${file}`, epoch: (was?.epoch ?? 0) + 1 }));
+    setCommitTarget(null);
+    setDiffTarget(null);
+    setHistoryOpen(true);
+  }, []);
+  /**
    * The commit the commit pane is open on, if any.
    *
    * Carries the repository like the diff target does, so a selection change
@@ -486,6 +507,7 @@ export default function App() {
    */
   useEffect(() => {
     setHistoryOpen(false);
+    setHistorySeed(null);
   }, [selectedPath]);
 
   useEffect(() => {
@@ -1665,7 +1687,7 @@ export default function App() {
         label: `History of ${selected.name}`,
         kind: "fleet",
         hint: "every commit on every branch",
-        run: () => setHistoryOpen(true),
+        run: () => openHistory(),
       });
       items.push({
         id: "action:pin",
@@ -2022,7 +2044,10 @@ ${landing} ${cleanup}${warning}`,
         prunableCount > 0 ? pruneCommands(prunable).join("\n") : "No merged branches to delete"
       }
       onPrune={() => setConfirmation(pruneConfirmation(selected, squashed))}
-      onClose={() => setHistoryOpen(false)}
+      onClose={() => {
+        setHistoryOpen(false);
+        setHistorySeed(null);
+      }}
       onCommand={emit}
       onOpen={openCommit}
       onDeleteBranch={askDeleteBranch}
@@ -2031,6 +2056,7 @@ ${landing} ${cleanup}${warning}`,
       hasRemote={hasRemote}
       onCopy={copy}
       onError={setNote}
+      seed={historySeed}
     />
   ) : diffTarget ? (
     <DiffPane
@@ -2042,6 +2068,7 @@ ${landing} ${cleanup}${warning}`,
          exactly when a diff can have changed under the pane. */
       reloadKey={changes}
       onSide={(staged) => setDiffTarget({ ...diffTarget, staged })}
+      onFileHistory={() => openFileHistory(diffTarget.file)}
       onClose={() => setDiffTarget(null)}
       onCommand={emit}
       onError={setNote}
@@ -2217,7 +2244,7 @@ gh pr view ${branchPr.number} --web`}
               collapsed={graphCollapsed}
               squashed={headSquashed}
               onToggle={toggleGraph}
-              onHistory={() => setHistoryOpen(true)}
+              onHistory={openHistory}
               onCommand={emit}
               onOpen={openCommit}
               onCopy={copy}
@@ -2301,6 +2328,7 @@ gh pr view ${branchPr.number} --web`}
           onCopy={copy}
           onNote={setNote}
           onClose={() => setCommitTarget(null)}
+          onFileHistory={openFileHistory}
         />
       ) : (
         <ChangesPane
@@ -2314,6 +2342,7 @@ gh pr view ${branchPr.number} --web`}
           onDiscard={askDiscard}
           onCopy={copy}
           onNote={setNote}
+          onFileHistory={openFileHistory}
         />
       )}
 

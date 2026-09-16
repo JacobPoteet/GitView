@@ -68,6 +68,13 @@ interface Props {
   hasRemote: boolean;
   onCopy: (text: string, what: string) => void;
   onError: (message: string) => void;
+  /**
+   * A filter to open on, from "History of this file" somewhere else. The
+   * epoch is what makes asking for the same file twice take twice: the pane
+   * keeps its own field, and a prop that only changed when the text did
+   * could not reopen a filter the person had since cleared.
+   */
+  seed: { query: string; epoch: number } | null;
 }
 
 /** What a right-click landed on: a commit row, or a branch chip sitting on one. */
@@ -177,6 +184,7 @@ export default function HistoryPane({
   hasRemote,
   onCopy,
   onError,
+  seed,
 }: Props) {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const menu = useContextMenu<Target>();
@@ -196,8 +204,11 @@ export default function HistoryPane({
    * is a question about the history on screen, not a preference.
    */
   const scroller = useRef<HTMLDivElement | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(seed?.query ?? "");
   const [filter, setFilter] = useState<HistoryFilter | null>(null);
+  useEffect(() => {
+    if (seed) setQuery(seed.query);
+  }, [seed]);
   const [filtered, setFiltered] = useState(false);
   useEffect(() => {
     const next = parseHistoryFilter(query);

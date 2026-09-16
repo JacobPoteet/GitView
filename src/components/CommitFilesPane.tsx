@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
-import { openFileCommand, type ShellKind } from "../lib/shell";
+import { openFileCommand, quote, type ShellKind } from "../lib/shell";
 import type { CommitDiff, CommitFile, CommitTarget, FileChange } from "../lib/types";
 
 interface Props {
@@ -19,6 +19,8 @@ interface Props {
   /** The status bar, for a write that failed. */
   onNote: (text: string) => void;
   onClose: () => void;
+  /** Opens the history filtered to this path. */
+  onFileHistory: (file: string) => void;
 }
 
 /** One letter per state, the same letters the working tree's rows use. */
@@ -55,6 +57,7 @@ export default function CommitFilesPane({
   onCopy,
   onNote,
   onClose,
+  onFileHistory,
 }: Props) {
   const files = commit?.files ?? [];
   const menu = useContextMenu<CommitFile>();
@@ -86,6 +89,11 @@ export default function CommitFilesPane({
             .then((path) => onCommand(openFileCommand(path, shell), typeOnly))
             .catch((err) => onNote(String(err)));
         },
+      },
+      {
+        label: "History of this file",
+        title: `git log -- ${quote(entry.path, shell)}, as the history pane's path: filter`,
+        run: () => onFileHistory(entry.path),
       },
       { label: "Copy path", run: () => onCopy(entry.path, "the path") },
     ];
