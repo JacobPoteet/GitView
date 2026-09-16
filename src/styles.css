@@ -774,6 +774,37 @@ select:focus-visible,
   color: var(--text-dim);
 }
 
+/* The shell tabs. The same faint mono as the bar; the one on screen is the
+   bar's own dim, and `+` is a tab with nothing behind it yet. */
+.terminal-tab {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  margin: 0 -2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.terminal-tab:hover {
+  background: var(--bg-raised);
+  color: var(--text-dim);
+}
+
+.terminal-tab.on {
+  color: var(--text-dim);
+  background: var(--bg-raised);
+}
+
+.terminal-tab.add {
+  padding: 0 5px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .pane-tab-bar .tab-path {
   overflow: hidden;
   text-overflow: ellipsis;

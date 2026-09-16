@@ -10,6 +10,7 @@ import { api } from "../lib/api";
 import type { CommandBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
 import { isClaimed } from "../lib/keys";
+import { nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
 
 /**
  * Sessions live in this module rather than in component state, so switching to
@@ -573,16 +574,20 @@ function loadRenderer(session: Session) {
 
 interface Props {
   repoPath: string | null;
+  /** The shell on screen: the path for the first, `path#2` for the next. See `lib/sessions.ts`. */
+  sessionId: string | null;
+  /** A tab was clicked, or `+` asked for one more. */
+  onSelectTab: (sessionId: string) => void;
   /** False once the shell has been closed on purpose, until it is asked for
    *  again. Without it the pane would open a replacement on the next render and
    *  there would still be no way to end a session. */
   open: boolean;
   /** Fires once output has been quiet for a beat, which is when a hand-typed
-   *  commit is worth picking up in the sidebar. */
-  onSettled: (repoPath: string) => void;
-  onLiveChange: (repoPath: string, live: boolean) => void;
-  onRequestClose: (repoPath: string) => void;
-  onReopen: (repoPath: string) => void;
+   *  commit is worth picking up in the sidebar. Named by session id. */
+  onSettled: (sessionId: string) => void;
+  onLiveChange: (sessionId: string, live: boolean) => void;
+  onRequestClose: (sessionId: string) => void;
+  onReopen: (sessionId: string) => void;
   /** The status bar, for the one thing the menu can fail at: a paste the
    *  clipboard refused to hand over. */
   onNote: (text: string) => void;
@@ -593,6 +598,8 @@ interface Props {
 
 export default function TerminalPane({
   repoPath,
+  sessionId,
+  onSelectTab,
   open,
   onSettled,
   onLiveChange,
@@ -616,27 +623,35 @@ export default function TerminalPane({
   const [searchText, setSearchText] = useState("");
   const [searchHits, setSearchHits] = useState<{ index: number; count: number } | null>(null);
   const searchField = useRef<HTMLInputElement>(null);
-  const session = repoPath ? sessions.get(repoPath) : undefined;
+  const session = sessionId ? sessions.get(sessionId) : undefined;
 
   useEffect(() => {
     setSearchOpen(false);
     setSearchText("");
     setSearchHits(null);
-  }, [repoPath]);
+  }, [sessionId]);
 
   useEffect(() => {
-    if (!repoPath || !open) return;
-    const found = sessions.get(repoPath);
+    if (!sessionId || !open) return;
+    const found = sessions.get(sessionId);
     if (!found) return;
     const sub = found.search.onDidChangeResults((r) =>
       setSearchHits(r.resultCount >= 0 ? { index: r.resultIndex, count: r.resultCount } : null),
     );
     return () => sub.dispose();
-  }, [repoPath, open]);
+  }, [sessionId, open]);
 
   useEffect(() => {
     if (searchOpen) searchField.current?.focus();
   }, [searchOpen]);
+
+  // The first tab is always drawn, so a repository whose only shell was
+  // closed still shows where a new one goes; the rest are whatever sessions
+  // exist plus the one being opened, which is not in the map until its effect
+  // runs.
+  const tabs = repoPath
+    ? sessionsOf(repoPath, new Set([repoPath, ...sessions.keys(), ...(sessionId ? [sessionId] : [])]))
+    : [];
 
   function runSearch(text: string, backwards = false, incremental = false) {
     if (!session) return;
@@ -678,7 +693,7 @@ export default function TerminalPane({
    * a right-click means, so the row is built here rather than asked for.
    */
   function shellMenu(): MenuEntry[] {
-    const session = repoPath ? sessions.get(repoPath) : undefined;
+    const session = sessionId ? sessions.get(sessionId) : undefined;
     const selection = session?.term.getSelection() ?? "";
     return [
       {
@@ -717,25 +732,30 @@ export default function TerminalPane({
         label: "Clear",
         title: "clear",
         run: (typeOnly) => {
-          if (!repoPath) return;
-          if (typeOnly) api.ptyWrite(repoPath, "clear").catch(() => undefined);
-          else sendCommand(repoPath, "clear");
+          if (!sessionId) return;
+          if (typeOnly) api.ptyWrite(sessionId, "clear").catch(() => undefined);
+          else sendCommand(sessionId, "clear");
         },
+      },
+      {
+        label: "New shell here",
+        title: "Another prompt in the same folder, for when this one is holding a dev server",
+        run: () => repoPath && onSelectTab(nextSessionId(repoPath, sessions.keys())),
       },
       {
         label: "Close shell",
         danger: true,
         title: "Ends the session, and whatever is running in it",
-        run: () => repoPath && onRequestClose(repoPath),
+        run: () => sessionId && onRequestClose(sessionId),
       },
     ];
   }
 
   useEffect(() => {
-    if (!repoPath || !open || !containerRef.current) return;
+    if (!repoPath || !sessionId || !open || !containerRef.current) return;
 
     const container = containerRef.current;
-    const session = getSession(repoPath);
+    const session = getSession(sessionId);
     session.onSettled = onSettled;
 
     container.replaceChildren(session.host);
@@ -753,27 +773,27 @@ export default function TerminalPane({
       try {
         // `attached` only says a channel was handed over, so a shell that has
         // since exited still has to be reopened.
-        const alive = session.attached ? await api.ptyAlive(repoPath) : false;
+        const alive = session.attached ? await api.ptyAlive(sessionId) : false;
         if (!alive) {
-          await api.ptyOpen(repoPath, repoPath, cols, rows, (chunk) => receive(session, chunk));
+          await api.ptyOpen(sessionId, repoPath, cols, rows, (chunk) => receive(session, chunk));
           session.attached = true;
         }
-        onLiveChange(repoPath, true);
+        onLiveChange(sessionId, true);
         session.term.focus();
       } catch (err) {
         session.term.write(`\r\n\x1b[31m${String(err)}\x1b[0m\r\n`);
-        onLiveChange(repoPath, false);
+        onLiveChange(sessionId, false);
       }
     })();
 
     const onData = session.term.onData((data) => {
-      api.ptyWrite(repoPath, data).catch(() => undefined);
+      api.ptyWrite(sessionId, data).catch(() => undefined);
     });
 
     const observer = new ResizeObserver(() => {
       try {
         session.fit.fit();
-        api.ptyResize(repoPath, session.term.cols, session.term.rows).catch(() => undefined);
+        api.ptyResize(sessionId, session.term.cols, session.term.rows).catch(() => undefined);
       } catch {
         // The pane can be measured mid-transition, where fit throws. Harmless.
       }
@@ -789,9 +809,9 @@ export default function TerminalPane({
       // while they were away. Ending one is a separate, deliberate act; see
       // `closeSession`.
     };
-  }, [repoPath, open, onSettled, onLiveChange]);
+  }, [repoPath, sessionId, open, onSettled, onLiveChange]);
 
-  if (!repoPath) {
+  if (!repoPath || !sessionId) {
     return (
       <div className="terminal-pane">
         <div className="pane-tab-bar">
@@ -802,19 +822,46 @@ export default function TerminalPane({
     );
   }
 
+  // One tab per shell in this folder. The first is "shell" and the rest count
+  // up from the highest still open; the `+` opens the next. Drawn in the closed
+  // state too, so a second shell stays reachable after the first is ended.
+  const tabBar = (
+    <>
+      {tabs.map((id) => (
+        <button
+          key={id}
+          className={`terminal-tab${id === sessionId ? " on" : ""}`}
+          onClick={() => onSelectTab(id)}
+          aria-current={id === sessionId ? "true" : undefined}
+          title={id}
+        >
+          {sessionLabel(id)}
+        </button>
+      ))}
+      <button
+        className="terminal-tab add"
+        onClick={() => onSelectTab(nextSessionId(repoPath, sessions.keys()))}
+        title="Another shell in this folder, for when this one is holding a dev server"
+        aria-label="Open another shell here"
+      >
+        +
+      </button>
+      <span style={{ color: "var(--line-strong)" }}>·</span>
+    </>
+  );
+
   if (!open) {
     return (
       // `closed` so a pane sharing the column does not give a third of it to a
       // button. There is no scrollback here to keep in sight.
       <div className="terminal-pane closed">
         <div className="pane-tab-bar">
-          <span>shell</span>
-          <span style={{ color: "var(--line-strong)" }}>·</span>
+          {tabBar}
           <span>closed</span>
         </div>
         <div className="empty">
           <p>The shell for this repository is closed.</p>
-          <button className="btn" onClick={() => onReopen(repoPath)}>
+          <button className="btn" onClick={() => onReopen(sessionId)}>
             Open a shell
           </button>
         </div>
@@ -835,8 +882,7 @@ export default function TerminalPane({
       }}
     >
       <div className="pane-tab-bar">
-        <span>shell</span>
-        <span style={{ color: "var(--line-strong)" }}>·</span>
+        {tabBar}
         <span className="tab-path">{repoPath}</span>
         {searchOpen && (
           <span className="history-filter terminal-search">
@@ -867,8 +913,8 @@ export default function TerminalPane({
         )}
         <button
           className="pane-close"
-          onClick={() => onRequestClose(repoPath)}
-          title="Close this shell"
+          onClick={() => onRequestClose(sessionId)}
+          title={`Close ${sessionLabel(sessionId)}`}
         >
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
             <path
@@ -898,7 +944,12 @@ export default function TerminalPane({
   );
 }
 
-/** Puts the cursor in a repository's shell, when it has one. */
+/** Every session id a repository has, first to last. */
+export function sessionsFor(repoPath: string): string[] {
+  return sessionsOf(repoPath, sessions.keys());
+}
+
+/** Puts the cursor in a shell, when it exists. */
 export function focusSession(repoPath: string): boolean {
   const session = sessions.get(repoPath);
   if (!session) return false;
