@@ -8,10 +8,11 @@ The home screen is the whole fleet at once. The terminal is a primary pane rathe
 run and build commands for each project sit next to the repository that needs them.
 
 > [!NOTE]
-> Everything through Phase 3 works: the fleet scanner, the persistent terminal, task discovery, the
-> branch graph, command blocks, the GitHub inbox, the diff view, hunk staging and the commit
-> history, and the pull request desk: push, open, watch the checks, merge and delete the branch
-> without the browser. Worktree lanes are designed but not built. See [Status](#status).
+> Everything through Phase 4 works, and Phases 6 and 7 are landing: the fleet scanner, the
+> persistent terminal, task discovery, the branch graph, command blocks, the GitHub inbox, the diff
+> view, hunk staging, the commit history and its filter, the pull request desk, a strip for a paused
+> rebase, the stash count, amend, and revert, cherry-pick and reset from a commit. Worktree lanes
+> are designed but not built. See [Status](#status).
 
 ## Why
 
@@ -42,7 +43,7 @@ Three rules shape the whole app:
   anything unmerged.
 - **Branch graph.** Two rails, time running left to right: what your branch has that `origin/main`
   does not, and what it has that you do not. It collapses to a one-line summary, and clicking a
-  commit types `git show` into that repository's shell.
+  commit opens it: its message, its files, and one file's hunks. Shift-click types `git show`.
 - **A list you control.** Pin the repositories you are working on to the top, hide the ones you are
   not, and add or remove the folders GitView watches without leaving the app.
 - **Tasks you actually run.** Discovery finds every script a project declares, which for one
@@ -68,8 +69,26 @@ Three rules shape the whole app:
   command is in the scrollback and the patch is still on disk to read.
 - **The whole history, scrolling.** Every commit on every branch, with the lanes drawn on a canvas
   under rows that only exist while they are on screen. 5,500 commits read in 140 ms a page and
-  scroll at one frame a step. Clicking a commit types `git show --stat` into that repository's
-  shell.
+  scroll at one frame a step. Clicking a commit opens it, and a field in the tab bar filters the
+  list by message, `author:` or `path:`, at no more cost than a page without one. "History of this
+  file" from any file row is that filter with the path filled in.
+- **A commit's menu.** Right-click a commit in the strip or the history for revert, cherry-pick
+  onto the branch, and reset to here with soft, mixed and hard each asking first. Cherry-pick is
+  off, with the reason, for a commit the branch already has.
+- **The state a prompt cannot show.** A paused rebase, merge, cherry-pick, revert, bisect or am
+  gets a strip under the header: which branch, onto what, how far along, and Continue, Skip and
+  Abort as buttons that type git's own next steps. The row wears it as a chip and sorts to the top.
+- **Stashes, counted.** A chip on the row and in the header, with each entry's message; the
+  header's copy types `git stash list` and its menu offers pop, apply and drop per entry.
+- **Amend.** A word beside Commit that fills the box from the last commit and types
+  `git commit --amend`, or `--amend --no-edit` when only the files changed. Off once the commit is
+  on origin, since the next step would be a force push.
+- **Unpushed work on every branch.** The attention sort counts commits that exist on this disk
+  alone across every local branch, not only the one checked out, and the chip names them.
+- **The pull request desk.** Push from the header, open a pull request from a form, watch each check
+  by name, and merge with `gh pr merge` typed after a confirmation. See the wiki's GitHub Inbox.
+- **Settings.** One dialog: watched folders, the terminal's type size and screen reader mode, and
+  whether the app fetches and checks for a release on launch.
 - **Updates that name their command.** GitView asks GitHub for its own latest release once per
   launch. When there is a newer one the status bar says so, and the dialog hands you the
   `gh release download` line to run at the prompt, like every other action here.
@@ -200,6 +219,9 @@ times per repository per refresh is slow enough to feel.
 | 3 | The diff pane, and staging one hunk of it through a typed `git apply` | Built |
 | 3 | The commit history: canvas rails under virtualised rows, lanes packed in Rust | Built |
 | 4 | The pull request desk: push, `gh pr create` from a form, checks by name, merge typed as `gh` | Built |
+| 6 | The state a prompt cannot show: a paused rebase, stashes, unpushed work on every branch, amend | Built |
+| 7 | Reading back: the history filter, file history, revert and cherry-pick and reset from a row, search in the scrollback | Built, blame pending |
+| 8 | The window: splitters, scrollback across restarts, keyboard shortcuts, a second shell per repository | Planned |
 | 5 | Worktree lanes | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and
