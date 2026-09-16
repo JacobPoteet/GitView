@@ -13,7 +13,7 @@
  * text a person can read before it runs.
  */
 
-import type { MergeMethod } from "./types";
+import type { MergeMethod, Operation } from "./types";
 
 export type ShellKind = "powershell" | "posix";
 
@@ -55,6 +55,40 @@ export function commitCommand(
   if (messageFile) parts.push("-F", quote(messageFile, kind));
   else parts.push("-m", quote(subject.trim(), kind));
   return parts.join(" ");
+}
+
+/**
+ * The commands that move a paused operation along, in the order the strip
+ * shows them: the one that goes on, the one that steps over, and the one that
+ * gives up. Bisect is the odd one: its steps are answers, so it gets Good and
+ * Bad and its way out is `reset`. Every entry is the exact line git prints
+ * under "hint:" for that state, so the strip reads the same as the scrollback.
+ */
+export function operationCommands(
+  kind: Operation["kind"],
+): { label: string; command: string; abort?: boolean }[] {
+  switch (kind) {
+    case "rebase":
+    case "cherry-pick":
+    case "revert":
+    case "am":
+      return [
+        { label: "Continue", command: `git ${kind} --continue` },
+        { label: "Skip", command: `git ${kind} --skip` },
+        { label: "Abort", command: `git ${kind} --abort`, abort: true },
+      ];
+    case "merge":
+      return [
+        { label: "Continue", command: "git merge --continue" },
+        { label: "Abort", command: "git merge --abort", abort: true },
+      ];
+    case "bisect":
+      return [
+        { label: "Good", command: "git bisect good" },
+        { label: "Bad", command: "git bisect bad" },
+        { label: "Reset", command: "git bisect reset", abort: true },
+      ];
+  }
 }
 
 /**

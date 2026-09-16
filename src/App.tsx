@@ -17,6 +17,7 @@ import CommitFilesPane from "./components/CommitFilesPane";
 import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
+import OperationBar from "./components/OperationBar";
 import ContextMenu, { isEditable, type MenuAt } from "./components/ContextMenu";
 import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
@@ -587,6 +588,9 @@ export default function App() {
         selected.aheadOfDefault,
         selected.behindDefault,
         selected.lastCommitAt,
+        // A rebase moving a step rewrites HEAD, and finishing one moves the
+        // branch. Either way the picture is stale until this changes.
+        selected.operation ? `${selected.operation.kind}:${selected.operation.step ?? ""}` : "",
         ...selected.branches.map((b) => `${b.name}@${b.tip}:${b.ahead}:${b.behind}`),
         ...selected.tags.map((t) => `${t.name}@${t.tip}`),
       ].join("|")
@@ -1160,6 +1164,33 @@ export default function App() {
       });
     },
     [shell, emit],
+  );
+
+  /**
+   * Giving up on a paused operation.
+   *
+   * `--abort` puts the branch back where it started, which git keeps, but it
+   * throws away whatever has been resolved in the working tree since it
+   * paused, which nothing keeps. That is the discard rule: the one step here
+   * a scrollback cannot undo is the one that asks.
+   */
+  const askAbort = useCallback(
+    (command: string) => {
+      if (!selected?.operation) return;
+      const op = selected.operation;
+      const what =
+        op.kind === "bisect"
+          ? "Leaves the bisect and checks out the branch you started it from. Nothing in the working tree is lost."
+          : `Puts ${op.branch ?? "the branch"} back where it was before the ${op.kind} started. Anything resolved in the working tree since it paused is thrown away, and there is no reflog for that.`;
+      setConfirmation({
+        title: `Abort the ${op.kind}`,
+        body: what,
+        command,
+        confirmLabel: op.kind === "bisect" ? "Reset" : "Abort",
+        onConfirm: () => emit(command),
+      });
+    },
+    [selected, emit],
   );
 
   /** Every right-click menu's Copy, with the one status line they all share. */
@@ -2103,6 +2134,16 @@ gh pr view ${branchPr.number} --web`}
                 </button>
               </div>
             </header>
+
+            {selected.operation && (
+              <OperationBar
+                operation={selected.operation}
+                conflicted={selected.conflicted}
+                disabled={!shellReady}
+                onCommand={emit}
+                onAbort={askAbort}
+              />
+            )}
 
             <BranchGraph
               graph={graph}

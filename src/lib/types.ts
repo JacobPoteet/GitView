@@ -16,6 +16,46 @@ export interface TagSummary {
   tip: string;
 }
 
+/**
+ * What git is paused in the middle of. Read by the scanner from
+ * `Repository::state()` and the files git leaves under the git dir; see
+ * `read_operation` in fleet.rs.
+ */
+export interface Operation {
+  kind: "rebase" | "merge" | "cherry-pick" | "revert" | "bisect" | "am";
+  /** The branch being rebased. Only a rebase records one. */
+  branch: string | null;
+  /** What it goes onto or brings in: a branch name where one stands there, else a short sha. */
+  onto: string | null;
+  /** The step paused at, counting the one being applied, and how many there are. A rebase or an am. */
+  step: number | null;
+  total: number | null;
+}
+
+/**
+ * One sentence on a paused operation: "Rebasing feat onto main, 2 of 5
+ * applied". The strip in the header says it and the sidebar chip carries it
+ * as a title, so the two agree.
+ */
+export function operationTitle(op: Operation): string {
+  const progress =
+    op.step !== null && op.total !== null ? `, ${op.step} of ${op.total} applied` : "";
+  switch (op.kind) {
+    case "rebase":
+      return `Rebasing ${op.branch ?? "the branch"}${op.onto ? ` onto ${op.onto}` : ""}${progress}`;
+    case "merge":
+      return `Merging ${op.onto ?? "a branch"} in`;
+    case "cherry-pick":
+      return `Cherry-picking ${op.onto ?? "a commit"}`;
+    case "revert":
+      return `Reverting ${op.onto ?? "a commit"}`;
+    case "bisect":
+      return "Bisecting";
+    case "am":
+      return `Applying patches${progress}`;
+  }
+}
+
 export interface RepoState {
   path: string;
   name: string;
@@ -42,6 +82,8 @@ export interface RepoState {
   lastCommitAt: number | null;
   lastCommitSummary: string | null;
   isWorktree: boolean;
+  /** A rebase, merge, cherry-pick, revert, bisect or am git is paused in. Null nearly always. */
+  operation: Operation | null;
   error: string | null;
   scannedAt: number;
 }
@@ -490,6 +532,9 @@ export function attentionScore(repo: RepoState): number {
   if (repo.error) return 1000;
   return (
     repo.conflicted * 500 +
+    // Above everything but a conflict: a rebase walked away from yesterday
+    // is the first thing to deal with this morning, conflicted or not.
+    (repo.operation ? 300 : 0) +
     repo.behind * 12 +
     repo.ahead * 8 +
     // Below `ahead`: work that is only local is a smaller problem than work that
@@ -520,6 +565,12 @@ export function fleetSummary(repos: RepoState[]): string[] {
   const parts: string[] = [];
   const unreadable = repos.length - readable.length;
   if (unreadable > 0) parts.push(`${unreadable} unreadable`);
+  // First, since nothing else can move until it is finished or abandoned.
+  // One part per kind, so a rebase and a merge read as what they are.
+  for (const kind of ["rebase", "merge", "cherry-pick", "revert", "bisect", "am"] as const) {
+    const paused = count((r) => r.operation?.kind === kind);
+    if (paused > 0) parts.push(`${paused} mid-${kind}`);
+  }
   const conflicted = count((r) => r.conflicted > 0);
   if (conflicted > 0) parts.push(`${conflicted} in conflict`);
   const behind = count((r) => r.behind > 0 && r.ahead === 0);

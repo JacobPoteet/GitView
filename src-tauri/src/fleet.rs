@@ -7,7 +7,7 @@
 //!
 //! Network operations do not belong here. See `gitops.rs`.
 
-use git2::{BranchType, Oid, Repository, Status, StatusOptions};
+use git2::{BranchType, Oid, Repository, RepositoryState, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -50,6 +50,30 @@ pub struct TagSummary {
     pub tip: String,
 }
 
+/// What git is in the middle of, when it is in the middle of anything.
+///
+/// A paused rebase is the state a person most needs a client for and the one
+/// a prompt is worst at: with no conflicted files it reads as a detached HEAD
+/// and nothing says why. `Repository::state()` knows, and the files under the
+/// git dir say how far along it is.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Operation {
+    /// `rebase`, `merge`, `cherry-pick`, `revert`, `bisect` or `am`.
+    pub kind: String,
+    /// The branch being rebased, from `rebase-merge/head-name`. Nothing else
+    /// records one: a merge or a cherry-pick happens on the branch HEAD is on.
+    pub branch: Option<String>,
+    /// What it is going onto or bringing in: the branch at the rebase's `onto`
+    /// when one points there, otherwise a short sha. A merge names
+    /// `MERGE_HEAD`, a cherry-pick or revert the commit it is replaying.
+    pub onto: Option<String>,
+    /// The step a rebase is paused at, counting the one being applied, and how
+    /// many there are. Absent for everything but a rebase or an am.
+    pub step: Option<usize>,
+    pub total: Option<usize>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoState {
@@ -89,6 +113,10 @@ pub struct RepoState {
     pub last_commit_at: Option<i64>,
     pub last_commit_summary: Option<String>,
     pub is_worktree: bool,
+    /// A rebase, merge, cherry-pick, revert, bisect or am that git is paused
+    /// in. None when it is not, which is nearly always.
+    #[serde(default)]
+    pub operation: Option<Operation>,
     pub error: Option<String>,
     pub scanned_at: i64,
 }
@@ -123,6 +151,7 @@ impl RepoState {
             last_commit_at: None,
             last_commit_summary: None,
             is_worktree: false,
+            operation: None,
             error: None,
             scanned_at: now_secs(),
         }
@@ -190,6 +219,7 @@ pub fn read_repo(path: &Path) -> RepoState {
     state.default_branch = default_branch(&repo);
     read_branches(&repo, &mut state);
     read_tags(&repo, &mut state);
+    state.operation = read_operation(&repo);
 
     state.scanned_at = now_secs();
     state
@@ -582,9 +612,96 @@ fn read_tags(repo: &Repository, state: &mut RepoState) {
     state.tags.sort_by(|a, b| a.name.cmp(&b.name));
 }
 
+/// The operation git is paused in, and where it stands.
+///
+/// `state()` names it. The rest is read from the files git leaves under the
+/// git dir, which `repo.path()` resolves for a worktree too: `rebase-merge/`
+/// for the merge and interactive backends, `rebase-apply/` for `am` and the
+/// apply backend, `MERGE_HEAD`, `CHERRY_PICK_HEAD` and `REVERT_HEAD` for the
+/// rest. A file that is missing leaves its field empty rather than failing
+/// the read, since the kind alone is worth showing.
+pub fn read_operation(repo: &Repository) -> Option<Operation> {
+    let git = repo.path();
+    let read = |name: &str| {
+        std::fs::read_to_string(git.join(name))
+            .ok()
+            .map(|s| s.trim().to_string())
+    };
+    let count = |name: &str| read(name).and_then(|s| s.parse::<usize>().ok());
+    // A short sha, or the branch standing at it when one does: `onto` is an
+    // oid and "onto main" is what the person typed.
+    let name_of = |text: &str| -> Option<String> {
+        let oid = Oid::from_str(text).ok()?;
+        let mut branch = None;
+        if let Ok(branches) = repo.branches(None) {
+            for (b, _) in branches.flatten() {
+                if b.get().target() == Some(oid) {
+                    if let Ok(Some(name)) = b.name() {
+                        branch = Some(name.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        Some(branch.unwrap_or_else(|| text[..text.len().min(7)].to_string()))
+    };
+
+    let mut op = Operation {
+        kind: String::new(),
+        branch: None,
+        onto: None,
+        step: None,
+        total: None,
+    };
+    match repo.state() {
+        RepositoryState::Clean => return None,
+        RepositoryState::Rebase
+        | RepositoryState::RebaseInteractive
+        | RepositoryState::RebaseMerge => {
+            op.kind = "rebase".to_string();
+            let merge = git.join("rebase-merge").is_dir();
+            let dir = if merge {
+                "rebase-merge"
+            } else {
+                "rebase-apply"
+            };
+            op.branch = read(&format!("{dir}/head-name")).map(|r| short_ref(&r).to_string());
+            op.onto = read(&format!("{dir}/onto")).and_then(|o| name_of(&o));
+            let (step, total) = if merge {
+                ("rebase-merge/msgnum", "rebase-merge/end")
+            } else {
+                ("rebase-apply/next", "rebase-apply/last")
+            };
+            op.step = count(step);
+            op.total = count(total);
+        }
+        RepositoryState::Merge => {
+            op.kind = "merge".to_string();
+            op.onto = read("MERGE_HEAD")
+                .and_then(|h| h.lines().next().map(str::to_string))
+                .and_then(|h| name_of(&h));
+        }
+        RepositoryState::CherryPick | RepositoryState::CherryPickSequence => {
+            op.kind = "cherry-pick".to_string();
+            op.onto = read("CHERRY_PICK_HEAD").and_then(|h| name_of(&h));
+        }
+        RepositoryState::Revert | RepositoryState::RevertSequence => {
+            op.kind = "revert".to_string();
+            op.onto = read("REVERT_HEAD").and_then(|h| name_of(&h));
+        }
+        RepositoryState::Bisect => op.kind = "bisect".to_string(),
+        RepositoryState::ApplyMailbox | RepositoryState::ApplyMailboxOrRebase => {
+            op.kind = "am".to_string();
+            op.step = count("rebase-apply/next");
+            op.total = count("rebase-apply/last");
+        }
+    }
+    Some(op)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_owner_repo;
+    use super::{parse_owner_repo, read_operation};
 
     #[test]
     fn parses_every_origin_url_shape() {
@@ -633,6 +750,53 @@ mod tests {
     /// A lightweight tag is its commit; an annotated one has to be peeled to
     /// reach it. Both come out as the commit, sorted by name, because the
     /// frontend compares them with what `git ls-remote` peels to.
+    /// A rebase paused on a conflict, built with git.exe because libgit2 has
+    /// no rebase that writes `rebase-merge/`, and the files there are what is
+    /// being read.
+    #[test]
+    fn a_paused_rebase_says_which_branch_onto_what_and_how_far() {
+        let dir = std::env::temp_dir().join(format!("gitview-op-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git.exe");
+            String::from_utf8_lossy(&out.stdout).to_string()
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["config", "user.email", "t@t"]);
+        git(&["config", "user.name", "t"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        std::fs::write(dir.join("f"), "base\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "base"]);
+        git(&["switch", "-qc", "feat"]);
+        std::fs::write(dir.join("f"), "feat one\n").unwrap();
+        git(&["commit", "-qam", "one"]);
+        std::fs::write(dir.join("f"), "feat two\n").unwrap();
+        git(&["commit", "-qam", "two"]);
+        git(&["switch", "-q", "main"]);
+        std::fs::write(dir.join("f"), "main\n").unwrap();
+        git(&["commit", "-qam", "main moved"]);
+        git(&["switch", "-q", "feat"]);
+        git(&["rebase", "main"]);
+
+        let repo = git2::Repository::open(&dir).unwrap();
+        let op = read_operation(&repo).expect("a rebase in progress");
+        assert_eq!(op.kind, "rebase");
+        assert_eq!(op.branch.as_deref(), Some("feat"));
+        assert_eq!(op.onto.as_deref(), Some("main"));
+        assert_eq!((op.step, op.total), (Some(1), Some(2)));
+
+        git(&["rebase", "--abort"]);
+        assert!(read_operation(&repo).is_none());
+        drop(repo);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn tags_are_read_peeled_and_sorted() {
         use git2::{Repository, Signature};
