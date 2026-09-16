@@ -132,13 +132,37 @@ select:focus-visible,
    working tree and the commit that ends it. Tasks moved out of the right-hand
    column to make room for the third one. */
 .app {
+  --sidebar-w: 296px;
+  --changes-w: 300px;
+  position: relative;
   display: grid;
-  grid-template-columns: 296px minmax(0, 1fr) 300px;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--changes-w);
   grid-template-rows: 1fr 26px;
   grid-template-areas:
     "sidebar main changes"
     "status  status status";
   height: 100%;
+}
+
+/* The drag handles, straddling the two column borders. Six pixels wide with
+   nothing drawn, so the border is the target and there is no bar to look at;
+   the cursor is the whole affordance. Placed off the grid so neither column's
+   component has to know about them. */
+.splitter {
+  position: absolute;
+  top: 0;
+  bottom: 26px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.splitter.sidebar {
+  left: calc(var(--sidebar-w) - 3px);
+}
+
+.splitter.changes {
+  right: calc(var(--changes-w) - 3px);
 }
 
 .status-bar {

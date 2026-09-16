@@ -944,6 +944,25 @@ export default function TerminalPane({
   );
 }
 
+/**
+ * The width the main column needs for `cols` columns of terminal, measured
+ * off a shell that is on screen: xterm sizes its screen to exactly the
+ * columns it has, so the cell is the ratio and not an estimate, and what the
+ * host takes around the screen (padding and xterm's own scrollbar) is the
+ * difference. Null before any shell has been drawn.
+ */
+export function widthForColumns(cols: number): number | null {
+  for (const session of sessions.values()) {
+    const screen = session.term.element?.querySelector<HTMLElement>(".xterm-screen");
+    const host = session.host.parentElement;
+    if (screen && host && screen.clientWidth > 0 && session.term.cols > 0) {
+      const cell = screen.clientWidth / session.term.cols;
+      return Math.ceil(cols * cell + (host.clientWidth - screen.clientWidth));
+    }
+  }
+  return null;
+}
+
 /** Every session id a repository has, first to last. */
 export function sessionsFor(repoPath: string): string[] {
   return sessionsOf(repoPath, sessions.keys());
