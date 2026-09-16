@@ -14,9 +14,10 @@ import {
   useSettings,
 } from "../lib/settings";
 import type { AppInfo } from "../lib/types";
+import { SHORTCUTS } from "../lib/keys";
 import Dialog from "./Dialog";
 
-export type SettingsSection = "folders" | "terminal" | "launch" | "github" | "about";
+export type SettingsSection = "folders" | "terminal" | "launch" | "github" | "keyboard" | "about";
 
 interface Props {
   section: SettingsSection;
@@ -33,6 +34,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "terminal", label: "Terminal" },
   { id: "launch", label: "Launch" },
   { id: "github", label: "GitHub" },
+  { id: "keyboard", label: "Keyboard" },
   { id: "about", label: "About" },
 ];
 
@@ -72,6 +74,7 @@ export default function SettingsDialog({
           {section === "terminal" && <TerminalSection />}
           {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
           {section === "github" && <GitHubSection info={info} />}
+          {section === "keyboard" && <Keyboard />}
           {section === "about" && <About info={info} />}
         </div>
       </div>
@@ -413,6 +416,31 @@ function GitHubSection({ info }: { info: AppInfo | null }) {
         disabled={!gh}
         onChange={(launchStaleMinutes) => updateSettings("github", { launchStaleMinutes })}
       />
+    </>
+  );
+}
+
+// --------------------------------------------------------------- keyboard
+
+/** The chords, read-only. Rebinding is not a thing here yet. */
+function Keyboard() {
+  return (
+    <>
+      <h3>Keyboard</h3>
+      <dl className="about-list keys-list">
+        {SHORTCUTS.map((shortcut) => (
+          <div key={shortcut.chord}>
+            <dt>
+              <kbd>{shortcut.chord}</kbd>
+            </dt>
+            <dd>{shortcut.does}</dd>
+          </div>
+        ))}
+      </dl>
+      <p>
+        Each chord is released by the terminal rather than sent to the shell, so it works with the
+        cursor at a prompt. The palette shows the chord beside anything that has one.
+      </p>
     </>
   );
 }
