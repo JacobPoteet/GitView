@@ -4,6 +4,7 @@ import {
   attentionScore,
   isClean,
   operationTitle,
+  stashTitle,
   unpushed,
   type RepoPref,
   type RepoState,
@@ -149,6 +150,13 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
       {repo.localBranchCount > 1 && (
         <span className="chip branches" title={`${repo.localBranchCount} local branches`}>
           ⑂{repo.localBranchCount}
+        </span>
+      )}
+      {/* Bare like the branch count: a stash is work set aside on purpose,
+          and a row should not shout about it. The title lists them. */}
+      {repo.stashes.length > 0 && (
+        <span className="chip branches" title={stashTitle(repo.stashes)}>
+          ⧉{repo.stashes.length}
         </span>
       )}
       {/* GitHub state, which the scan cannot see. Absent until the inbox has

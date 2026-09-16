@@ -56,6 +56,18 @@ export function operationTitle(op: Operation): string {
   }
 }
 
+/** One stash entry, newest first, as `git stash list` prints it. */
+export interface StashSummary {
+  /** `stash@{0}` is the newest, and the one `pop` takes. */
+  index: number;
+  message: string;
+}
+
+/** The stash list as a tooltip: one line per entry, as `git stash list` prints it. */
+export function stashTitle(stashes: StashSummary[]): string {
+  return stashes.map((s) => `stash@{${s.index}}: ${s.message}`).join("\n");
+}
+
 export interface RepoState {
   path: string;
   name: string;
@@ -84,6 +96,8 @@ export interface RepoState {
   isWorktree: boolean;
   /** A rebase, merge, cherry-pick, revert, bisect or am git is paused in. Null nearly always. */
   operation: Operation | null;
+  /** Every stash, newest first. */
+  stashes: StashSummary[];
   error: string | null;
   scannedAt: number;
 }

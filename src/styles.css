@@ -556,6 +556,25 @@ select:focus-visible,
   color: var(--text-faint);
 }
 
+/* A chip that is also a button: the header's stash count. Same face as the
+   chip, and the hover says it does something. */
+.chip-button {
+  cursor: pointer;
+  padding: 2px 5px;
+  margin: -2px -5px;
+  border-radius: 4px;
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.chip-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.chip-button:disabled {
+  cursor: default;
+}
+
 .chip.merged {
   color: var(--text-faint);
 }
@@ -1968,6 +1987,17 @@ div.setting-row {
 .row-menu button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.row-menu-heading {
+  padding: 4px 9px 2px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
 }
 
 .row-menu-rule {

@@ -74,6 +74,16 @@ pub struct Operation {
     pub total: Option<usize>,
 }
 
+/// One stash entry, newest first, as `git stash list` prints it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StashSummary {
+    /// Its position: `stash@{0}` is the newest, and the one `pop` takes.
+    pub index: usize,
+    /// "WIP on main: abc1234 subject", or whatever `git stash push -m` said.
+    pub message: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoState {
@@ -117,6 +127,9 @@ pub struct RepoState {
     /// in. None when it is not, which is nearly always.
     #[serde(default)]
     pub operation: Option<Operation>,
+    /// Every stash, newest first. Work set aside and, a week later, forgotten.
+    #[serde(default)]
+    pub stashes: Vec<StashSummary>,
     pub error: Option<String>,
     pub scanned_at: i64,
 }
@@ -152,6 +165,7 @@ impl RepoState {
             last_commit_summary: None,
             is_worktree: false,
             operation: None,
+            stashes: Vec::new(),
             error: None,
             scanned_at: now_secs(),
         }
@@ -204,7 +218,7 @@ pub fn read_repo(path: &Path) -> RepoState {
     let mut state = RepoState::empty(path);
     state.is_worktree = path.join(".git").is_file();
 
-    let repo = match Repository::open(path) {
+    let mut repo = match Repository::open(path) {
         Ok(repo) => repo,
         Err(err) => {
             state.error = Some(err.message().to_string());
@@ -220,6 +234,7 @@ pub fn read_repo(path: &Path) -> RepoState {
     read_branches(&repo, &mut state);
     read_tags(&repo, &mut state);
     state.operation = read_operation(&repo);
+    read_stashes(&mut repo, &mut state);
 
     state.scanned_at = now_secs();
     state
@@ -612,6 +627,24 @@ fn read_tags(repo: &Repository, state: &mut RepoState) {
     state.tags.sort_by(|a, b| a.name.cmp(&b.name));
 }
 
+/// Every stash entry, newest first.
+///
+/// `stash_foreach` wants the repository mutable, which the Fleet View note
+/// once gave as the reason this was not read. `read_repo` opens a repository
+/// of its own per read, so it has always owned a mutable one; the cost is a
+/// walk of the `refs/stash` reflog, which is empty nearly everywhere.
+fn read_stashes(repo: &mut Repository, state: &mut RepoState) {
+    let mut found = Vec::new();
+    let _ = repo.stash_foreach(|index, message, _oid| {
+        found.push(StashSummary {
+            index,
+            message: message.to_string(),
+        });
+        true
+    });
+    state.stashes = found;
+}
+
 /// The operation git is paused in, and where it stands.
 ///
 /// `state()` names it. The rest is read from the files git leaves under the
@@ -701,7 +734,7 @@ pub fn read_operation(repo: &Repository) -> Option<Operation> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_owner_repo, read_operation};
+    use super::{parse_owner_repo, read_operation, read_repo};
 
     #[test]
     fn parses_every_origin_url_shape() {
@@ -794,6 +827,45 @@ mod tests {
         git(&["rebase", "--abort"]);
         assert!(read_operation(&repo).is_none());
         drop(repo);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stashes_are_read_newest_first() {
+        let dir = std::env::temp_dir().join(format!("gitview-stash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git.exe");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["config", "user.email", "t@t"]);
+        git(&["config", "user.name", "t"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        std::fs::write(dir.join("f"), "base\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "base"]);
+        assert!(read_repo(&dir).stashes.is_empty());
+
+        std::fs::write(dir.join("f"), "one\n").unwrap();
+        git(&["stash", "push", "-q", "-m", "first thing"]);
+        std::fs::write(dir.join("f"), "two\n").unwrap();
+        git(&["stash", "push", "-q", "-m", "second thing"]);
+
+        let state = read_repo(&dir);
+        let messages: Vec<(usize, &str)> = state
+            .stashes
+            .iter()
+            .map(|s| (s.index, s.message.as_str()))
+            .collect();
+        assert_eq!(
+            messages,
+            vec![(0, "On main: second thing"), (1, "On main: first thing")]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

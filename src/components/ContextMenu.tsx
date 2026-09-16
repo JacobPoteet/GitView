@@ -23,8 +23,18 @@ export interface MenuItem {
   run: (typeOnly: boolean) => void;
 }
 
+/**
+ * A line of text over a group of items, for a menu that lists several things
+ * with the same actions each: the stash menu names the stash, then Pop,
+ * Apply and Drop under it. Not focusable and does nothing.
+ */
+export interface MenuHeading {
+  label: string;
+  heading: true;
+}
+
 /** A `"-"` between two items draws a rule. */
-export type MenuEntry = MenuItem | "-";
+export type MenuEntry = MenuItem | MenuHeading | "-";
 
 export interface MenuAt {
   x: number;
@@ -145,6 +155,10 @@ export default function ContextMenu({
       {entries.map((entry, index) =>
         entry === "-" ? (
           <hr key={index} className="row-menu-rule" />
+        ) : "heading" in entry ? (
+          <div key={index} className="row-menu-heading" title={entry.label}>
+            {entry.label}
+          </div>
         ) : (
           <button
             key={index}
