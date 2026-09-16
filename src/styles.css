@@ -4115,3 +4115,31 @@ button.inbox-check-name.link:hover {
 .btn.danger:hover:not(:disabled) {
   background: color-mix(in oklch, var(--red) 16%, transparent);
 }
+
+/* The amend toggle beside Commit. A bare word rather than a button, on until
+   the next commit, so the row still reads as one action and its modifier. */
+.commit-amend {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: color 0.12s var(--ease), background 0.12s var(--ease);
+}
+
+.commit-amend:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.commit-amend.on {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 40%, transparent);
+  background: color-mix(in oklch, var(--amber) 12%, transparent);
+}
+
+.commit-amend:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
