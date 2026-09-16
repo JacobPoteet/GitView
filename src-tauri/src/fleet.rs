@@ -36,6 +36,14 @@ pub struct BranchSummary {
     /// in the same second, reaches the graph and the history.
     #[serde(default)]
     pub tip: Option<String>,
+    /// What the branch tracks, `origin/feat` usually. None is a branch that
+    /// has never been pushed, whose every commit is on this disk alone.
+    #[serde(default)]
+    pub upstream: Option<String>,
+    /// Commits here that the upstream does not have. Zero without one; the
+    /// measure for that case is `ahead`, against the default branch.
+    #[serde(default)]
+    pub ahead_of_upstream: usize,
 }
 
 /// One tag, and the commit it marks.
@@ -564,6 +572,21 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
             .map(|commit| commit.time().seconds());
         let is_head = !state.detached && Some(&name) == state.branch.as_ref();
 
+        // Every branch, not only HEAD's: the one switched away from last
+        // week with three commits nobody has pushed is the one the fleet
+        // view exists to surface.
+        let upstream = branch.upstream().ok();
+        let upstream_name = upstream
+            .as_ref()
+            .and_then(|u| u.name().ok().flatten().map(str::to_string));
+        let ahead_of_upstream = match (tip, upstream.as_ref().and_then(|u| u.get().target())) {
+            (Some(tip), Some(up)) => repo
+                .graph_ahead_behind(tip, up)
+                .map(|(a, _)| a)
+                .unwrap_or(0),
+            _ => 0,
+        };
+
         let (ahead, behind) = match (tip, default_tip) {
             (Some(tip), Some(base)) => repo.graph_ahead_behind(tip, base).unwrap_or((0, 0)),
             // Nothing to measure against. Unrelated histories are not a special
@@ -591,6 +614,8 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
             merged,
             last_commit_at,
             tip: tip.map(|oid| oid.to_string()),
+            upstream: upstream_name,
+            ahead_of_upstream,
         });
     }
 
@@ -827,6 +852,60 @@ mod tests {
         git(&["rebase", "--abort"]);
         assert!(read_operation(&repo).is_none());
         drop(repo);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A branch switched away from with commits past its upstream, and one
+    /// that was never pushed, each measured on its own rather than only HEAD.
+    #[test]
+    fn every_branch_knows_its_upstream_and_its_lead_over_it() {
+        let dir = std::env::temp_dir().join(format!("gitview-up-{}", std::process::id()));
+        let origin = dir.join("origin.git");
+        let work = dir.join("work");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&work).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .expect("git.exe");
+        };
+        git(&dir, &["init", "-q", "--bare", "origin.git"]);
+        git(&work, &["init", "-q", "-b", "main"]);
+        git(&work, &["config", "user.email", "t@t"]);
+        git(&work, &["config", "user.name", "t"]);
+        git(&work, &["config", "commit.gpgsign", "false"]);
+        git(
+            &work,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
+        );
+        std::fs::write(work.join("f"), "base\n").unwrap();
+        git(&work, &["add", "."]);
+        git(&work, &["commit", "-qm", "base"]);
+        git(&work, &["push", "-q", "-u", "origin", "main"]);
+        // Pushed once, then one more commit.
+        git(&work, &["switch", "-qc", "tracked"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "sent"]);
+        git(&work, &["push", "-q", "-u", "origin", "tracked"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "kept"]);
+        // Never pushed at all.
+        git(&work, &["switch", "-qc", "local", "main"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "one"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "two"]);
+        git(&work, &["switch", "-q", "main"]);
+
+        let state = read_repo(&work);
+        let by_name = |n: &str| state.branches.iter().find(|b| b.name == n).unwrap();
+        assert_eq!(by_name("main").upstream.as_deref(), Some("origin/main"));
+        assert_eq!(by_name("main").ahead_of_upstream, 0);
+        assert_eq!(
+            by_name("tracked").upstream.as_deref(),
+            Some("origin/tracked")
+        );
+        assert_eq!(by_name("tracked").ahead_of_upstream, 1);
+        assert_eq!(by_name("local").upstream, None);
+        assert_eq!(by_name("local").ahead, 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

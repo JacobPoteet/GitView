@@ -184,6 +184,18 @@ function BranchRow({
       <span className="branch-pop-counts">
         {branch.ahead > 0 && <span className="chip ahead">↑{branch.ahead}</span>}
         {branch.behind > 0 && <span className="chip behind">↓{branch.behind}</span>}
+        {/* On this disk and nowhere else. A branch with no upstream says so
+            rather than counting, since every commit on it is unpushed. */}
+        {branch.upstream && branch.aheadOfUpstream > 0 && (
+          <span className="chip unpushed" title={`${branch.aheadOfUpstream} commits past ${branch.upstream}`}>
+            ⇡{branch.aheadOfUpstream}
+          </span>
+        )}
+        {!branch.upstream && !branch.merged && (
+          <span className="chip unpushed" title="No upstream. Nothing on this branch has been pushed.">
+            local
+          </span>
+        )}
         {branch.merged && (
           <span className="chip merged" title="Already contained in the default branch">
             merged

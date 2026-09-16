@@ -592,7 +592,9 @@ export default function App() {
         // A rebase moving a step rewrites HEAD, and finishing one moves the
         // branch. Either way the picture is stale until this changes.
         selected.operation ? `${selected.operation.kind}:${selected.operation.step ?? ""}` : "",
-        ...selected.branches.map((b) => `${b.name}@${b.tip}:${b.ahead}:${b.behind}`),
+        ...selected.branches.map(
+          (b) => `${b.name}@${b.tip}:${b.ahead}:${b.behind}:${b.upstream ?? ""}:${b.aheadOfUpstream}`,
+        ),
         ...selected.tags.map((t) => `${t.name}@${t.tip}`),
       ].join("|")
     : "";
