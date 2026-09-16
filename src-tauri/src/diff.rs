@@ -509,9 +509,7 @@ pub fn export_commit_file(repo_path: &Path, sha: &str, file: &str) -> Result<Str
         .map_err(|e| e.message().to_string())?;
 
     let short: String = commit.id().to_string().chars().take(7).collect();
-    let dir = crate::cache::data_dir().join("show");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    sweep_dirs(&dir);
+    let dir = crate::scratch::dir("show")?;
 
     // The relative path is git's, forward slashes, joined a segment at a time
     // so the line at the prompt reads one way through. `..` cannot come out of
@@ -524,27 +522,6 @@ pub fn export_commit_file(repo_path: &Path, sha: &str, file: &str) -> Result<Str
     }
     std::fs::write(&path, blob.content()).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
-}
-
-/// `sweep` for the per-commit folders `export_commit_file` leaves behind. A
-/// folder's own mtime moves when a file lands in it, so a commit somebody keeps
-/// opening stays and the rest go after a day.
-fn sweep_dirs(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .and_then(|t| now.duration_since(t).map_err(std::io::Error::other))
-            .map(|age| age.as_secs() as i64 > PATCH_KEEP_SECS)
-            .unwrap_or(false);
-        if stale {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
-    }
 }
 
 // ------------------------------------------------------------ hunk staging
@@ -685,13 +662,6 @@ pub fn hunk_patch(
     Ok(out)
 }
 
-/// How long a written patch is left on disk.
-///
-/// Shift-clicking leaves the command at the prompt without running it, so the
-/// file has to outlive the click by as long as somebody might leave a prompt
-/// sitting there. A day covers it, and each write sweeps what is older.
-const PATCH_KEEP_SECS: i64 = 86_400;
-
 /// Puts the patch under GitView's data folder and hands back the path.
 ///
 /// Never inside the repository. A patch file appearing in the working tree
@@ -703,63 +673,22 @@ pub fn write_patch(
     hunk_index: usize,
     text: &str,
 ) -> Result<String, String> {
-    let dir = crate::cache::data_dir().join("patches");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    sweep(&dir);
+    let dir = crate::scratch::dir("patches")?;
 
-    let repo = Path::new(repo_path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "repo".to_string());
     // The whole relative path, flattened, so two files with the same basename
     // do not share a patch. The name is read at a prompt, so it stays legible.
-    let flat: String = file
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
     let side = if staged { "unstage" } else { "stage" };
-    let name = format!("{repo}-{side}-{flat}-h{}.patch", hunk_index + 1);
-    let path = dir.join(sanitise(&name));
+    let name = crate::scratch::slug(&format!(
+        "{}-{side}-{file}-h{}",
+        crate::scratch::repo_name(repo_path),
+        hunk_index + 1
+    ));
+    let path = dir.join(format!("{name}.patch"));
 
     // LF, whatever the working tree uses. `git apply` reads the patch as text
     // and the content lines came out of the index, which is LF here.
     std::fs::write(&path, text.replace("\r\n", "\n")).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
-}
-
-/// Windows caps a path segment at 255, and a deep source path flattens past it.
-fn sanitise(name: &str) -> String {
-    if name.len() <= 200 {
-        return name.to_string();
-    }
-    let tail = &name[name.len() - 100..];
-    format!("{}-{tail}", &name[..99])
-}
-
-/// Deletes patches nobody is going to run any more. Failures are ignored: a
-/// file left behind is a file, and the write that follows is the point.
-fn sweep(dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .and_then(|t| now.duration_since(t).map_err(std::io::Error::other))
-            .map(|age| age.as_secs() as i64 > PATCH_KEEP_SECS)
-            .unwrap_or(false);
-        if stale {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
 }
 
 #[cfg(test)]

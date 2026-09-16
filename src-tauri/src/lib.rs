@@ -12,6 +12,7 @@ pub mod gitops;
 pub mod graph;
 pub mod history;
 pub mod pty;
+pub mod scratch;
 pub mod settings;
 pub mod signing;
 pub mod squash;
@@ -408,6 +409,16 @@ async fn github_issue_body(
     .map_err(|e| e.to_string())?
 }
 
+/// Writes a commit message out and hands back the path `git commit -F` wants.
+/// Only a message with a line break in its body comes here; a subject alone is
+/// quoted inline. See scratch.rs.
+#[tauri::command]
+async fn commit_message_file(path: String, message: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || scratch::write_commit_message(&path, &message))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Whether a newer GitView has been released.
 ///
 /// One `gh release view`, out of sight for the same reason the inbox sweep is:
@@ -604,6 +615,7 @@ pub fn run() {
             github_cached,
             github_refresh,
             github_issue_body,
+            commit_message_file,
             github_issue,
             update_check,
             git_run,
