@@ -18,7 +18,7 @@ import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
 import OperationBar from "./components/OperationBar";
-import ContextMenu, { isEditable, type MenuAt } from "./components/ContextMenu";
+import ContextMenu, { isEditable, type MenuAt, type MenuEntry } from "./components/ContextMenu";
 import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane, { itemKey } from "./components/InboxPane";
@@ -53,6 +53,7 @@ import {
   fleetSummary,
   isUntracked,
   relativeTime,
+  stashTitle,
   type AppInfo,
   type BranchGraph as Graph,
   type CommandBlock,
@@ -766,6 +767,7 @@ export default function App() {
   // Selected text is the one thing the native menu did that is worth keeping,
   // so a right-click on a selection anywhere gets Copy and nothing else.
   const [textMenu, setTextMenu] = useState<{ at: MenuAt; text: string } | null>(null);
+
   useEffect(() => {
     function onContextMenu(event: MouseEvent) {
       if (isEditable(event.target)) return;
@@ -1870,6 +1872,52 @@ export default function App() {
   const shellReady = selected != null && live.has(selected.path);
 
   /**
+   * The stash chip's menu: one entry per stash, newest first, each with the
+   * three things git can do with it. Pop and apply type straight away. Drop
+   * asks first, since a dropped stash is the other thing in this app a
+   * scrollback cannot bring back: `git stash drop` prints the sha, and the
+   * sha is reachable for as long as gc leaves it, which is a hope rather than
+   * a reflog.
+   */
+  const [stashMenu, setStashMenu] = useState<MenuAt | null>(null);
+  const stashEntries = useMemo((): MenuEntry[] => {
+    if (!selected) return [];
+    const entries: MenuEntry[] = [];
+    selected.stashes.forEach((stash, i) => {
+      const ref = quote(`stash@{${stash.index}}`, shell);
+      if (i > 0) entries.push("-");
+      entries.push({ label: stash.message, heading: true });
+      entries.push({
+        label: "Pop",
+        title: `git stash pop ${ref}\n\nApplies it and drops it.`,
+        disabled: !shellReady,
+        run: (typeOnly) => emit(`git stash pop ${ref}`, typeOnly),
+      });
+      entries.push({
+        label: "Apply",
+        title: `git stash apply ${ref}\n\nApplies it and keeps it.`,
+        disabled: !shellReady,
+        run: (typeOnly) => emit(`git stash apply ${ref}`, typeOnly),
+      });
+      entries.push({
+        label: "Drop",
+        danger: true,
+        disabled: !shellReady,
+        title: "Asks first, and names the command.",
+        run: () =>
+          setConfirmation({
+            title: `Drop stash@{${stash.index}}`,
+            body: `${stash.message}\n\nThe output prints the commit it was, which stays reachable until git's next gc and nowhere else. Nothing in the working tree changes.`,
+            command: `git stash drop ${ref}`,
+            confirmLabel: "Drop it",
+            onConfirm: () => emit(`git stash drop ${ref}`),
+          }),
+      });
+    });
+    return entries;
+  }, [selected, shell, shellReady, emit]);
+
+  /**
    * The pane sharing the main column with the terminal, or nothing.
    *
    * One at a time, and never on top of the shell. These three used to be
@@ -2105,6 +2153,23 @@ gh pr view ${branchPr.number} --web`}
                     <span className="chip dirty" title="staged and modified files">
                       {dirty} changed
                     </span>
+                  )}
+                  {/* Click types `git stash list`, so the entries land where
+                      they can be read; right-click offers each one. */}
+                  {selected.stashes.length > 0 && (
+                    <button
+                      className="chip branches chip-button"
+                      title={`${stashTitle(selected.stashes)}\n\ngit stash list\nRight-click for pop, apply and drop.`}
+                      disabled={!shellReady}
+                      onClick={(e) => emit("git stash list", e.shiftKey)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setStashMenu({ x: e.clientX, y: e.clientY });
+                      }}
+                    >
+                      ⧉{selected.stashes.length} {selected.stashes.length === 1 ? "stash" : "stashes"}
+                    </button>
                   )}
                   {selected.lastCommitAt && <span>{relativeTime(selected.lastCommitAt)}</span>}
                 </span>
@@ -2545,6 +2610,15 @@ gh pr view ${branchPr.number} --web`}
             setNote(copied ? "Copied the command." : "The clipboard refused the copy.");
           }}
           onClose={() => setUpdateOpen(false)}
+        />
+      )}
+
+      {stashMenu && (
+        <ContextMenu
+          at={stashMenu}
+          label="Stashes"
+          entries={stashEntries}
+          onClose={() => setStashMenu(null)}
         />
       )}
 
