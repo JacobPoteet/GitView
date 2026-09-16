@@ -1916,11 +1916,12 @@ select:focus-visible,
   background: var(--bg-inset);
 }
 
-.commit-box textarea {
+/* The subject is one line, so it gets one line. The body is a box that only
+   exists once asked for: most commits here are a subject, and a body box under
+   every one of them is what the tool this replaces did. */
+.commit-box .commit-title,
+.commit-box .commit-body {
   width: 100%;
-  min-height: 64px;
-  max-height: 180px;
-  resize: vertical;
   padding: 7px 8px;
   border-radius: 7px;
   border: 1px solid var(--line);
@@ -1931,13 +1932,38 @@ select:focus-visible,
   line-height: 1.5;
 }
 
-.commit-box textarea:focus {
+.commit-box .commit-body {
+  margin-top: 6px;
+  min-height: 64px;
+  max-height: 180px;
+  resize: vertical;
+}
+
+.commit-box .commit-title:focus,
+.commit-box .commit-body:focus {
   outline: none;
   border-color: var(--accent-line);
 }
 
-.commit-box textarea::placeholder {
+.commit-box .commit-title::placeholder,
+.commit-box .commit-body::placeholder {
   color: var(--text-faint);
+}
+
+.commit-body-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.commit-body-toggle:hover {
+  color: var(--text-dim);
+  background: var(--bg-hover);
 }
 
 .commit-actions {
