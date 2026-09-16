@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { isUntracked, type DiffTarget, type FileChange, type RepoState } from "../lib/types";
 import { commitCommand, openFileCommand, quote, type ShellKind } from "../lib/shell";
@@ -231,13 +237,21 @@ export default function ChangesPane({
   onDiscard,
   onCopy,
 }: Props) {
-  const [message, setMessage] = useState("");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  // The description box is closed until asked for. Most commits here are one
+  // line, and a body box under every subject is what the tool this replaces
+  // did. Once opened it stays open for this repository, since typing into it
+  // and then losing it on the next commit would be worse than the box.
+  const [bodyOpen, setBodyOpen] = useState(false);
   const menu = useContextMenu<FileChange>();
 
   // A message belongs to the repository it was written for. Carrying a draft to
   // the next project offers to commit one repository's words into another.
   useEffect(() => {
-    setMessage("");
+    setTitle("");
+    setBody("");
+    setBodyOpen(false);
     menu.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo?.path]);
@@ -304,15 +318,33 @@ export default function ChangesPane({
     );
   }
 
-  const command = message.trim() ? commitCommand(message, shell) : "";
+  // The subject and the body go to git the way it wants them: one `-m` each.
+  // `commitCommand` splits on the blank line and adds one per paragraph after.
+  const subject = title.trim();
+  const message = body.trim() ? `${subject}
+
+${body.trim()}` : subject;
+  const command = subject ? commitCommand(message, shell) : "";
   // git refuses an empty commit anyway, and a message with nothing staged is the
   // mistake worth catching before it reaches the prompt.
-  const ready = staged.length > 0 && message.trim().length > 0 && !disabled;
+  const ready = staged.length > 0 && subject.length > 0 && !disabled;
 
   function commit() {
     if (!ready) return;
     onCommand(command, false);
-    setMessage("");
+    setTitle("");
+    setBody("");
+  }
+
+  // Ctrl+Enter commits from either field. Enter alone never does: in the
+  // subject it is a keypress with nowhere to go, and in the body it is a
+  // newline, because a body is worth writing and a stray return should not
+  // commit.
+  function onKeyDown(event: ReactKeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    }
   }
 
   return (
@@ -380,22 +412,42 @@ export default function ChangesPane({
       )}
 
       <div className="commit-box">
-        <textarea
-          value={message}
+        <input
+          className="commit-title"
+          value={title}
           spellCheck
-          placeholder={
-            staged.length > 0 ? "Commit message" : "Stage something first"
-          }
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={(event) => {
-            // Ctrl+Enter commits. Enter alone stays a newline, because a body is
-            // worth writing and a stray return should not commit.
-            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-              event.preventDefault();
-              commit();
-            }
-          }}
+          placeholder={staged.length > 0 ? "Commit message" : "Stage something first"}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={onKeyDown}
         />
+        {bodyOpen ? (
+          <textarea
+            className="commit-body"
+            value={body}
+            spellCheck
+            autoFocus
+            placeholder="Description"
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={onKeyDown}
+          />
+        ) : (
+          <button
+            className="commit-body-toggle"
+            onClick={() => setBodyOpen(true)}
+            title="Add a description under the subject, one -m per paragraph"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path
+                d="M4 6.5 8 10.5l4-4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Description
+          </button>
+        )}
         <div className="commit-actions">
           <span className="commit-hint" title={command}>
             <bdi>{command || "git commit"}</bdi>
@@ -406,7 +458,9 @@ export default function ChangesPane({
             onClick={commit}
             title={
               ready
-                ? `${command}\n\nCtrl+Enter does the same.`
+                ? `${command}
+
+Ctrl+Enter does the same.`
                 : disabled
                   ? "No shell open for this repository."
                   : staged.length === 0
