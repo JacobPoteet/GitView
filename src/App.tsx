@@ -4,6 +4,7 @@ import TerminalPane, {
   blockOutput,
   closeSession,
   focusSession,
+  sessionsFor,
   getBlocks,
   revealBlock,
   sendCommand,
@@ -30,6 +31,7 @@ import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { settings, updateSettings, useSetting } from "./lib/settings";
 import { chordOf, repoChord } from "./lib/keys";
+import { sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -244,9 +246,31 @@ export default function App() {
     const timer = window.setTimeout(() => setArriving(false), ARRIVE_MS);
     return () => window.clearTimeout(timer);
   }, [booted]);
+  /** Session ids with a shell behind them: a path for a first shell, `path#2` for a second. */
   const [live, setLive] = useState<Set<string>>(new Set());
-  // The one repository whose shell was closed on purpose, until something else
-  // is selected. Anything wider would mean a repository you opened yesterday
+  /** The repositories with any shell live, which is what the sidebar's dot means. */
+  const livePaths = useMemo(() => new Set([...live].map(sessionRepo)), [live]);
+  /**
+   * The tab on screen per repository, when it is not the first. A second
+   * shell is opened for the command the first cannot take, so the choice has
+   * to survive looking at another project and coming back.
+   */
+  const [activeTabs, setActiveTabs] = useState<Map<string, string>>(new Map());
+  const activeTabsRef = useRef(activeTabs);
+  activeTabsRef.current = activeTabs;
+  /** The session a command aimed at a repository lands in: its active tab, else its first shell. */
+  const tabOf = useCallback((path: string) => activeTabsRef.current.get(path) ?? path, []);
+  const selectTab = useCallback((id: string) => {
+    setActiveTabs((current) => {
+      const next = new Map(current);
+      const path = sessionRepo(id);
+      if (id === path) next.delete(path);
+      else next.set(path, id);
+      return next;
+    });
+  }, []);
+  // The one shell that was closed on purpose, until something else is
+  // selected. Anything wider would mean a repository you opened yesterday
   // greeting you with a button instead of a prompt.
   const [closedShell, setClosedShell] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -701,13 +725,14 @@ export default function App() {
   // Blocks belong to the session, not to this component, so they survive a view
   // change the same way the scrollback does. Resubscribing on `shellOpen` is
   // what clears the strip when a shell is closed and fills it again on reopen.
+  const sessionId = selectedPath ? tabOf(selectedPath) : null;
   useEffect(() => {
-    if (!selectedPath || closedShell === selectedPath) {
+    if (!sessionId || closedShell === sessionId) {
       setBlocks([]);
       return;
     }
-    return subscribeBlocks(selectedPath, setBlocks);
-  }, [selectedPath, closedShell]);
+    return subscribeBlocks(sessionId, setBlocks);
+  }, [sessionId, closedShell]);
 
   // The sidebar's rows in the order it draws them, for Ctrl+1 to Ctrl+9.
   const drawn = useMemo(() => drawnOrder(groupRepos(repos, prefs, query)), [repos, prefs, query]);
@@ -724,7 +749,7 @@ export default function App() {
         if (repo) setSelectedPath(repo.path);
       } else if (chord === "Ctrl+`") {
         event.preventDefault();
-        if (selectedPath) focusSession(selectedPath);
+        if (selectedPath) focusSession(tabOf(selectedPath));
       } else if (chord === "Ctrl+Shift+C") {
         // The field is in the changes column, which the commit pane's file
         // list replaces while a commit is open. No field, nothing to focus.
@@ -824,6 +849,7 @@ export default function App() {
     paletteOpen,
     drawn,
     selectedPath,
+    tabOf,
     historyOpen,
     openHistory,
     info?.gh.version,
@@ -851,12 +877,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!pendingCommand || !live.has(pendingCommand.path)) return;
-    const { path, command, typeOnly } = pendingCommand;
-    const sent = typeOnly ? api.ptyWrite(path, command) : sendCommand(path, command);
+    // Aimed at a repository, landing in whichever of its shells is on screen.
+    if (!pendingCommand) return;
+    const id = tabOf(pendingCommand.path);
+    if (!live.has(id)) return;
+    const { command, typeOnly } = pendingCommand;
+    const sent = typeOnly ? api.ptyWrite(id, command) : sendCommand(id, command);
     sent.catch((err) => setNote(String(err)));
     setPendingCommand(null);
-  }, [pendingCommand, live, setNote]);
+  }, [pendingCommand, live, setNote, tabOf]);
 
   const noteTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -1017,7 +1046,9 @@ export default function App() {
   const lastPush = useRef<number | null>(null);
 
   const refreshRepo = useCallback(
-    (path: string) => {
+    // `id` is the shell that settled, which is where its blocks are: the
+    // repository's first shell unless a second one did the typing.
+    (path: string, id: string = path) => {
       api.repoRefresh(path).then(upsert).catch(() => undefined);
       // A commit typed by hand empties the changes pane, and the pane is right
       // next to the prompt it was typed at.
@@ -1027,7 +1058,7 @@ export default function App() {
         // moving anything here, so it is the one that asks `ls-remote` again.
         // The block's id is kept so a dev server settling every few seconds
         // behind a finished push does not ask on every one of them.
-        const pushed = [...getBlocks(path)]
+        const pushed = [...getBlocks(id)]
           .reverse()
           .find((b) => b.endedAt !== null && /^git push\b/.test(b.command));
         if (pushed && pushed.id !== lastPush.current) {
@@ -1041,7 +1072,7 @@ export default function App() {
       // there the first settle is the best signal there is.
       const waiting = inboxAfter.current;
       if (waiting && waiting.path === path) {
-        const blocks = getBlocks(path);
+        const blocks = getBlocks(id);
         const block = [...blocks].reverse().find((b) => b.command === waiting.command);
         if (blocks.length === 0 || (block && block.endedAt !== null)) {
           inboxAfter.current = null;
@@ -1058,6 +1089,8 @@ export default function App() {
     },
     [upsert, refreshInbox],
   );
+  /** A session settled; the repository it belongs to is what wants re-reading. */
+  const settled = useCallback((id: string) => refreshRepo(sessionRepo(id), id), [refreshRepo]);
 
   const onLiveChange = useCallback((path: string, isLive: boolean) => {
     setLive((current) => {
@@ -1129,26 +1162,35 @@ export default function App() {
    * is no way to tell a live build from an idle prompt from out here.
    */
   const askCloseShell = useCallback(
-    (path: string) => {
+    (id: string) => {
+      const path = sessionRepo(id);
       const repo = repos.find((r) => r.path === path);
       const own = path === info?.dataDir;
+      const which = sessionNumber(id) === 1 ? "the shell" : sessionLabel(id);
       setConfirmation({
-        title: own ? "Close GitView's own shell" : `Close the shell in ${repo?.name ?? path}`,
+        title: own ? "Close GitView's own shell" : `Close ${which} in ${repo?.name ?? path}`,
         body: "Anything still running in it stops: a dev server, a watcher, a build. Sessions outlive a view change precisely so those keep going, so this is the only thing that ends one.",
         confirmLabel: "Close the shell",
         onConfirm: () => {
-          closeSession(path);
+          // The tab that takes its place: the one before it, read before the
+          // map forgets this one.
+          const remaining = sessionsFor(path).filter((other) => other !== id);
+          closeSession(id);
           setLive((current) => {
             const next = new Set(current);
-            next.delete(path);
+            next.delete(id);
             return next;
           });
-          if (path === selectedPath) setClosedShell(path);
+          if (sessionNumber(id) === 1) {
+            if (path === selectedPath && tabOf(path) === id) setClosedShell(id);
+          } else {
+            selectTab(remaining[remaining.length - 1] ?? path);
+          }
           if (own) setOwnShell(false);
         },
       });
     },
-    [repos, selectedPath, info?.dataDir],
+    [repos, selectedPath, info?.dataDir, tabOf, selectTab],
   );
 
   /**
@@ -1163,14 +1205,14 @@ export default function App() {
   const emitOwn = useCallback(
     (command: string, typeOnly: boolean) => {
       if (selected) {
-        if (closedShell === selected.path) setClosedShell(null);
+        if (closedShell === tabOf(selected.path)) setClosedShell(null);
         setPendingCommand({ path: selected.path, command, typeOnly });
       } else if (info) {
         setOwnShell(true);
         setPendingCommand({ path: info.dataDir, command, typeOnly });
       }
     },
-    [selected, closedShell, info],
+    [selected, closedShell, info, tabOf],
   );
 
   /**
@@ -1180,11 +1222,11 @@ export default function App() {
    */
   const emit = useCallback(
     async (command: string, typeOnly = false) => {
-      if (!selectedPath) return;
-      if (typeOnly) await api.ptyWrite(selectedPath, command);
-      else await sendCommand(selectedPath, command);
+      if (!sessionId) return;
+      if (typeOnly) await api.ptyWrite(sessionId, command);
+      else await sendCommand(sessionId, command);
     },
-    [selectedPath],
+    [sessionId],
   );
 
   /**
@@ -1787,14 +1829,16 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
     // One row per live shell, which is what makes the count in the status bar
     // worth clicking: it opens the palette, and the palette is where the
     // sessions can be ended without hunting for the row that owns each one.
-    for (const path of live) {
+    for (const id of live) {
+      const path = sessionRepo(id);
       const repo = repos.find((r) => r.path === path);
+      const which = sessionNumber(id) === 1 ? "the shell" : sessionLabel(id);
       items.push({
-        id: `close:${path}`,
-        label: `Close the shell in ${repo?.name ?? path}`,
+        id: `close:${id}`,
+        label: `Close ${which} in ${repo?.name ?? path}`,
         kind: "fleet",
         hint: "ends the process and its scrollback",
-        run: () => askCloseShell(path),
+        run: () => askCloseShell(id),
       });
     }
 
@@ -1973,7 +2017,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
   );
   // Hidden rows leave the summary as they leave the palette and the batches.
   const summary = useMemo(() => fleetSummary(batchCandidates), [batchCandidates]);
-  const shellReady = selected != null && live.has(selected.path);
+  const shellReady = sessionId != null && live.has(sessionId);
 
   /**
    * The stash chip's menu: one entry per stash, newest first, each with the
@@ -2170,7 +2214,7 @@ ${landing} ${cleanup}${warning}`,
           inboxWaiting={inboxWaiting}
           onOpenInbox={info?.gh.version ? () => setInboxOpen(true) : null}
           selectedPath={selectedPath}
-          liveSessions={live}
+          liveSessions={livePaths}
           query={query}
           scanning={scanning}
           refreshing={refreshing}
@@ -2343,8 +2387,10 @@ gh pr view ${branchPr.number} --web`}
 
             <TerminalPane
               repoPath={selected.path}
-              open={closedShell !== selected.path}
-              onSettled={refreshRepo}
+              sessionId={sessionId}
+              onSelectTab={selectTab}
+              open={closedShell !== sessionId}
+              onSettled={settled}
               onLiveChange={onLiveChange}
               onRequestClose={askCloseShell}
               onNote={setNote}
@@ -2369,6 +2415,8 @@ gh pr view ${branchPr.number} --web`}
             {pane}
             <TerminalPane
               repoPath={info.dataDir}
+              sessionId={info.dataDir}
+              onSelectTab={noop}
               open
               onSettled={noop}
               onLiveChange={onLiveChange}

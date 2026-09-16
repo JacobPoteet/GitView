@@ -1,0 +1,38 @@
+import { describe, expect, it } from "vitest";
+import {
+  nextSessionId,
+  sessionId,
+  sessionLabel,
+  sessionNumber,
+  sessionRepo,
+  sessionsOf,
+} from "./sessions";
+
+const repo = "F:\\GitHub\\example";
+
+describe("session ids", () => {
+  it("names the first shell after the path and the rest with a number", () => {
+    expect(sessionId(repo, 1)).toBe(repo);
+    expect(sessionId(repo, 2)).toBe(`${repo}#2`);
+    expect(sessionNumber(repo)).toBe(1);
+    expect(sessionNumber(`${repo}#3`)).toBe(3);
+    expect(sessionRepo(`${repo}#3`)).toBe(repo);
+    expect(sessionRepo(repo)).toBe(repo);
+  });
+
+  it("labels the tabs", () => {
+    expect(sessionLabel(repo)).toBe("shell");
+    expect(sessionLabel(`${repo}#2`)).toBe("shell 2");
+  });
+
+  it("lists one repository's shells in order and leaves the others out", () => {
+    const ids = [`${repo}#3`, "F:\\GitHub\\other", repo, `${repo}#2`, "F:\\GitHub\\other#2"];
+    expect(sessionsOf(repo, ids)).toEqual([repo, `${repo}#2`, `${repo}#3`]);
+  });
+
+  it("numbers a new shell past the highest, never into a gap", () => {
+    expect(nextSessionId(repo, [])).toBe(`${repo}#2`);
+    expect(nextSessionId(repo, [repo])).toBe(`${repo}#2`);
+    expect(nextSessionId(repo, [repo, `${repo}#3`])).toBe(`${repo}#4`);
+  });
+});
