@@ -1,10 +1,11 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { copyText } from "../lib/clipboard";
 import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import { api } from "../lib/api";
 import type { CommandBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
@@ -24,6 +25,8 @@ interface Session {
   id: string;
   term: Terminal;
   fit: FitAddon;
+  /** Search over the buffer. Per session, since the buffer is. */
+  search: SearchAddon;
   host: HTMLDivElement;
   opened: boolean;
   /** Whether the Rust side is holding a channel that reaches this session. */
@@ -48,6 +51,20 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>();
+
+/**
+ * How a search match is drawn. The addon wants #RRGGBB, so these are the
+ * theme's violet and its lighter step written out, the same family as the
+ * cursor; the selection colour is what the active match sits over.
+ */
+const SEARCH_DECORATIONS = {
+  matchBackground: "#3B3F63",
+  matchBorder: "#5B4BD6",
+  matchOverviewRuler: "#5B4BD6",
+  activeMatchBackground: "#7C5CFF",
+  activeMatchBorder: "#C4B5FD",
+  activeMatchColorOverviewRuler: "#C4B5FD",
+};
 
 /**
  * The settings every terminal shares: the type size and whether xterm keeps
@@ -471,6 +488,8 @@ function getSession(id: string): Session {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon());
+  const search = new SearchAddon();
+  term.loadAddon(search);
 
   // The terminal holds focus whenever a repository is selected, so without this
   // Ctrl+K reached the shell as a literal ^K and the palette never opened.
@@ -478,9 +497,12 @@ function getSession(id: string): Session {
   // Returning false stops xterm processing the key, which both keeps it out of
   // the PTY and lets it bubble to App's window listener. Do not also dispatch an
   // event here: the window handler already fires, and two toggles cancel out.
+  //
+  // Ctrl+F takes the same route for the pane's own search field: the pane
+  // hears it on the host and opens the field, and the shell never sees ^F.
   term.attachCustomKeyEventHandler((event) => {
-    const chord =
-      (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k";
+    const key = event.key.toLowerCase();
+    const chord = (event.ctrlKey || event.metaKey) && !event.altKey && (key === "k" || key === "f");
     return !(event.type === "keydown" && chord);
   });
 
@@ -491,6 +513,7 @@ function getSession(id: string): Session {
     id,
     term,
     fit,
+    search,
     host,
     opened: false,
     attached: false,
@@ -583,6 +606,73 @@ export default function TerminalPane({
   const menu = useContextMenu<null>();
 
   /**
+   * Search over the scrollback, in the tab bar. Opened by Ctrl+F with the
+   * shell focused, or from the shell's menu. Enter steps forward, Shift+Enter
+   * back, Escape closes it and hands focus back to the shell. Incremental, so
+   * the first match lights up as the word is typed, and the count in the
+   * field is the addon's own. It is per pane rather than per session: a
+   * search is a question, not state the scrollback carries.
+   */
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [searchHits, setSearchHits] = useState<{ index: number; count: number } | null>(null);
+  const searchField = useRef<HTMLInputElement>(null);
+  const session = repoPath ? sessions.get(repoPath) : undefined;
+
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchText("");
+    setSearchHits(null);
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (!repoPath || !open) return;
+    const found = sessions.get(repoPath);
+    if (!found) return;
+    const sub = found.search.onDidChangeResults((r) =>
+      setSearchHits(r.resultCount >= 0 ? { index: r.resultIndex, count: r.resultCount } : null),
+    );
+    return () => sub.dispose();
+  }, [repoPath, open]);
+
+  useEffect(() => {
+    if (searchOpen) searchField.current?.focus();
+  }, [searchOpen]);
+
+  function runSearch(text: string, backwards = false, incremental = false) {
+    if (!session) return;
+    if (!text) {
+      session.search.clearDecorations();
+      setSearchHits(null);
+      return;
+    }
+    const options = { incremental, decorations: SEARCH_DECORATIONS };
+    if (backwards) session.search.findPrevious(text, options);
+    else session.search.findNext(text, options);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchText("");
+    setSearchHits(null);
+    session?.search.clearDecorations();
+    session?.term.focus();
+  }
+
+  function onSearchKey(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runSearch(searchText, event.shiftKey);
+    } else if (event.key === "Escape") {
+      // Stops here: the window's Escape would leave the field and nothing
+      // else, and the field is what should go.
+      event.preventDefault();
+      event.stopPropagation();
+      closeSearch();
+    }
+  }
+
+  /**
    * Copy, paste, clear, close. The webview's menu used to stand in for the
    * first two, at the price of Print and Share sitting next to them. Copy is
    * the selection, which is why it is off without one; xterm has no idea what
@@ -619,6 +709,11 @@ export default function TerminalPane({
         },
       },
       "-",
+      {
+        label: "Find",
+        title: "Ctrl+F. Search the scrollback.",
+        run: () => setSearchOpen(true),
+      },
       {
         label: "Clear",
         title: "clear",
@@ -729,11 +824,48 @@ export default function TerminalPane({
   }
 
   return (
-    <div className="terminal-pane">
+    <div
+      className="terminal-pane"
+      onKeyDownCapture={(event) => {
+        // Ctrl+F from the shell, which the key handler above lets through.
+        if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
+          event.preventDefault();
+          setSearchOpen(true);
+          if (searchOpen) searchField.current?.select();
+        }
+      }}
+    >
       <div className="pane-tab-bar">
         <span>shell</span>
         <span style={{ color: "var(--line-strong)" }}>·</span>
         <span className="tab-path">{repoPath}</span>
+        {searchOpen && (
+          <span className="history-filter terminal-search">
+            <input
+              ref={searchField}
+              value={searchText}
+              spellCheck={false}
+              placeholder="Find in the scrollback"
+              title="Enter for the next match, Shift+Enter for the previous, Escape to close."
+              onChange={(e) => {
+                setSearchText(e.target.value);
+                runSearch(e.target.value, false, true);
+              }}
+              onKeyDown={onSearchKey}
+            />
+            <span className="terminal-search-count">
+              {searchText ? (searchHits && searchHits.count > 0 ? `${searchHits.index + 1} of ${searchHits.count}` : "none") : ""}
+            </span>
+            <button
+              className="history-filter-clear"
+              onClick={closeSearch}
+              title="Close the search (Escape)"
+              aria-label="Close the search"
+            >
+              ✕
+            </button>
+          </span>
+        )}
         <button
           className="pane-close"
           onClick={() => onRequestClose(repoPath)}
