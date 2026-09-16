@@ -4,6 +4,7 @@
 //! reads a repository goes through `fleet`, anything that reaches a remote goes
 //! through `gitops`, and the terminal lives in `pty`.
 
+pub mod blame;
 pub mod cache;
 pub mod diff;
 pub mod fleet;
@@ -163,6 +164,16 @@ async fn repo_commit(path: String, sha: String) -> Result<CommitDiff, String> {
 async fn repo_commit_file(path: String, sha: String, file: String) -> Result<FileDiff, String> {
     tauri::async_runtime::spawn_blocking(move || {
         diff::read_commit_file(&PathBuf::from(&path), &sha, &file)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Who last touched each line of a file, as of a commit. See blame.rs.
+#[tauri::command]
+async fn repo_blame(path: String, sha: String, file: String) -> Result<blame::Blame, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        blame::read_blame(&PathBuf::from(&path), &sha, &file)
     })
     .await
     .map_err(|e| e.to_string())
@@ -664,6 +675,7 @@ pub fn run() {
             repo_diff,
             repo_commit,
             repo_commit_file,
+            repo_blame,
             diff_hunk_patch,
             commit_file_export,
             repo_prefs,

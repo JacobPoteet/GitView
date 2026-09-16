@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { FileDiff } from "../lib/types";
+import { ageBucket, relativeTime, type BlameHunk, type FileDiff } from "../lib/types";
 
 /**
  * The rows of one file's diff: the gutters, the sign, the text, and the `@@`
@@ -18,6 +18,14 @@ interface Props {
   restCommand: string;
   /** What to say when the file is on neither side. */
   emptyNote: string;
+  /**
+   * Who last wrote each line, keyed on the new-side line number. Present only
+   * on a committed file with the gutter turned on: a `-` line has no new-side
+   * number and gets no entry, since the line it was is not in the file.
+   */
+  blame?: Map<number, BlameHunk>;
+  /** A sha in the gutter was clicked. */
+  onBlameCommit?: (commit: { id: string; short: string }) => void;
 }
 
 /**
@@ -41,7 +49,19 @@ const TONE: Record<string, string> = {
   "\\": "note",
 };
 
-export default function DiffHunks({ diff, hunkAction, restCommand, emptyNote }: Props) {
+export default function DiffHunks({
+  diff,
+  hunkAction,
+  restCommand,
+  emptyNote,
+  blame,
+  onBlameCommit,
+}: Props) {
+  // The gutter says the sha and the age once per run of lines from one
+  // commit, on the first line of the run, and holds its tint for the rest:
+  // a hunk of forty lines from one commit reads as one block, not forty
+  // repeats of the same sha.
+  let lastBlame: BlameHunk | undefined;
   return (
     <>
       {diff.error && <p className="empty">{diff.error}</p>}
@@ -72,8 +92,9 @@ export default function DiffHunks({ diff, hunkAction, restCommand, emptyNote }: 
           Per-hunk `min-width` gave each hunk its own, so scrolling right to
           read a 600-character line carried the short hunks off the left edge
           and out of the pane. */}
-      <div className="diff-hunks">
+      <div className={`diff-hunks${blame ? " blamed" : ""}`}>
         {diff.hunks.map((hunk, index) => {
+          lastBlame = undefined;
           const { range, context } = splitHeader(hunk.header);
           return (
             <div className="diff-hunk" key={`${hunk.oldStart}:${hunk.newStart}:${index}`}>
@@ -86,17 +107,42 @@ export default function DiffHunks({ diff, hunkAction, restCommand, emptyNote }: 
                 </span>
                 {hunkAction?.(index, hunk.header)}
               </div>
-              {hunk.lines.map((line, row) => (
-                <div className={`diff-line ${TONE[line.origin] ?? "context"}`} key={row}>
-                  <span className="ln">{line.old ?? ""}</span>
-                  <span className="ln">{line.new ?? ""}</span>
-                  <span className="sign">{line.origin === "\\" ? "\\" : line.origin}</span>
-                  <span className="text">
-                    {line.text}
-                    {line.clipped && <span className="clipped"> … line clipped</span>}
-                  </span>
-                </div>
-              ))}
+              {hunk.lines.map((line, row) => {
+                const who = blame && line.new != null ? blame.get(line.new) : undefined;
+                const first = who !== undefined && who !== lastBlame;
+                if (who) lastBlame = who;
+                return (
+                  <div className={`diff-line ${TONE[line.origin] ?? "context"}`} key={row}>
+                    {blame && (
+                      <span
+                        className={`blame${who ? ` age-${ageBucket(who.time)}` : ""}`}
+                        title={
+                          who
+                            ? `${who.short}  ${who.summary}\n${who.author}, ${relativeTime(who.time)}\n\nClick to open the commit.`
+                            : undefined
+                        }
+                      >
+                        {who && first && (
+                          <button
+                            className="blame-sha"
+                            onClick={() => onBlameCommit?.({ id: who.id, short: who.short })}
+                          >
+                            {who.short}
+                          </button>
+                        )}
+                        {who && first && <span className="blame-age">{relativeTime(who.time)}</span>}
+                      </span>
+                    )}
+                    <span className="ln">{line.old ?? ""}</span>
+                    <span className="ln">{line.new ?? ""}</span>
+                    <span className="sign">{line.origin === "\\" ? "\\" : line.origin}</span>
+                    <span className="text">
+                      {line.text}
+                      {line.clipped && <span className="clipped"> … line clipped</span>}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           );
         })}

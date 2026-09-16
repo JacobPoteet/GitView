@@ -1,6 +1,7 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type {
   AppInfo,
+  Blame,
   BranchGraph,
   CommitDiff,
   FileChange,
@@ -50,6 +51,9 @@ export const api = {
     invoke<FileDiff>("repo_diff", { path, file, staged }),
   repoCommit: (path: string, sha: string) =>
     invoke<CommitDiff>("repo_commit", { path, sha }),
+  /** Who last touched each line of a file, as of a commit. Hunks, not lines. */
+  repoBlame: (path: string, sha: string, file: string) =>
+    invoke<Blame>("repo_blame", { path, sha, file }),
   repoCommitFile: (path: string, sha: string, file: string) =>
     invoke<FileDiff>("repo_commit_file", { path, sha, file }),
   /** The commit's copy of a file, written under the data folder. Returns the path. */

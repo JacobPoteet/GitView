@@ -38,6 +38,16 @@
   --lane-4: oklch(72% 0.140 330);
   --lane-5: oklch(72% 0.110 196);
   --lane-6: oklch(72% 0.130 108);
+  /* The blame gutter's tints by age, newest first: the accent's own hue,
+     fading toward the faint text as the lines get older, so the fresh edits
+     in a file stand out and the settled ones recede. Never the red or the
+     amber: those mean a failure and a repository wanting attention. */
+  --age-0: oklch(78% 0.170 292);
+  --age-1: oklch(74% 0.130 292);
+  --age-2: oklch(68% 0.090 292);
+  --age-3: oklch(62% 0.055 292);
+  --age-4: oklch(56% 0.030 292);
+  --age-5: oklch(50% 0.012 292);
   --amber: oklch(82% 0.145 80);
   --red: oklch(68% 0.185 24);
   --blue: oklch(74% 0.135 242);
@@ -3542,12 +3552,62 @@ button.inbox-check-name.link:hover {
   color: color-mix(in oklch, var(--text-faint) 70%, transparent);
   user-select: none;
   position: sticky;
-  left: 0;
+  left: var(--gutter, 0px);
   background: inherit;
 }
 
 .diff-line .ln + .ln {
-  left: 44px;
+  left: calc(44px + var(--gutter, 0px));
+}
+
+/* The blame gutter, ahead of the line numbers and sticky like them. It sets
+   `--gutter` so the numbers and the sign move over by its width, and it is
+   tinted by the age of the commit that wrote the line: a run from one commit
+   names the sha once, on its first line, and holds the tint for the rest. */
+.diff-hunks.blamed {
+  --gutter: 132px;
+}
+
+.diff-line .blame {
+  flex: none;
+  width: 132px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 6px 0 8px;
+  user-select: none;
+  position: sticky;
+  left: 0;
+  background: inherit;
+  box-shadow: inset -2px 0 0 var(--age, transparent);
+}
+
+.diff-line .blame.age-0 { --age: var(--age-0); }
+.diff-line .blame.age-1 { --age: var(--age-1); }
+.diff-line .blame.age-2 { --age: var(--age-2); }
+.diff-line .blame.age-3 { --age: var(--age-3); }
+.diff-line .blame.age-4 { --age: var(--age-4); }
+.diff-line .blame.age-5 { --age: var(--age-5); }
+
+.blame-sha {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--age, var(--text-dim));
+  cursor: pointer;
+}
+
+.blame-sha:hover {
+  text-decoration: underline;
+}
+
+.blame-age {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--text-faint) 80%, transparent);
+  font-size: 10.5px;
 }
 
 .diff-line .sign {
@@ -3556,7 +3616,7 @@ button.inbox-check-name.link:hover {
   text-align: center;
   user-select: none;
   position: sticky;
-  left: 88px;
+  left: calc(88px + var(--gutter, 0px));
   background: inherit;
 }
 

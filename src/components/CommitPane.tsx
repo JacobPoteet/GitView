@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { CommitDiff, CommitTarget, FileDiff } from "../lib/types";
+import type { Blame, BlameHunk, CommitDiff, CommitTarget, FileDiff } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 import DiffHunks from "./DiffHunks";
 
@@ -15,6 +15,8 @@ interface Props {
   shell: ShellKind;
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
+  /** A sha in the blame gutter was clicked: open that commit in this pane, on the same file. */
+  onOpenCommit: (commit: { id: string; short: string; file?: string }) => void;
 }
 
 /**
@@ -39,9 +41,44 @@ export default function CommitPane({
   shell,
   onClose,
   onCommand,
+  onOpenCommit,
 }: Props) {
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * The blame gutter: off until asked, and asked once per file. The choice
+   * outlives the file so a reader walking a commit's files keeps it. No blame
+   * on the working-tree diff, which has no pane for it: an uncommitted line
+   * has no author yet, and the question blame answers is about lines that do.
+   */
+  const [blameOn, setBlameOn] = useState(false);
+  const [blame, setBlame] = useState<Blame | null>(null);
+  useEffect(() => {
+    setBlame(null);
+    if (!blameOn || !file) return;
+    let cancelled = false;
+    api
+      .repoBlame(target.repoPath, target.id, file)
+      .then((next) => {
+        if (!cancelled) setBlame(next);
+      })
+      .catch((err) => {
+        if (!cancelled) setBlame({ hunks: [], truncated: false, error: String(err) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [blameOn, target.repoPath, target.id, file]);
+  // One entry per line, from the hunks. Spread once here rather than searched
+  // per row while drawing six thousand of them.
+  const blameLines = useMemo(() => {
+    if (!blame || blame.error) return undefined;
+    const map = new Map<number, BlameHunk>();
+    for (const hunk of blame.hunks) {
+      for (let n = 0; n < hunk.lines; n += 1) map.set(hunk.start + n, hunk);
+    }
+    return map;
+  }, [blame]);
 
   useEffect(() => {
     setDiff(null);
@@ -81,6 +118,20 @@ export default function CommitPane({
           </span>
         )}
 
+        {file && (
+          <button
+            className={`diff-stage${blameOn ? " on" : ""}`}
+            onClick={() => setBlameOn((on) => !on)}
+            title={
+              blameOn
+                ? "Hide who last touched each line."
+                : `Who last touched each line, as of ${target.short}. git blame ${target.short} -- ${file}, read in process.`
+            }
+            aria-pressed={blameOn}
+          >
+            blame
+          </button>
+        )}
         <button
           className="diff-stage"
           disabled={disabled}
@@ -135,8 +186,21 @@ export default function CommitPane({
         )}
         {file && !diff && !failure && <p className="empty">Reading…</p>}
         {failure && <p className="empty">{failure}</p>}
+        {blame?.error && <p className="diff-note">Blame failed: {blame.error}</p>}
+        {blame?.truncated && (
+          <p className="diff-note">
+            The gutter stops at line 6000. <code>git blame {target.short} -- {file}</code> in
+            the shell has the rest.
+          </p>
+        )}
         {diff && (
-          <DiffHunks diff={diff} restCommand={show} emptyNote="This file is not in the commit." />
+          <DiffHunks
+            diff={diff}
+            restCommand={show}
+            emptyNote="This file is not in the commit."
+            blame={blameOn ? blameLines : undefined}
+            onBlameCommit={(commit) => onOpenCommit({ ...commit, file: file ?? undefined })}
+          />
         )}
       </div>
     </section>

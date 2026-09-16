@@ -362,6 +362,8 @@ export interface CommitTarget {
   repoPath: string;
   id: string;
   short: string;
+  /** The file to open on, when the commit has it. From the blame gutter, which is about one file. */
+  file?: string;
 }
 
 /** Which file the diff pane is showing, and from which side. */
@@ -539,6 +541,38 @@ export interface CommandBlock {
   exitCode: number | null;
   /** Read back from a saved scrollback: a record of a previous session, not something that just ran. */
   restored?: boolean;
+}
+
+/** One run of lines one commit wrote, numbered on the file as of the blamed commit. */
+export interface BlameHunk {
+  start: number;
+  lines: number;
+  id: string;
+  short: string;
+  author: string;
+  time: number;
+  summary: string;
+}
+
+export interface Blame {
+  hunks: BlameHunk[];
+  truncated: boolean;
+  error: string | null;
+}
+
+/**
+ * Which of six tints a line's age falls in, newest first: today, this week,
+ * this month, this half year, this year, and older. The gutter is tinted by
+ * it the way the history's rails are tinted by lane.
+ */
+export function ageBucket(time: number, now = Date.now() / 1000): number {
+  const days = (now - time) / 86_400;
+  if (days < 1) return 0;
+  if (days < 7) return 1;
+  if (days < 30) return 2;
+  if (days < 182) return 3;
+  if (days < 365) return 4;
+  return 5;
 }
 
 /** A block as it is saved beside the scrollback: the command and the line it sat on. */

@@ -65,6 +65,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
 | `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index, and one commit against its first parent |
+| `src-tauri/src/blame.rs` | Who last wrote each line of a file, as of a commit. Hunks, not lines, capped at 6000 like the diff |
 | `src-tauri/src/history.rs` | The whole DAG, a page at a time, with its lanes already packed |
 | `src-tauri/src/signing.rs` | Whether a commit carries a signature and of which scheme. Presence only, never verification |
 | `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
