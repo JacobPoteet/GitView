@@ -10,6 +10,7 @@ import {
   useSettings,
 } from "../lib/settings";
 import type { AppInfo } from "../lib/types";
+import Dialog from "./Dialog";
 
 export type SettingsSection = "folders" | "terminal" | "launch" | "about";
 
@@ -47,40 +48,28 @@ export default function SettingsDialog({
   onClose,
 }: Props) {
   return (
-    <div
-      className="confirm-backdrop"
-      role="presentation"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="confirm settings" role="dialog" aria-modal="true" aria-label="Settings">
-        <h2>
-          Settings
-          <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-            ✕
-          </button>
-        </h2>
-        <div className="settings-body">
-          <nav className="settings-nav" aria-label="Settings sections">
-            {SECTIONS.map((entry) => (
-              <button
-                key={entry.id}
-                className={entry.id === section ? "on" : ""}
-                onClick={() => onSection(entry.id)}
-                aria-current={entry.id === section ? "page" : undefined}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </nav>
-          <div className="settings-page">
-            {section === "folders" && <Folders roots={roots} onChange={onRoots} />}
-            {section === "terminal" && <TerminalSection />}
-            {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
-            {section === "about" && <About info={info} />}
-          </div>
+    <Dialog label="Settings" className="settings" onClose={onClose}>
+      <div className="settings-body">
+        <nav className="settings-nav" aria-label="Settings sections">
+          {SECTIONS.map((entry) => (
+            <button
+              key={entry.id}
+              className={entry.id === section ? "on" : ""}
+              onClick={() => onSection(entry.id)}
+              aria-current={entry.id === section ? "page" : undefined}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-page">
+          {section === "folders" && <Folders roots={roots} onChange={onRoots} />}
+          {section === "terminal" && <TerminalSection />}
+          {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
+          {section === "about" && <About info={info} />}
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
