@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import FleetSidebar from "./components/FleetSidebar";
+import FleetSidebar, { drawnOrder, groupRepos } from "./components/FleetSidebar";
 import TerminalPane, {
   blockOutput,
   closeSession,
+  focusSession,
   getBlocks,
   revealBlock,
   sendCommand,
@@ -28,6 +29,7 @@ import Splash from "./components/Splash";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import { settings, updateSettings, useSetting } from "./lib/settings";
+import { chordOf, repoChord } from "./lib/keys";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -707,11 +709,50 @@ export default function App() {
     return subscribeBlocks(selectedPath, setBlocks);
   }, [selectedPath, closedShell]);
 
+  // The sidebar's rows in the order it draws them, for Ctrl+1 to Ctrl+9.
+  const drawn = useMemo(() => drawnOrder(groupRepos(repos, prefs, query)), [repos, prefs, query]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      const chord = chordOf(event);
+      if (chord === "Ctrl+K") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+      } else if (chord && /^Ctrl\+[1-9]$/.test(chord)) {
+        const repo = drawn[Number(chord.slice(5)) - 1];
+        event.preventDefault();
+        if (repo) setSelectedPath(repo.path);
+      } else if (chord === "Ctrl+`") {
+        event.preventDefault();
+        if (selectedPath) focusSession(selectedPath);
+      } else if (chord === "Ctrl+Shift+C") {
+        // The field is in the changes column, which the commit pane's file
+        // list replaces while a commit is open. No field, nothing to focus.
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>(".commit-title")?.focus();
+      } else if (chord === "Ctrl+H") {
+        event.preventDefault();
+        if (historyOpen) setHistoryOpen(false);
+        else if (selectedPath) openHistory();
+      } else if (chord === "Ctrl+I") {
+        event.preventDefault();
+        if (info?.gh.version) setInboxOpen((open) => !open);
+      } else if (chord === "Ctrl+,") {
+        event.preventDefault();
+        setSettingsOpen((open) => (open ? null : "terminal"));
+      } else if (chord === "Ctrl+F") {
+        // The terminal pane hears its own Ctrl+F on the way down and opens the
+        // scrollback search; everything else lands here. The surface is the
+        // one the focus is in, and the sidebar's filter when it is in none.
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest(".terminal-pane")) return;
+        event.preventDefault();
+        const surface = target?.closest(".history-pane")
+          ? ".history-pane .history-filter input"
+          : ".sidebar-search input";
+        const field = document.querySelector<HTMLInputElement>(surface);
+        field?.focus();
+        field?.select();
       }
       if (event.key === "Escape") {
         // Escape in a text field means the field, not the window. Writing a
@@ -781,6 +822,11 @@ export default function App() {
     batchOpen,
     updateOpen,
     paletteOpen,
+    drawn,
+    selectedPath,
+    historyOpen,
+    openHistory,
+    info?.gh.version,
   ]);
 
   // The webview's own right-click menu is Back, Reload, Print and Share, none
@@ -1633,13 +1679,16 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
   const paletteItems = useMemo<PaletteItem[]>(() => {
     const items: PaletteItem[] = [];
 
+    // In the sidebar's order, so the chord in the hint is the row's number.
+    const numbered = new Map(drawn.map((repo, index) => [repo.path, repoChord(index)]));
     for (const repo of repos) {
       if (prefs.get(repo.path)?.hidden) continue;
+      const chord = numbered.get(repo.path);
       items.push({
         id: `repo:${repo.path}`,
         label: repo.name,
         kind: "repo",
-        hint: repo.branch ?? "",
+        hint: [repo.branch ?? "", chord].filter(Boolean).join(" · "),
         run: () => setSelectedPath(repo.path),
       });
     }
@@ -1716,7 +1765,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         id: "action:history",
         label: `History of ${selected.name}`,
         kind: "fleet",
-        hint: "every commit on every branch",
+        hint: "every commit on every branch · Ctrl+H",
         run: () => openHistory(),
       });
       items.push({
@@ -1797,7 +1846,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         id: "action:inbox",
         label: "GitHub inbox",
         kind: "fleet",
-        hint: waiting > 0 ? `${waiting} waiting on you` : "pull requests and issues, fleet-wide",
+        hint: `${waiting > 0 ? `${waiting} waiting on you` : "pull requests and issues, fleet-wide"} · Ctrl+I`,
         run: () => setInboxOpen(true),
       });
       for (const item of inbox?.items ?? []) {
@@ -1843,7 +1892,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       id: "action:settings",
       label: "Settings",
       kind: "fleet",
-      hint: "terminal, launch, and the folders GitView watches",
+      hint: "terminal, launch, GitHub, keyboard, and the folders GitView watches · Ctrl+,",
       run: () => setSettingsOpen("terminal"),
     });
 
@@ -1852,6 +1901,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
   }, [
     repos,
     prefs,
+    drawn,
     tasks,
     selected,
     live,

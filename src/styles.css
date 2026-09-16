@@ -1768,6 +1768,17 @@ div.setting-row {
   color: var(--text-dim);
 }
 
+/* The chords: a wider key column, and prose that wraps rather than a path that truncates. */
+.keys-list dt {
+  width: 120px;
+}
+
+.keys-list dd {
+  white-space: normal;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
 /* ------------------------------------------------------------------ roots */
 
 .root-list {

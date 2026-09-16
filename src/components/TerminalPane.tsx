@@ -9,6 +9,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { api } from "../lib/api";
 import type { CommandBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
+import { isClaimed } from "../lib/keys";
 
 /**
  * Sessions live in this module rather than in component state, so switching to
@@ -500,11 +501,9 @@ function getSession(id: string): Session {
   //
   // Ctrl+F takes the same route for the pane's own search field: the pane
   // hears it on the host and opens the field, and the shell never sees ^F.
-  term.attachCustomKeyEventHandler((event) => {
-    const key = event.key.toLowerCase();
-    const chord = (event.ctrlKey || event.metaKey) && !event.altKey && (key === "k" || key === "f");
-    return !(event.type === "keydown" && chord);
-  });
+  // Every other chord in `lib/keys.ts` goes the same way, so Ctrl+H reaches
+  // the history rather than the shell's backspace.
+  term.attachCustomKeyEventHandler((event) => !(event.type === "keydown" && isClaimed(event)));
 
   const host = document.createElement("div");
   host.style.height = "100%";
@@ -897,6 +896,14 @@ export default function TerminalPane({
       )}
     </div>
   );
+}
+
+/** Puts the cursor in a repository's shell, when it has one. */
+export function focusSession(repoPath: string): boolean {
+  const session = sessions.get(repoPath);
+  if (!session) return false;
+  session.term.focus();
+  return true;
 }
 
 /** Types a command at the prompt of a repository's shell. */

@@ -391,6 +391,57 @@ function Row({
   );
 }
 
+/**
+ * The sidebar's groups, in the order it draws them. Exported so `App` can
+ * number the first nine for Ctrl+1 to Ctrl+9 from the same list the eye
+ * counts down, and never from a list the sidebar would draw differently.
+ */
+export function groupRepos(repos: RepoState[], prefs: Map<string, RepoPref>, query: string) {
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? repos.filter(
+        (r) =>
+          r.name.toLowerCase().includes(needle) ||
+          (r.branch ?? "").toLowerCase().includes(needle),
+      )
+    : repos;
+
+  const hidden = filtered.filter((r) => prefs.get(r.path)?.hidden);
+  const visible = filtered.filter((r) => !prefs.get(r.path)?.hidden);
+
+  // Pin order is whatever the user arranged it to be, and the order they were
+  // pinned in until they arrange it. A pinned repository holds its place
+  // whether or not it is the loudest one today, which is the point.
+  const pinned = visible
+    .filter((r) => prefs.get(r.path)?.pinnedAt != null)
+    .sort((a, b) => {
+      const left = prefs.get(a.path);
+      const right = prefs.get(b.path);
+      return (
+        (left?.pinnedPos ?? Number.MAX_SAFE_INTEGER) -
+          (right?.pinnedPos ?? Number.MAX_SAFE_INTEGER) ||
+        (left?.pinnedAt ?? 0) - (right?.pinnedAt ?? 0) ||
+        a.name.localeCompare(b.name)
+      );
+    });
+
+  const rest = visible
+    .filter((r) => prefs.get(r.path)?.pinnedAt == null)
+    .sort((a, b) => attentionScore(b) - attentionScore(a) || a.name.localeCompare(b.name));
+
+  return {
+    pinned,
+    attention: rest.filter((r) => !isClean(r)),
+    clean: rest.filter(isClean),
+    hidden: hidden.sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+/** The visible rows top to bottom, which is what Ctrl+1 to Ctrl+9 count. */
+export function drawnOrder(groups: ReturnType<typeof groupRepos>): RepoState[] {
+  return [...groups.pinned, ...groups.attention, ...groups.clean];
+}
+
 export default function FleetSidebar({
   repos,
   prefs,
@@ -418,46 +469,7 @@ export default function FleetSidebar({
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
 
-  const groups = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const filtered = needle
-      ? repos.filter(
-          (r) =>
-            r.name.toLowerCase().includes(needle) ||
-            (r.branch ?? "").toLowerCase().includes(needle),
-        )
-      : repos;
-
-    const hidden = filtered.filter((r) => prefs.get(r.path)?.hidden);
-    const visible = filtered.filter((r) => !prefs.get(r.path)?.hidden);
-
-    // Pin order is whatever the user arranged it to be, and the order they were
-    // pinned in until they arrange it. A pinned repository holds its place
-    // whether or not it is the loudest one today, which is the point.
-    const pinned = visible
-      .filter((r) => prefs.get(r.path)?.pinnedAt != null)
-      .sort((a, b) => {
-        const left = prefs.get(a.path);
-        const right = prefs.get(b.path);
-        return (
-          (left?.pinnedPos ?? Number.MAX_SAFE_INTEGER) -
-            (right?.pinnedPos ?? Number.MAX_SAFE_INTEGER) ||
-          (left?.pinnedAt ?? 0) - (right?.pinnedAt ?? 0) ||
-          a.name.localeCompare(b.name)
-        );
-      });
-
-    const rest = visible
-      .filter((r) => prefs.get(r.path)?.pinnedAt == null)
-      .sort((a, b) => attentionScore(b) - attentionScore(a) || a.name.localeCompare(b.name));
-
-    return {
-      pinned,
-      attention: rest.filter((r) => !isClean(r)),
-      clean: rest.filter(isClean),
-      hidden: hidden.sort((a, b) => a.name.localeCompare(b.name)),
-    };
-  }, [repos, prefs, query]);
+  const groups = useMemo(() => groupRepos(repos, prefs, query), [repos, prefs, query]);
 
   const pinOrder = groups.pinned.map((repo) => repo.path);
 
