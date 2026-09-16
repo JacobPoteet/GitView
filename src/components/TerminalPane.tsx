@@ -6,8 +6,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
+import { SerializeAddon } from "@xterm/addon-serialize";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "../lib/api";
-import type { CommandBlock } from "../lib/types";
+import type { CommandBlock, StoredBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
 import { isClaimed } from "../lib/keys";
 import { nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
@@ -29,6 +31,13 @@ interface Session {
   fit: FitAddon;
   /** Search over the buffer. Per session, since the buffer is. */
   search: SearchAddon;
+  /** The buffer as text with its escapes, for saving across a restart. */
+  serialize: SerializeAddon;
+  /** The debounced save, and when the last one happened. */
+  saveTimer: number | undefined;
+  savedAt: number;
+  /** Whether the saved scrollback has been asked for, so a second open never writes it twice. */
+  restored: boolean;
   host: HTMLDivElement;
   opened: boolean;
   /** Whether the Rust side is holding a channel that reaches this session. */
@@ -492,6 +501,8 @@ function getSession(id: string): Session {
   term.loadAddon(new WebLinksAddon());
   const search = new SearchAddon();
   term.loadAddon(search);
+  const serialize = new SerializeAddon();
+  term.loadAddon(serialize);
 
   // The terminal holds focus whenever a repository is selected, so without this
   // Ctrl+K reached the shell as a literal ^K and the palette never opened.
@@ -514,6 +525,10 @@ function getSession(id: string): Session {
     term,
     fit,
     search,
+    serialize,
+    saveTimer: undefined,
+    savedAt: 0,
+    restored: false,
     host,
     opened: false,
     attached: false,
@@ -544,13 +559,135 @@ function getSession(id: string): Session {
 
 function receive(session: Session, chunk: string) {
   session.term.write(chunk);
+  // A command that prints without pause never settles, so it is saved on a
+  // clock as well: a dev server's log is the scrollback most worth keeping.
+  if (session.running && Date.now() - session.savedAt > SAVE_EVERY) scheduleSave(session, 0);
   window.clearTimeout(session.settleTimer);
   session.settleTimer = window.setTimeout(() => {
     session.onSettled?.(session.id);
     // A dev server announces its port on the way up and then goes quiet, so the
     // moment the output settles is the moment the port is worth reading.
     if (session.running) notify(session);
+    scheduleSave(session);
   }, 900);
+}
+
+// ------------------------------------------------------------ across restarts
+
+/** How long a shell that keeps printing goes between saves. */
+const SAVE_EVERY = 15_000;
+
+/**
+ * The buffer and the blocks, written out for the next launch. Debounced, so a
+ * build that settles every few hundred milliseconds does not write twenty
+ * thousand lines each time. Only a session with a shell behind it: a closed
+ * one has had its file removed on purpose.
+ */
+function scheduleSave(session: Session, delay = 2000) {
+  if (!settings().terminal.restoreScrollback || !session.attached) return;
+  window.clearTimeout(session.saveTimer);
+  session.saveTimer = window.setTimeout(() => saveSession(session), delay);
+}
+
+async function saveSession(session: Session): Promise<void> {
+  window.clearTimeout(session.saveTimer);
+  session.saveTimer = undefined;
+  if (!settings().terminal.restoreScrollback || !session.attached) return;
+  session.savedAt = Date.now();
+  // A block still running has no exit code to record, and its output is the
+  // part of the buffer most likely to change before the next save, so it
+  // waits for the save after it ends.
+  const blocks: StoredBlock[] = [];
+  for (const block of session.blocks) {
+    if (block.exitCode === null) continue;
+    const line = anchor(session, block);
+    if (line === null) continue;
+    blocks.push({
+      command: block.command,
+      startedAt: block.startedAt,
+      endedAt: block.endedAt,
+      exitCode: block.exitCode,
+      line,
+    });
+  }
+  try {
+    await api.scrollbackWrite(session.id, session.serialize.serialize(), blocks);
+  } catch {
+    // A write that failed is a scrollback that is not restored, and nothing
+    // the shell is doing depends on it.
+  }
+}
+
+/**
+ * Writes every live shell out. Called once when the window is asked to
+ * close, which Rust holds until this has finished and `app_quit` is called.
+ * The hold is bounded: a save that hangs must not keep the app open.
+ */
+export async function saveAllSessions(): Promise<void> {
+  const live = [...sessions.values()].filter((session) => session.attached);
+  await Promise.race([
+    Promise.all(live.map((session) => saveSession(session))),
+    new Promise((resolve) => window.setTimeout(resolve, 3000)),
+  ]);
+}
+
+// The close button is a request: Rust holds it, this writes, and `app_quit`
+// finishes. Registered once for the module, since the sessions are.
+listen("closing", async () => {
+  try {
+    await saveAllSessions();
+  } finally {
+    api.appQuit().catch(() => undefined);
+  }
+}).catch(() => undefined);
+
+/**
+ * Puts a saved scrollback back into a fresh terminal, before the shell's
+ * first prompt lands, and re-anchors its blocks on the lines they sat on.
+ * Each block goes through `anchor` the way a live one does, so a line that
+ * does not end with its command is a block that is not restored.
+ */
+async function restoreSession(session: Session): Promise<void> {
+  if (session.restored || !settings().terminal.restoreScrollback) return;
+  session.restored = true;
+  let stored;
+  try {
+    stored = await api.scrollbackRead(session.id);
+  } catch {
+    return;
+  }
+  if (!stored || !stored.text) return;
+  await new Promise<void>((resolve) => session.term.write(stored.text, resolve));
+  for (const saved of stored.blocks) {
+    const marker = markerAt(session, saved.line);
+    if (!marker) continue;
+    const block: CommandBlock = {
+      id: nextBlockId++,
+      repoPath: session.id,
+      command: saved.command,
+      startedAt: saved.startedAt,
+      endedAt: saved.endedAt,
+      exitCode: saved.exitCode,
+      restored: true,
+    };
+    session.marks.set(block.id, { start: marker });
+    if (anchor(session, block) === null) {
+      session.marks.delete(block.id);
+      continue;
+    }
+    session.blocks.push(block);
+    paint(session, block);
+  }
+  // A dim rule between then and now, so the eye can find where this launch
+  // begins without reading the timestamps. Then a screen's worth of blank
+  // lines: ConPTY clears the viewport as the shell starts, so what was
+  // restored has to be in the scrollback by then, where a clear cannot reach.
+  const when = stored.savedAt ? new Date(stored.savedAt * 1000).toLocaleString() : "";
+  const rule = `\r\n\x1b[2m── previous session${when ? `, saved ${when}` : ""} ──\x1b[0m`;
+  await new Promise<void>((resolve) =>
+    session.term.write(rule + "\r\n".repeat(session.term.rows), resolve),
+  );
+  notify(session);
 }
 
 /** WebGL, with the fallback logged rather than silent. */
@@ -775,6 +912,10 @@ export default function TerminalPane({
         // since exited still has to be reopened.
         const alive = session.attached ? await api.ptyAlive(sessionId) : false;
         if (!alive) {
+          // A fresh terminal gets what the last launch left, before the shell
+          // prints its first prompt. A reopened one after a close on purpose
+          // has had its file removed, so there is nothing to put back.
+          await restoreSession(session);
           await api.ptyOpen(sessionId, repoPath, cols, rows, (chunk) => receive(session, chunk));
           session.attached = true;
         }
@@ -992,9 +1133,13 @@ export async function sendCommand(repoPath: string, command: string) {
  */
 export async function closeSession(repoPath: string) {
   await api.ptyClose(repoPath).catch(() => undefined);
+  // Ended for good: the scrollback goes, and so does the copy on disk.
+  api.scrollbackRemove(repoPath).catch(() => undefined);
   const session = sessions.get(repoPath);
   if (!session) return;
   window.clearTimeout(session.settleTimer);
+  window.clearTimeout(session.saveTimer);
+  session.attached = false;
   // The scrollback is going, and the blocks are a view of it.
   session.blocks = [];
   session.running = null;

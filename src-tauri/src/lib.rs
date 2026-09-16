@@ -13,6 +13,7 @@ pub mod graph;
 pub mod history;
 pub mod pty;
 pub mod scratch;
+pub mod scrollback;
 pub mod settings;
 pub mod signing;
 pub mod squash;
@@ -424,6 +425,53 @@ async fn commit_message_file(path: String, message: String) -> Result<String, St
         .map_err(|e| e.to_string())?
 }
 
+/// A session's scrollback and blocks, written for the next launch. See scrollback.rs.
+#[tauri::command]
+async fn scrollback_write(
+    id: String,
+    text: String,
+    blocks: Vec<scrollback::StoredBlock>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || scrollback::write(&id, &text, &blocks))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn scrollback_read(id: String) -> Result<Option<scrollback::Stored>, String> {
+    tauri::async_runtime::spawn_blocking(move || scrollback::read(&id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn scrollback_remove(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || scrollback::remove(&id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn scrollback_size() -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(scrollback::size)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn scrollback_clear() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(scrollback::clear)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Ends the process. The window's close is intercepted so the frontend can
+/// save every scrollback first; this is what it calls once it has.
+#[tauri::command]
+fn app_quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 /// Whether a newer GitView has been released.
 ///
 /// One `gh release view`, out of sight for the same reason the inbox sweep is:
@@ -588,6 +636,15 @@ fn app_info(state: State<'_, AppState>) -> AppInfo {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // The close button asks rather than closes: the frontend hears
+        // `closing`, writes every shell's scrollback out, and calls `app_quit`.
+        // Without the hold the buffers would be gone before the write began.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = tauri::Emitter::emit(window, "closing", ());
+            }
+        })
         .setup(|app| {
             let cache = Cache::open()?;
             app.manage(AppState {
@@ -630,6 +687,12 @@ pub fn run() {
             pty_close,
             pty_alive,
             pty_live,
+            scrollback_write,
+            scrollback_read,
+            scrollback_remove,
+            scrollback_size,
+            scrollback_clear,
+            app_quit,
             settings_roots,
             settings_set_roots,
             settings_add_root,

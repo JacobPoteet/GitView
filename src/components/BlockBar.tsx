@@ -113,7 +113,15 @@ export default function BlockBar({
       <span className="block-command" title={last.command}>
         {last.command}
       </span>
-      <span className="block-time">{blockDuration(last)}</span>
+      {/* A block read back from a saved scrollback is a record, not something
+          that just finished, and the bar says so in place of Run again. */}
+      {last.restored ? (
+        <span className="block-time" title="Read back from the last time this shell was open">
+          previous session
+        </span>
+      ) : (
+        <span className="block-time">{blockDuration(last)}</span>
+      )}
 
       {ports.length > 0 && (
         <span className="block-ports">
@@ -141,14 +149,16 @@ export default function BlockBar({
           Last failure
         </button>
       )}
-      <button
-        className="block-action"
-        disabled={running}
-        onClick={() => onRun(last.command)}
-        title={running ? "It is still running" : last.command}
-      >
-        Run again
-      </button>
+      {!last.restored && (
+        <button
+          className="block-action"
+          disabled={running}
+          onClick={() => onRun(last.command)}
+          title={running ? "It is still running" : last.command}
+        >
+          Run again
+        </button>
+      )}
       <button className="block-action" onClick={() => onSave(last)} title="Keep this as a task">
         Save as task
       </button>
