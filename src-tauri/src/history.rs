@@ -54,6 +54,10 @@ pub struct HistoryRow {
     /// The commit HEAD is on. On a branch or detached, either way it is the
     /// one the next commit lands on top of.
     pub is_head: bool,
+    /// Reachable from HEAD, so already part of what you are standing on. A
+    /// cherry-pick of one of these would apply nothing, and git would leave a
+    /// cherry-pick paused on an empty commit to say so.
+    pub in_head: bool,
     /// The column this commit's node sits in.
     pub lane: usize,
     /// What to draw in the band between this row and the one under it, as
@@ -353,6 +357,7 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize, filter: Option<&Filte
             is_merge: commit.parent_count() > 1,
             signature: crate::signing::kind(&repo, placed[i].id),
             is_head: false,
+            in_head: false,
             lane,
             edges,
         });
@@ -363,11 +368,13 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize, filter: Option<&Filte
     let names = ref_names(&repo);
     let head_oid = repo.head().ok().and_then(|head| head.target());
     let detached = repo.head_detached().unwrap_or(false);
+    let reachable = head_ancestry(&repo);
     for row in &mut out.rows {
         if let Ok(oid) = Oid::from_str(&row.id) {
             if let Some(found) = names.get(&oid) {
                 row.refs = found.clone();
             }
+            row.in_head = reachable.contains(&oid);
             if Some(oid) == head_oid {
                 row.is_head = true;
                 // A detached HEAD sits on no branch, so no ref carries the
@@ -404,6 +411,30 @@ fn free_lane(active: &mut Vec<Option<Oid>>, crowded: &mut bool) -> usize {
     }
     active.push(None);
     active.len() - 1
+}
+
+/// Every commit HEAD can reach, as a set.
+///
+/// One plain revwalk over oids, which is the cheap kind: no commit is opened.
+/// `graph_descendant_of` per row would be a merge-base each, four hundred
+/// times a page, and this answers all of them at once.
+fn head_ancestry(repo: &Repository) -> std::collections::HashSet<Oid> {
+    let mut set = std::collections::HashSet::new();
+    let Ok(mut walk) = repo.revwalk() else {
+        return set;
+    };
+    if walk.push_head().is_err() {
+        return set;
+    }
+    for (n, step) in walk.enumerate() {
+        if let Ok(id) = step {
+            set.insert(id);
+        }
+        if n >= MAX_WALK {
+            break;
+        }
+    }
+    set
 }
 
 /// Parent ids without loading the commit's message or author.
@@ -652,6 +683,21 @@ mod tests {
         assert_eq!(page.rows.len(), 1);
         assert_eq!(page.rows[0].summary, "Fix the tests");
         assert_eq!(page.total, 2);
+    }
+
+    /// Rows say whether HEAD reaches them, which is what decides if a
+    /// cherry-pick would apply anything.
+    #[test]
+    fn rows_know_whether_head_reaches_them() {
+        let fixture = Fixture::new("inhead");
+        let base = fixture.commit("HEAD", "base", &[]);
+        let on_main = fixture.commit("HEAD", "on main", &[base]);
+        let _aside = fixture.commit("refs/heads/feat", "aside", &[base]);
+        let _ = on_main;
+        let history = read(&fixture.dir, 0, 50, None);
+        assert!(row(&history, "on main").in_head);
+        assert!(row(&history, "base").in_head);
+        assert!(!row(&history, "aside").in_head);
     }
 
     /// A history with nothing but one line in it draws one line.

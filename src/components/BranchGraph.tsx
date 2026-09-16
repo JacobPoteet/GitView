@@ -30,6 +30,8 @@ interface Props {
   onCopy: (text: string, what: string) => void;
   /** Opens the tag dialog on a commit. The app owns it, as it owns the delete. */
   onTag: (commit: { id: string; short: string; summary: string }) => void;
+  /** Opens the reset confirmation on a commit. The app owns it. */
+  onReset: (commit: { id: string; short: string; summary: string }, mode: ResetMode) => void;
   /** Every local branch, so a commit that is a branch tip offers the branch. */
   branches: BranchSummary[];
   shell: ShellKind;
@@ -41,6 +43,21 @@ export interface TipOf {
   isHead: boolean;
 }
 
+/** What the commit menu needs from the surface that opens it. */
+export interface CommitMenuContext {
+  shell: ShellKind;
+  /** The branch HEAD is on, or null when detached or unborn. */
+  headBranch: string | null;
+  onCommand: (command: string, typeOnly: boolean) => void;
+  onCopy: (text: string, what: string) => void;
+  /** Opens the tag dialog on a commit. The app owns it, as it owns the delete. */
+  onTag: (commit: { id: string; short: string; summary: string }) => void;
+  /** Asks first, and the app owns the dialog: a reset is the discard rule again. */
+  onReset: (commit: { id: string; short: string; summary: string }, mode: ResetMode) => void;
+}
+
+export type ResetMode = "soft" | "mixed" | "hard";
+
 /**
  * The commit menu, shared with the history pane's rows.
  *
@@ -49,17 +66,31 @@ export interface TipOf {
  * he was already looking at. A commit that is the tip of a local branch offers
  * `git switch <branch>` for each, and the detached checkout says so in its
  * label rather than in the tooltip.
+ *
+ * Revert, cherry-pick and reset are the three commands a person runs with a
+ * sha they would otherwise copy out of the list, which is the argument the
+ * surface holds and the prompt does not. Cherry-pick is off for a commit HEAD
+ * already reaches, since git would pause on an empty commit rather than say
+ * so. Reset asks first, once per mode, so the dialog can say what each keeps.
  */
 export function commitMenu(
-  commit: { id: string; short: string; summary: string },
+  commit: { id: string; short: string; summary: string; isMerge?: boolean; inHead: boolean },
   tips: TipOf[],
-  shell: ShellKind,
-  onCommand: (command: string, typeOnly: boolean) => void,
-  onCopy: (text: string, what: string) => void,
-  onTag: (commit: { id: string; short: string; summary: string }) => void,
+  ctx: CommitMenuContext,
 ): MenuEntry[] {
+  const { shell, headBranch, onCommand, onCopy, onTag, onReset } = ctx;
   const show = `git --no-pager show --stat ${commit.short}`;
   const checkout = `git checkout ${commit.short}`;
+  // A merge has two parents and git will not guess which side to undo; -m 1
+  // keeps the first, which is the branch the merge landed on.
+  const revert = commit.isMerge ? `git revert -m 1 ${commit.short}` : `git revert ${commit.short}`;
+  const pick = `git cherry-pick ${commit.short}`;
+  const onto = headBranch ?? "HEAD";
+  const resets: { mode: ResetMode; keeps: string }[] = [
+    { mode: "soft", keeps: "keeps every change, staged" },
+    { mode: "mixed", keeps: "keeps every change, unstaged" },
+    { mode: "hard", keeps: "throws the changes away" },
+  ];
   return [
     { label: "Show", title: show, run: (typeOnly) => onCommand(show, typeOnly) },
     {
@@ -81,6 +112,32 @@ export function commitMenu(
       title: `${checkout}\n\nLeaves HEAD at this commit and on no branch. git switch - comes back.`,
       run: (typeOnly) => onCommand(checkout, typeOnly),
     },
+    "-",
+    {
+      label: "Revert this commit",
+      title: `${revert}\n\nA new commit on ${onto} that undoes this one.${commit.isMerge ? " -m 1 keeps the side the merge landed on." : ""}`,
+      run: (typeOnly) => onCommand(revert, typeOnly),
+    },
+    {
+      label: `Cherry-pick onto ${onto}`,
+      title: commit.inHead
+        ? `${onto} already has this commit. git would pause on an empty cherry-pick.`
+        : `${pick}\n\nReplays this commit on top of ${onto}.`,
+      disabled: commit.inHead,
+      run: (typeOnly) => onCommand(pick, typeOnly),
+    },
+    { label: `Reset ${onto} to here`, heading: true },
+    ...resets.map(
+      (r): MenuEntry => ({
+        label: `${r.mode}: ${r.keeps}`,
+        title: headBranch
+          ? `git reset --${r.mode} ${commit.short}\n\nAsks first.`
+          : "Detached: there is no branch to move.",
+        danger: r.mode === "hard",
+        disabled: !headBranch,
+        run: () => onReset(commit, r.mode),
+      }),
+    ),
     "-",
     { label: "Copy SHA", title: commit.id, run: () => onCopy(commit.id, "the commit id") },
     { label: "Copy message", run: () => onCopy(commit.summary, "the message") },
@@ -146,6 +203,7 @@ export default function BranchGraph({
   onOpen,
   onCopy,
   onTag,
+  onReset,
   branches,
   shell,
 }: Props) {
@@ -281,7 +339,16 @@ export default function BranchGraph({
         <ContextMenu
           at={menu.menu.at}
           label={`Actions for ${menu.menu.payload.short}`}
-          entries={commitMenu(menu.menu.payload, tipsOf(menu.menu.payload), shell, onCommand, onCopy, onTag)}
+          entries={commitMenu(
+            {
+              ...menu.menu.payload,
+              // The top rail past the fork is what the base has and you do
+              // not; everything else on the strip is under HEAD.
+              inHead: !graph?.theirs.some((c) => c.id === menu.menu?.payload.id),
+            },
+            tipsOf(menu.menu.payload),
+            { shell, headBranch: graph?.detached ? null : (graph?.head ?? null), onCommand, onCopy, onTag, onReset },
+          )}
           onClose={menu.close}
         />
       )}
