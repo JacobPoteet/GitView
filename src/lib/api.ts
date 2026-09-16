@@ -6,6 +6,7 @@ import type {
   FileChange,
   FileDiff,
   History,
+  HistoryFilter,
   GitOutcome,
   Inbox,
   IssueDetail,
@@ -36,9 +37,12 @@ export const api = {
    */
   repoSquashed: (path: string) => invoke<Squashed[]>("repo_squashed", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
-  /** One page of the whole DAG. Lanes come packed, see history.rs. */
-  repoHistory: (path: string, offset: number, limit: number) =>
-    invoke<History>("repo_history", { path, offset, limit }),
+  /**
+   * One page of the whole DAG. Lanes come packed, see history.rs. With a
+   * filter the page is the matches, flat, and `total` counts them.
+   */
+  repoHistory: (path: string, offset: number, limit: number, filter: HistoryFilter | null = null) =>
+    invoke<History>("repo_history", { path, offset, limit, filter }),
   /** One file, on one side of the index. Read per file, not per working tree. */
   repoDiff: (path: string, file: string, staged: boolean) =>
     invoke<FileDiff>("repo_diff", { path, file, staged }),

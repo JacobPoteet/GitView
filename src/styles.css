@@ -4173,3 +4173,47 @@ button.inbox-check-name.link:hover {
   opacity: 0.4;
   cursor: default;
 }
+
+/* The history filter, in the tab bar. The same face as the sidebar's filter,
+   sized to the bar. */
+.history-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 120px;
+  max-width: 360px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 6px;
+  transition: border-color 0.15s var(--ease);
+}
+
+.history-filter:focus-within {
+  border-color: var(--accent-line);
+}
+
+.history-filter input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.history-filter input::placeholder {
+  color: var(--text-faint);
+}
+
+.history-filter-clear {
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+
+.history-filter-clear:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}

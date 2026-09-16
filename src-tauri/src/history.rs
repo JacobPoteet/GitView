@@ -11,8 +11,8 @@
 //! runs from the newest commit each time and only the requested window is turned
 //! into rows; walking oids is cheap, and `find_commit` is what costs.
 
-use git2::{BranchType, Oid, Repository, Sort};
-use serde::Serialize;
+use git2::{BranchType, Commit, Oid, Repository, Sort};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -62,6 +62,75 @@ pub struct HistoryRow {
     pub edges: Vec<(usize, usize)>,
 }
 
+/// What narrows the walk, when anything does.
+///
+/// Every field is a substring match, case-insensitive, and a commit has to
+/// satisfy all of them. `path` is git's own notion from `git log -- path`:
+/// the commit is kept when the entry at that path differs from its first
+/// parent's, which a tree lookup answers without a diff. A directory works
+/// the same way, since a tree's id changes when anything under it does.
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Filter {
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+impl Filter {
+    fn is_empty(&self) -> bool {
+        self.text.as_deref().unwrap_or("").trim().is_empty()
+            && self.author.as_deref().unwrap_or("").trim().is_empty()
+            && self.path.as_deref().unwrap_or("").trim().is_empty()
+    }
+
+    /// Whether the commit is one the filter keeps. Reads the commit, which
+    /// the unfiltered walk avoids until a row is drawn; a filtered walk has
+    /// to look at every one, and that is the cost the pane's count pays for.
+    fn keeps(&self, commit: &Commit<'_>) -> bool {
+        let has = |needle: &Option<String>, hay: &str| match needle.as_deref().map(str::trim) {
+            Some(n) if !n.is_empty() => hay.to_lowercase().contains(&n.to_lowercase()),
+            _ => true,
+        };
+        if !has(&self.text, commit.message().unwrap_or("")) {
+            return false;
+        }
+        if !has(
+            &self.author,
+            &format!(
+                "{} {}",
+                commit.author().name().unwrap_or(""),
+                commit.author().email().unwrap_or("")
+            ),
+        ) {
+            return false;
+        }
+        if let Some(path) = self
+            .path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+        {
+            let path = path.trim_matches('/');
+            let entry = |c: &Commit<'_>| {
+                c.tree()
+                    .ok()
+                    .and_then(|t| t.get_path(Path::new(path)).ok().map(|e| e.id()))
+            };
+            let here = entry(commit);
+            // A root commit changed the path if it has it at all.
+            let before = commit.parent(0).ok().and_then(|p| entry(&p));
+            if here == before {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct History {
@@ -78,6 +147,9 @@ pub struct History {
     pub crowded: bool,
     /// The branch HEAD is on, or a short id when detached.
     pub head: Option<String>,
+    /// A filter was applied, so the rows are the matches, flat, with no
+    /// lanes: a filtered list is `git log --grep`, and git draws none there.
+    pub filtered: bool,
     pub error: Option<String>,
 }
 
@@ -91,6 +163,7 @@ impl History {
             lanes: 1,
             crowded: false,
             head: None,
+            filtered: false,
             error: None,
         }
     }
@@ -115,7 +188,7 @@ struct Placed {
     opened: Vec<usize>,
 }
 
-pub fn read(repo_path: &Path, offset: usize, limit: usize) -> History {
+pub fn read(repo_path: &Path, offset: usize, limit: usize, filter: Option<&Filter>) -> History {
     let repo = match Repository::open(repo_path) {
         Ok(repo) => repo,
         Err(err) => return History::failed(offset, err.message().to_string()),
@@ -123,6 +196,8 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize) -> History {
 
     let mut out = History::empty(offset);
     out.head = head_name(&repo);
+    let filter = filter.filter(|f| !f.is_empty());
+    out.filtered = filter.is_some();
 
     let mut walk = match repo.revwalk() {
         Ok(walk) => walk,
@@ -152,6 +227,34 @@ pub fn read(repo_path: &Path, offset: usize, limit: usize) -> History {
 
     for step in walk {
         let Ok(id) = step else { continue };
+
+        // A filtered walk keeps the matches and nothing else, in the order
+        // the walk found them, each in lane 0 with no edges. The lane field
+        // below is what it skips: an edge between two matches that are not
+        // parent and child would draw a line meaning nothing.
+        if let Some(filter) = filter {
+            let Ok(commit) = repo.find_commit(id) else {
+                continue;
+            };
+            if !filter.keeps(&commit) {
+                continue;
+            }
+            if index >= offset && index < want_to {
+                placed.push(Placed {
+                    id,
+                    lane: 0,
+                    after: Vec::new(),
+                    opened: Vec::new(),
+                });
+            }
+            index += 1;
+            if index >= MAX_WALK {
+                out.capped = true;
+                break;
+            }
+            continue;
+        }
+
         let parents = parents_of(&repo, id);
 
         let mut mine: Option<usize> = None;
@@ -442,6 +545,39 @@ mod tests {
         }
     }
 
+    impl Fixture {
+        /// A commit whose tree holds one file with the given text, so a path
+        /// filter has something to compare across parents.
+        fn commit_file(
+            &self,
+            refname: &str,
+            message: &str,
+            parents: &[Oid],
+            file: &str,
+            text: &str,
+        ) -> Oid {
+            let sig = Signature::now("Test", "test@example.com").expect("signature");
+            let blob = self.repo.blob(text.as_bytes()).expect("blob");
+            let mut builder = match parents.first() {
+                Some(p) => {
+                    let tree = self.repo.find_commit(*p).unwrap().tree().unwrap();
+                    self.repo.treebuilder(Some(&tree)).expect("treebuilder")
+                }
+                None => self.repo.treebuilder(None).expect("treebuilder"),
+            };
+            builder.insert(file, blob, 0o100644).expect("insert");
+            let tree = self.repo.find_tree(builder.write().unwrap()).unwrap();
+            let loaded: Vec<git2::Commit> = parents
+                .iter()
+                .map(|oid| self.repo.find_commit(*oid).expect("find parent"))
+                .collect();
+            let refs: Vec<&git2::Commit> = loaded.iter().collect();
+            self.repo
+                .commit(Some(refname), &sig, &sig, message, &tree, &refs)
+                .expect("commit")
+        }
+    }
+
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
@@ -461,6 +597,63 @@ mod tests {
             })
     }
 
+    /// A filter keeps the matches, flat, and counts them.
+    #[test]
+    fn a_filter_keeps_the_matches_in_one_lane_and_counts_them() {
+        let fixture = Fixture::new("filter");
+        let a = fixture.commit_file("HEAD", "Add the parser", &[], "parser.rs", "one");
+        let b = fixture.commit_file("HEAD", "Fix the tests", &[a], "tests.rs", "one");
+        let c = fixture.commit_file("HEAD", "Fix the parser again", &[b], "parser.rs", "two");
+        let d = fixture.commit_file("HEAD", "Docs", &[c], "README.md", "hi");
+        let _ = d;
+
+        let text = Filter {
+            text: Some("FIX".into()),
+            ..Default::default()
+        };
+        let history = read(&fixture.dir, 0, 50, Some(&text));
+        assert!(history.filtered);
+        assert_eq!(history.total, 2);
+        let names: Vec<&str> = history.rows.iter().map(|r| r.summary.as_str()).collect();
+        assert_eq!(names, vec!["Fix the parser again", "Fix the tests"]);
+        assert!(history
+            .rows
+            .iter()
+            .all(|r| r.lane == 0 && r.edges.is_empty()));
+
+        let path = Filter {
+            path: Some("parser.rs".into()),
+            ..Default::default()
+        };
+        let history = read(&fixture.dir, 0, 50, Some(&path));
+        let names: Vec<&str> = history.rows.iter().map(|r| r.summary.as_str()).collect();
+        assert_eq!(names, vec!["Fix the parser again", "Add the parser"]);
+
+        let author = Filter {
+            author: Some("nobody".into()),
+            ..Default::default()
+        };
+        assert_eq!(read(&fixture.dir, 0, 50, Some(&author)).total, 0);
+        let author = Filter {
+            author: Some("example.com".into()),
+            ..Default::default()
+        };
+        assert_eq!(read(&fixture.dir, 0, 50, Some(&author)).total, 4);
+
+        // An empty filter is no filter: lanes come back.
+        let blank = Filter {
+            text: Some("  ".into()),
+            ..Default::default()
+        };
+        assert!(!read(&fixture.dir, 0, 50, Some(&blank)).filtered);
+
+        // Paging runs over the matches, not the walk.
+        let page = read(&fixture.dir, 1, 1, Some(&text));
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.rows[0].summary, "Fix the tests");
+        assert_eq!(page.total, 2);
+    }
+
     /// A history with nothing but one line in it draws one line.
     #[test]
     fn a_straight_history_stays_in_one_lane() {
@@ -469,7 +662,7 @@ mod tests {
         let second = fixture.commit("refs/heads/main", "two", &[first]);
         fixture.commit("refs/heads/main", "three", &[second]);
 
-        let history = read(&fixture.dir, 0, 50);
+        let history = read(&fixture.dir, 0, 50, None);
 
         assert!(history.error.is_none(), "{:?}", history.error);
         assert_eq!(history.total, 3);
@@ -490,7 +683,7 @@ mod tests {
         let theirs = fixture.commit("refs/heads/side", "theirs", &[base]);
         fixture.commit("refs/heads/main", "merge", &[ours, theirs]);
 
-        let history = read(&fixture.dir, 0, 50);
+        let history = read(&fixture.dir, 0, 50, None);
 
         assert!(history.error.is_none(), "{:?}", history.error);
         assert_eq!(history.total, 4);
@@ -536,7 +729,7 @@ mod tests {
             .set_head("refs/heads/side")
             .expect("checkout side");
 
-        let history = read(&fixture.dir, 0, 50);
+        let history = read(&fixture.dir, 0, 50, None);
 
         assert_eq!(history.head.as_deref(), Some("side"));
         assert!(row(&history, "tip").is_head);
@@ -568,7 +761,7 @@ mod tests {
             .set_head_detached(base)
             .expect("detach at base");
 
-        let history = read(&fixture.dir, 0, 50);
+        let history = read(&fixture.dir, 0, 50, None);
 
         assert_eq!(
             history.head.as_deref(),
@@ -597,7 +790,7 @@ mod tests {
             parent = fixture.commit("refs/heads/main", &format!("c{n}"), &[parent]);
         }
 
-        let page = read(&fixture.dir, 4, 3);
+        let page = read(&fixture.dir, 4, 3, None);
 
         assert_eq!(
             page.total, 10,
