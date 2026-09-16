@@ -18,6 +18,8 @@ interface Props {
    */
   reloadKey: unknown;
   onSide: (staged: boolean) => void;
+  /** Opens the history filtered to this file. */
+  onFileHistory: () => void;
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Where a refused patch goes. The status bar, like every other refusal. */
@@ -44,6 +46,7 @@ export default function DiffPane({
   shell,
   reloadKey,
   onSide,
+  onFileHistory,
   onClose,
   onCommand,
   onError,
@@ -153,6 +156,13 @@ export default function DiffPane({
           }
         >
           {verb}
+        </button>
+        <button
+          className="btn tiny"
+          onClick={onFileHistory}
+          title={`git log -- ${target.file}, as the history pane's path: filter`}
+        >
+          History
         </button>
         <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
           ✕
