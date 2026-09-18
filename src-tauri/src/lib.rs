@@ -31,7 +31,7 @@ use tauri::{Manager, State};
 use cache::{Adoption, Cache, RepoPref};
 use diff::{CommitDiff, FileDiff};
 use fleet::{FileChange, RepoState};
-use github::{GhStatus, Inbox, IssueDetail};
+use github::{GhProbe, GhStatus, Inbox, IssueDetail};
 use gitops::GitOutcome;
 use graph::BranchGraph;
 use history::History;
@@ -406,6 +406,16 @@ async fn github_issue(owner_repo: String, number: i64) -> Result<IssueDetail, St
         .map_err(|e| e.to_string())?
 }
 
+/// The settings page's connection test: one small read through the same
+/// `gh api graphql` the inbox uses, so a pass means the inbox works and a
+/// failure carries gh's own reason.
+#[tauri::command]
+async fn github_probe() -> Result<GhProbe, String> {
+    tauri::async_runtime::spawn_blocking(github::probe)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Writes an issue body out and hands back the path `gh issue create` will
 /// read it from.
 ///
@@ -691,6 +701,7 @@ pub fn run() {
             github_issue_body,
             commit_message_file,
             github_issue,
+            github_probe,
             update_check,
             git_run,
             pty_open,

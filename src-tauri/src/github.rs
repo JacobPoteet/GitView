@@ -490,6 +490,94 @@ pub fn status() -> GhStatus {
     GhStatus { version, logged_in }
 }
 
+/// What the connection test found, when it got through.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GhProbe {
+    /// The account the token belongs to.
+    pub login: String,
+    /// Points left this hour, of `limit`.
+    pub remaining: i64,
+    pub limit: i64,
+    /// When the hour rolls over, as GitHub states it.
+    pub reset_at: String,
+}
+
+/// Asks GitHub who the token belongs to, the way the inbox asks anything.
+///
+/// The test goes through the same `gh api graphql` the sweep uses rather than
+/// `gh auth status`, because a token that `auth status` likes can still lack a
+/// scope the inbox needs, and because the failure text wanted is gh's own:
+/// "gh auth login" when nobody is logged in, "Bad credentials" when the token
+/// was revoked, and "error connecting to api.github.com" when the network is
+/// out. Each of those is what the user should read, so the error is returned
+/// as gh wrote it.
+pub fn probe() -> Result<GhProbe, String> {
+    let raw =
+        gh(&["api", "graphql", "-F", "query=@-"], Some(PROBE_QUERY)).map_err(|err| {
+            match err.strip_prefix("could not start gh: ") {
+            Some(_) => {
+                "gh is not on PATH. Install GitHub CLI from cli.github.com and open GitView again."
+                    .to_string()
+            }
+            None => err,
+        }
+        })?;
+    parse_probe(&raw)
+}
+
+const PROBE_QUERY: &str = "{ viewer { login } rateLimit { remaining limit resetAt } }";
+
+fn parse_probe(raw: &str) -> Result<GhProbe, String> {
+    let envelope: ProbeEnvelope =
+        serde_json::from_str(raw).map_err(|err| format!("could not read gh's response: {err}"))?;
+    let data = envelope.data.and_then(|d| Some((d.viewer?, d.rate_limit?)));
+    let Some((viewer, rate)) = data else {
+        // A revoked token never reaches GraphQL: the API answers with a REST
+        // envelope, `message` and `status` and no `data`, on stdout.
+        let rest = envelope.message.map(|m| match envelope.status {
+            Some(code) => format!("{m} (HTTP {code})"),
+            None => m,
+        });
+        return Err(envelope
+            .errors
+            .first()
+            .map(|e| e.message.clone())
+            .or(rest)
+            .unwrap_or_else(|| "gh returned no viewer".to_string()));
+    };
+    Ok(GhProbe {
+        login: viewer.login,
+        remaining: rate.remaining,
+        limit: rate.limit,
+        reset_at: rate.reset_at,
+    })
+}
+
+#[derive(Deserialize)]
+struct ProbeEnvelope {
+    data: Option<ProbeData>,
+    #[serde(default)]
+    errors: Vec<GqlError>,
+    message: Option<String>,
+    status: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProbeData {
+    viewer: Option<Login>,
+    rate_limit: Option<ProbeRate>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProbeRate {
+    remaining: i64,
+    limit: i64,
+    reset_at: String,
+}
+
 /// Reads the fleet's pull requests and issues in one request.
 ///
 /// `targets` is `(path, name, owner/repo)` for every repository that has a
@@ -1149,5 +1237,33 @@ mod tests {
         let err = parse_issue(raw).unwrap_err();
         assert!(err.contains("Could not resolve"));
         assert!(issue("no-slash", 1).is_err());
+    }
+
+    /// The shape the connection test reads: the account and the hour's budget.
+    #[test]
+    fn probe_reads_the_login_and_the_budget() {
+        let raw = r#"{"data": {"viewer": {"login": "jacobpoteet"},
+          "rateLimit": {"remaining": 4992, "limit": 5000, "resetAt": "2026-09-18T20:00:00Z"}}}"#;
+        let probe = parse_probe(raw).unwrap();
+        assert_eq!(probe.login, "jacobpoteet");
+        assert_eq!(probe.remaining, 4992);
+        assert_eq!(probe.limit, 5000);
+    }
+
+    /// A token without the scope answers with a null viewer and an error, and
+    /// the error is the sentence the settings page should show.
+    #[test]
+    fn a_failed_probe_is_the_error_gh_gave() {
+        let raw = r#"{"data": null, "errors": [{"type": "FORBIDDEN", "message": "Resource not accessible by integration"}]}"#;
+        assert_eq!(
+            parse_probe(raw).unwrap_err(),
+            "Resource not accessible by integration"
+        );
+        assert!(parse_probe("not json")
+            .unwrap_err()
+            .contains("could not read"));
+        // A revoked token gets the REST envelope, measured 18 Sep 2026.
+        let raw = r#"{"message": "Bad credentials", "documentation_url": "https://docs.github.com/rest", "status": "401"}"#;
+        assert_eq!(parse_probe(raw).unwrap_err(), "Bad credentials (HTTP 401)");
     }
 }
