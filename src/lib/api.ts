@@ -6,6 +6,7 @@ import type {
   CommitDiff,
   FileChange,
   FileDiff,
+  GhProbe,
   History,
   HistoryFilter,
   GitOutcome,
@@ -96,6 +97,13 @@ export const api = {
    */
   commitMessageFile: (path: string, message: string) =>
     invoke<string>("commit_message_file", { path, message }),
+
+  /**
+   * The connection test on the settings page: who the token belongs to,
+   * through the same `gh api graphql` the inbox uses. Rejects with gh's own
+   * reason when it fails.
+   */
+  githubProbe: () => invoke<GhProbe>("github_probe"),
 
   /** The latest release, read through gh. One call, at launch. */
   updateCheck: () => invoke<UpdateCheck>("update_check"),

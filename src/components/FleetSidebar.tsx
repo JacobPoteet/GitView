@@ -622,12 +622,14 @@ export default function FleetSidebar({
           aria-label="Settings"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.3" />
+            {/* A gear: eight teeth on a ring, with the hole in the middle.
+                The rays-round-a-circle it replaced read as a sun (#112). */}
+            <circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
             <path
-              d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"
+              d="M12.6 6.4L14.4 6.5L14.4 9.5L12.6 9.6L12.4 10.2L13.6 11.4L11.4 13.6L10.2 12.4L9.6 12.6L9.5 14.4L6.5 14.4L6.4 12.6L5.8 12.4L4.6 13.6L2.4 11.4L3.6 10.2L3.4 9.6L1.6 9.5L1.6 6.5L3.4 6.4L3.6 5.8L2.4 4.6L4.6 2.4L5.8 3.6L6.4 3.4L6.5 1.6L9.5 1.6L9.6 3.4L10.2 3.6L11.4 2.4L13.6 4.6L12.4 5.8Z"
               stroke="currentColor"
               strokeWidth="1.3"
-              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
         </button>

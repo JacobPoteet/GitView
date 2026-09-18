@@ -392,6 +392,17 @@ export interface GhStatus {
   loggedIn: boolean;
 }
 
+/** What the settings page's connection test found, when it got through. */
+export interface GhProbe {
+  /** The account the token belongs to. */
+  login: string;
+  /** Points left this hour, of `limit`. */
+  remaining: number;
+  limit: number;
+  /** When the hour rolls over, as GitHub states it. */
+  resetAt: string;
+}
+
 /** One pull request or issue, flattened out of the fleet-wide GraphQL query. */
 export interface InboxItem {
   kind: "pr" | "issue";

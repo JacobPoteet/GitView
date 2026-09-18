@@ -1769,6 +1769,29 @@ div.setting-row {
   color: var(--text-faint);
 }
 
+/* The connection test's verdict, in the row's own hint. */
+.setting-hint.ok {
+  color: var(--green);
+}
+
+.setting-hint.bad {
+  color: var(--red);
+}
+
+.settings-page code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.about-made-by {
+  margin-top: 12px;
+}
+
+.about-made-by strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .setting-row input[type="checkbox"] {
   flex: none;
   width: 15px;

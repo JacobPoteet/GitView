@@ -461,6 +461,13 @@ function GitHubSection({ info }: { info: AppInfo | null }) {
   return (
     <>
       <h3>GitHub</h3>
+      <p>
+        Everything on GitHub goes through gh, so the account gh is logged into is the one in use.
+        The inbox reads out of sight, one <code>gh api graphql</code> query for the whole fleet;
+        anything that writes, <code>gh issue create</code> or <code>gh pr merge</code>, is typed
+        into the repository's shell. <code>gh auth login</code> at any prompt signs in.
+      </p>
+      <Connection />
       <Toggle
         id="setting-github-poll"
         label="Read the inbox on a timer"
@@ -507,6 +514,65 @@ function GitHubSection({ info }: { info: AppInfo | null }) {
       />
     </>
   );
+}
+
+/** What the connection test has said so far. */
+type Probe =
+  | { state: "idle" }
+  | { state: "busy" }
+  | { state: "ok"; login: string; remaining: number; limit: number; resetAt: string }
+  | { state: "bad"; error: string };
+
+/**
+ * The test connection row: one `gh api graphql` asking who the token belongs
+ * to, which is the same call the inbox makes, so a pass means the inbox works.
+ * A failure shows gh's own sentence, since "gh auth login" and "Bad
+ * credentials" are the diagnoses, and nothing here would put them better.
+ */
+function Connection() {
+  const [probe, setProbe] = useState<Probe>({ state: "idle" });
+  const test = async () => {
+    setProbe({ state: "busy" });
+    try {
+      setProbe({ state: "ok", ...(await api.githubProbe()) });
+    } catch (err) {
+      setProbe({ state: "bad", error: String(err) });
+    }
+  };
+  const hint =
+    probe.state === "idle"
+      ? "Asks GitHub who gh is logged in as, and how much of the hour's rate limit is left."
+      : probe.state === "busy"
+        ? "Asking GitHub…"
+        : probe.state === "ok"
+          ? `Connected as ${probe.login}. ${probe.remaining} of ${probe.limit} points left until ${clockOf(probe.resetAt)}.`
+          : probe.error;
+  return (
+    <div className="setting-row">
+      <span className="setting-label">Connection</span>
+      <span className={`setting-hint ${probe.state}`} role="status">
+        {hint}
+      </span>
+      <span className="setting-number">
+        <button
+          className="btn tiny"
+          disabled={probe.state === "busy"}
+          onClick={test}
+          title="gh api graphql, one small query. Nothing is written."
+        >
+          Test connection
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** "20:00", for the ISO instant GitHub states; the raw string if it will not parse. */
+function clockOf(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime())
+    ? iso
+    : at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 // --------------------------------------------------------------- keyboard
@@ -564,9 +630,8 @@ function About({ info }: { info: AppInfo | null }) {
           </div>
         ))}
       </dl>
-      <p>
-        Repository reads go through libgit2. Anything that touches a remote runs git, and anything
-        on GitHub runs gh, so their credentials are the ones in use.
+      <p className="about-made-by">
+        Made by <strong>Jacob Poteet</strong>
       </p>
     </>
   );
