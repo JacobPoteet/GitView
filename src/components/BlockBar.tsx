@@ -7,7 +7,8 @@ interface Props {
   blocks: CommandBlock[];
   onRun: (command: string, typeOnly?: boolean) => void;
   onSave: (block: CommandBlock) => void;
-  /** The block as a whole: command, exit code and output, for Claude. */
+  /** The block as a whole: command, exit code and output, for Claude. Reached
+   *  from the right-click menu; the bar carries no button for it. */
   onCopy: (block: CommandBlock) => void;
   /** Just text, and the status line says what. */
   onCopyText: (text: string, what: string) => void;
@@ -69,8 +70,9 @@ export default function BlockBar({
 
   const state = running ? "running" : last.exitCode === 0 ? "ok" : "failed";
 
-  // The bar's buttons, plus the two the bar has no room for: typing the command
-  // to edit before it runs, and copying the command alone.
+  // The bar's buttons, plus the three the bar has no room for: typing the
+  // command to edit before it runs, copying the command alone, and copying the
+  // whole block for Claude.
   function barMenu(block: CommandBlock): MenuEntry[] {
     const live = block.exitCode === null;
     return [
@@ -161,13 +163,6 @@ export default function BlockBar({
       )}
       <button className="block-action" onClick={() => onSave(last)} title="Keep this as a task">
         Save as task
-      </button>
-      <button
-        className="block-action"
-        onClick={() => onCopy(last)}
-        title="Copy the command, its exit code and its output"
-      >
-        Copy for Claude
       </button>
     </div>
   );
