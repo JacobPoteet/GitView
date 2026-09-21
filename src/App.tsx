@@ -358,6 +358,7 @@ export default function App() {
     inboxOpen,
     setInboxOpen,
     inboxReading,
+    inboxTyped,
     inboxFocus,
     setInboxFocus,
     refreshInbox,
@@ -1835,6 +1836,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       selectedPath={selectedPath}
       shell={shell}
       refreshing={inboxReading}
+      waiting={inboxTyped}
       onClose={() => {
         setInboxOpen(false);
         setInboxFocus(null);

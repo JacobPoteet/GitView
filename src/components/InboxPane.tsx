@@ -26,6 +26,12 @@ interface Props {
   shell: ShellKind;
   /** The sidebar's refresh button is reading GitHub. There is no button here. */
   refreshing: boolean;
+  /**
+   * A `gh` write the inbox typed and has not seen exit. The desk in that
+   * repository holds its buttons until it does, and the row the write is
+   * about to remove says so on its merge button.
+   */
+  waiting: { path: string; command: string; drops?: string } | null;
   onClose: () => void;
   /** Selects the repository an item belongs to and closes the pane. */
   onSelect: (path: string) => void;
@@ -82,6 +88,7 @@ function Row({
   showNeed,
   open,
   shell,
+  waiting,
   onToggle,
   onCommand,
   onMerge,
@@ -94,6 +101,7 @@ function Row({
   /** The desk is showing under this row. */
   open: boolean;
   shell: ShellKind;
+  waiting: Props["waiting"];
   onToggle: () => void;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
@@ -176,7 +184,9 @@ function Row({
         </span>
       </div>
 
-      {open && pr && <Desk item={item} shell={shell} onCommand={onCommand} onMerge={onMerge} />}
+      {open && pr && (
+        <Desk item={item} shell={shell} waiting={waiting} onCommand={onCommand} onMerge={onMerge} />
+      )}
       {open && !pr && <IssueDesk item={item} shell={shell} onCommand={onCommand} onError={onError} />}
     </div>
   );
@@ -189,6 +199,7 @@ export default function InboxPane({
   selectedPath,
   shell,
   refreshing,
+  waiting,
   onClose,
   onSelect,
   onCommand,
@@ -405,6 +416,7 @@ Typed into ${item.repoName}'s shell.`;
                       showNeed={mode === "repo"}
                       open={open.has(key)}
                       shell={shell}
+                      waiting={waiting}
                       onToggle={() =>
                         setOpen((current) => {
                           const next = new Set(current);
