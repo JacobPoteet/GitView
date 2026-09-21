@@ -438,6 +438,13 @@ export default function App() {
             : `Preferences for ${report.adopted.length} repositories followed them: ${names}.`,
         );
       }
+      // The sweep used to drop this on the floor, and a malformed cache table
+      // failed every write for days before a dev build's boot read tripped
+      // over it. The fleet is on screen either way; what is lost is the next
+      // launch's first frame, and a database that needs rebuilding.
+      if (report.cacheError) {
+        setNote(`The cache refused the sweep's writes: ${report.cacheError}. The fleet is on screen, but the next launch starts cold.`);
+      }
     } catch (err) {
       setNote(String(err));
     } finally {
@@ -461,8 +468,16 @@ export default function App() {
     (async () => {
       let warm = false;
       try {
+        // The cached fleet is a warm start, not a requirement: a cache that
+        // cannot be read leaves the sweep to paint the list a moment later.
+        // Failing the whole boot on it took `info` down too, and with it the
+        // inbox and the gh status, for a fault in one table.
+        let cacheError: string | null = null;
         const [cached, appInfo, storedInbox, lastFetch] = await Promise.all([
-          api.fleetCached(),
+          api.fleetCached().catch((err): RepoState[] => {
+            cacheError = String(err);
+            return [];
+          }),
           api.appInfo(),
           // Cached like the fleet rows, so the pane has something before gh is
           // asked anything.
@@ -475,6 +490,7 @@ export default function App() {
         setFetchedAt(lastFetch);
         setInfo(appInfo);
         setRoots(appInfo.roots);
+        if (cacheError) setNote(`The fleet cache could not be read: ${cacheError}`);
         await loadPrefs();
         const liveIds = await api.ptyLive();
         if (!cancelled) setLive(new Set(liveIds));
