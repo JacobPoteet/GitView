@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { settings, updateSettings } from "../../lib/settings";
 import { mergeCommand, openUrlCommand, rerunCommand, type ShellKind } from "../../lib/shell";
-import { checkTone, mergeBlock } from "../../lib/inbox";
+import { checkTone, itemKey, mergeBlock } from "../../lib/inbox";
 import type { InboxItem, MergeMethod } from "../../lib/types";
 
 const CHECK_GLYPH = { ok: "✓", bad: "✕", pending: "•", off: "–" } as const;
@@ -31,11 +31,14 @@ function storedMethod(item: InboxItem): MergeMethod {
 export function Desk({
   item,
   shell,
+  waiting,
   onCommand,
   onMerge,
 }: {
   item: InboxItem;
   shell: ShellKind;
+  /** A `gh` write the inbox typed and has not seen exit, in whichever repository. */
+  waiting: { path: string; command: string; drops?: string } | null;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
 }) {
@@ -48,6 +51,13 @@ export function Desk({
     });
   };
 
+  // A write already typed into this repository's shell holds the desk's
+  // buttons until it exits. A second `gh pr merge` typed behind the first
+  // would fail on a closed pull request, and a re-run typed behind it would
+  // replace the exit the inbox is waiting on. `merging` is the write that
+  // removes this row, and the merge button says so rather than going dim.
+  const busy = waiting !== null && waiting.path === item.repoPath;
+  const merging = busy && waiting.drops === itemKey(item);
   const block = mergeBlock(item);
   const command = mergeCommand(item.number, method, !item.deleteBranchOnMerge);
   const passed = item.checkRuns.filter((run) => run.state === "SUCCESS").length;
@@ -143,6 +153,7 @@ Typed into ${item.repoName}'s shell.`;
           <button
             key={runId}
             className="btn tiny"
+            disabled={busy}
             title={typed(rerunCommand(runId))}
             onClick={(event) => onCommand(item.repoPath, rerunCommand(runId), event.shiftKey)}
           >
@@ -153,6 +164,7 @@ Typed into ${item.repoName}'s shell.`;
         {item.draft && (
           <button
             className="btn tiny"
+            disabled={busy}
             title={typed(`gh pr ready ${item.number}`)}
             onClick={(event) => onCommand(item.repoPath, `gh pr ready ${item.number}`, event.shiftKey)}
           >
@@ -163,6 +175,7 @@ Typed into ${item.repoName}'s shell.`;
         {item.mergeState === "BEHIND" && (
           <button
             className="btn tiny"
+            disabled={busy}
             title={typed(`gh pr update-branch ${item.number}`)}
             onClick={(event) =>
               onCommand(item.repoPath, `gh pr update-branch ${item.number}`, event.shiftKey)
@@ -176,6 +189,7 @@ Typed into ${item.repoName}'s shell.`;
           <select
             className="inbox-method"
             value={method}
+            disabled={busy}
             title="How the branch lands on the base. Squash is one commit per pull request, which is how this history reads."
             onChange={(event) => pick(event.target.value as MergeMethod)}
           >
@@ -188,14 +202,26 @@ Typed into ${item.repoName}'s shell.`;
         )}
 
         <button
-          className="btn tiny accent"
-          disabled={block !== null}
-          title={block ?? `${command}
+          className={`btn tiny accent${merging ? " busy" : ""}`}
+          disabled={block !== null || busy}
+          aria-busy={merging}
+          title={
+            merging
+              ? `${waiting.command}
 
-Asks first, then types it into ${item.repoName}'s shell.`}
+Running in ${item.repoName}'s shell.`
+              : busy
+                ? `${waiting.command}
+
+Still running in ${item.repoName}'s shell. Merge waits for it.`
+                : block ??
+                  `${command}
+
+Asks first, then types it into ${item.repoName}'s shell.`
+          }
           onClick={() => onMerge(item, method, command)}
         >
-          {item.deleteBranchOnMerge ? "Merge" : "Merge & delete branch"}
+          {merging ? "Merging…" : item.deleteBranchOnMerge ? "Merge" : "Merge & delete branch"}
         </button>
       </div>
     </div>

@@ -35,6 +35,14 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
    */
   const inboxAfter = useRef<{ path: string; command: string; drops?: string } | null>(null);
   /**
+   * The same, as state, for the desk. The ref is what `settled` reads; the
+   * state is what disables the merge button while `gh pr merge` is still in
+   * the shell, so a second click cannot type it twice.
+   */
+  const [inboxTyped, setInboxTyped] = useState<{ path: string; command: string; drops?: string } | null>(
+    null,
+  );
+  /**
    * Rows a command has removed, keyed like `itemKey`. A read that still lists
    * one was answered from before the command, and the row stays gone.
    */
@@ -139,6 +147,7 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
   /** A `gh` write was typed into a repository's shell; re-read once it has exited. */
   const armAfter = useCallback((path: string, command: string, drops?: string) => {
     inboxAfter.current = { path, command, drops };
+    setInboxTyped(inboxAfter.current);
   }, []);
 
   /**
@@ -156,6 +165,7 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
       const block = [...blocks].reverse().find((b) => b.command === waiting.command);
       if (blocks.length === 0 || (block && block.endedAt !== null)) {
         inboxAfter.current = null;
+        setInboxTyped(null);
         if (waiting.drops && block?.exitCode === 0) {
           const key = waiting.drops;
           inboxGone.current.add(key);
@@ -176,6 +186,8 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
     inboxOpen,
     setInboxOpen,
     inboxReading,
+    /** The `gh` write the inbox typed and is waiting on, for the desk to show. */
+    inboxTyped,
     inboxFocus,
     setInboxFocus,
     refreshInbox,

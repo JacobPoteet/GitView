@@ -3092,6 +3092,22 @@ button.inbox-check-name.link:hover {
   cursor: not-allowed;
 }
 
+/* The merge button while `gh pr merge` is in the shell. Disabled, so a second
+   click types nothing, but not dimmed: dim reads as "you may not", and this is
+   "it is happening". The pulse is its own, and reduced motion turns it off below. */
+.btn.tiny.accent.busy:disabled {
+  opacity: 1;
+  cursor: progress;
+  background: var(--accent-soft);
+  animation: merge-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes merge-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* The issue desk: the description and the thread, then a box to reply in.
    Bodies are shown as the text GitHub holds, wrapped, rather than rendered:
    an issue written here is plain paragraphs, and a markdown renderer is a
@@ -4186,6 +4202,10 @@ button.inbox-check-name.link:hover {
   }
   /* The refresh button stops turning; its accent colour still says busy. */
   .icon-btn.busy svg {
+    animation: none;
+  }
+  /* The merge button stops pulsing; "Merging…" and the fill still say busy. */
+  .btn.tiny.accent.busy:disabled {
     animation: none;
   }
   .splash-word {
