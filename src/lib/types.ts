@@ -377,6 +377,8 @@ export interface DiffTarget {
 export interface ScanReport {
   scanned: number;
   adopted: { ownerRepo: string; from: string; to: string }[];
+  /** The first write the cache refused. The rows arrived; the next launch starts cold. */
+  cacheError: string | null;
 }
 
 export interface GitOutcome {

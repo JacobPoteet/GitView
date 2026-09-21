@@ -554,6 +554,16 @@ impl Cache {
 }
 
 pub fn data_dir() -> PathBuf {
+    // A dev build can be pointed at a folder of its own, so a test that needs
+    // a broken database, or just a database, never has to open the installed
+    // app's. The file went malformed twice with two GitViews on it; a third
+    // client was never the only suspect. Debug builds only, so an installed
+    // GitView cannot be steered by an environment variable.
+    if cfg!(debug_assertions) {
+        if let Some(dir) = std::env::var_os("GITVIEW_DATA_DIR") {
+            return PathBuf::from(dir);
+        }
+    }
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("GitView")

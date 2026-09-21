@@ -55,6 +55,11 @@ pub struct AppState {
 pub struct ScanReport {
     pub scanned: usize,
     pub adopted: Vec<Adoption>,
+    /// The first write the cache refused during this sweep, if any. The rows
+    /// still reach the window over the channel; what is lost is the next
+    /// launch's warm start. Dropped with `let _ =` until 21 Sep 2026, which is
+    /// how a malformed `repo_state` table went unnoticed for days.
+    pub cache_error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -97,13 +102,19 @@ async fn fleet_scan(
             .iter()
             .map(|p| p.to_string_lossy().to_string())
             .collect();
-        let _ = cache.retain_repos(&keep);
+        let mut cache_error: Option<String> = None;
+        let mut note = |result: anyhow::Result<()>| {
+            if let (Err(e), None) = (result, &cache_error) {
+                cache_error = Some(e.to_string());
+            }
+        };
+        note(cache.retain_repos(&keep));
 
         let mut scanned = 0usize;
         let mut identity: Vec<(String, Option<String>)> = Vec::with_capacity(paths.len());
         for path in paths {
             let repo_state = fleet::read_repo(&path);
-            let _ = cache.put_repo(&repo_state);
+            note(cache.put_repo(&repo_state));
             identity.push((repo_state.path.clone(), repo_state.owner_repo.clone()));
             if on_repo.send(repo_state).is_err() {
                 break;
@@ -114,7 +125,11 @@ async fn fleet_scan(
         // After the sweep, not before: a folder renamed since the last launch is
         // only recognisable once this pass has read what is at the new path.
         let adopted = cache.adopt_moved_repos(&identity).unwrap_or_default();
-        ScanReport { scanned, adopted }
+        ScanReport {
+            scanned,
+            adopted,
+            cache_error,
+        }
     })
     .await
     .map_err(|e| e.to_string())

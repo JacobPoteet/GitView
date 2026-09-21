@@ -186,6 +186,11 @@ opens as a page of its own and would take that slot. Keep the driver outside thi
 never lands in `npm ci`. Synthetic desktop input does not reach the window on the development
 machine; the wiki records why.
 
+A dev build honours `GITVIEW_DATA_DIR`, so a test that needs a database of its own, or a broken
+one, points the launcher at a scratch folder rather than opening the installed app's. The installed
+app and a dev build sharing `%APPDATA%\GitView\gitview.db` is the one thing both corruptions had
+in common. Release builds ignore the variable.
+
 A dev build exposes `window.__gitview.sessions`, which is the only way to read a session's blocks,
 its markers and its buffer. The WebGL renderer draws to a canvas, so there is no terminal text in
 the DOM to scrape. Vite drops the handle from a production bundle.
