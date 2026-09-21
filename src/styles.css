@@ -1788,8 +1788,19 @@ div.setting-row {
 }
 
 .about-made-by strong {
-  color: var(--text);
+  color: var(--accent);
   font-weight: 600;
+}
+
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.about-links .link-btn,
+.about-made-by .link-btn {
+  font-size: inherit;
 }
 
 .setting-row input[type="checkbox"] {

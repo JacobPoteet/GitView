@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { api } from "../lib/api";
@@ -19,6 +19,7 @@ import {
 } from "../lib/settings";
 import type { AppInfo } from "../lib/types";
 import { SHORTCUTS } from "../lib/keys";
+import { openUrlCommand, type ShellKind } from "../lib/shell";
 import Dialog from "./Dialog";
 
 export type SettingsSection =
@@ -37,6 +38,9 @@ interface Props {
   /** The watched folders changed, and the fleet wants a rescan. */
   onRoots: (roots: string[]) => void;
   info: AppInfo | null;
+  shell: ShellKind;
+  /** A link in About types the command that opens it, like every other action. */
+  onCommand: (command: string, typeOnly: boolean) => void;
   onClose: () => void;
 }
 
@@ -64,6 +68,8 @@ export default function SettingsDialog({
   roots,
   onRoots,
   info,
+  shell,
+  onCommand,
   onClose,
 }: Props) {
   return (
@@ -88,7 +94,7 @@ export default function SettingsDialog({
           {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
           {section === "github" && <GitHubSection info={info} />}
           {section === "keyboard" && <Keyboard />}
-          {section === "about" && <About info={info} />}
+          {section === "about" && <About info={info} shell={shell} onCommand={onCommand} />}
         </div>
       </div>
     </Dialog>
@@ -602,7 +608,25 @@ function Keyboard() {
 
 // ------------------------------------------------------------------ about
 
-function About({ info }: { info: AppInfo | null }) {
+const REPO_URL = "https://github.com/JacobPoteet/GitView";
+const AUTHOR_URL = "https://github.com/JacobPoteet";
+
+const LINKS: [string, string][] = [
+  ["Source", REPO_URL],
+  ["Releases", `${REPO_URL}/releases`],
+  ["Report an issue", `${REPO_URL}/issues/new`],
+  ["Project page", "https://jacobpoteet.github.io/GitView"],
+];
+
+function About({
+  info,
+  shell,
+  onCommand,
+}: {
+  info: AppInfo | null;
+  shell: ShellKind;
+  onCommand: (command: string, typeOnly: boolean) => void;
+}) {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     getVersion().then(setVersion, () => setVersion(null));
@@ -630,9 +654,48 @@ function About({ info }: { info: AppInfo | null }) {
           </div>
         ))}
       </dl>
+      <p className="about-links">
+        {LINKS.map(([label, url]) => (
+          <Link key={url} url={url} shell={shell} onCommand={onCommand}>
+            {label}
+          </Link>
+        ))}
+      </p>
       <p className="about-made-by">
-        Made by <strong>Jacob Poteet</strong>
+        Made by{" "}
+        <Link url={AUTHOR_URL} shell={shell} onCommand={onCommand}>
+          <strong>Jacob Poteet</strong>
+        </Link>
       </p>
     </>
+  );
+}
+
+/**
+ * A link that opens by typing. `Start-Process` at the prompt is how every other
+ * URL in the app reaches the browser, and an `<a>` here would be the one that
+ * did not say how. Shift-click types without running, the same as any button.
+ */
+function Link({
+  url,
+  shell,
+  onCommand,
+  children,
+}: {
+  url: string;
+  shell: ShellKind;
+  onCommand: (command: string, typeOnly: boolean) => void;
+  children: ReactNode;
+}) {
+  const command = openUrlCommand(url, shell);
+  return (
+    <button
+      type="button"
+      className="link-btn"
+      title={command}
+      onClick={(event) => onCommand(command, event.shiftKey)}
+    >
+      {children}
+    </button>
   );
 }
