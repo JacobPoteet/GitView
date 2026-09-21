@@ -364,6 +364,22 @@ export default function App() {
     armAfter,
     settled: inboxSettled,
   } = useInbox(info, setNote);
+  /**
+   * The Refresh button's count, and part of `refSignature` below. A batch
+   * bumps it too, once its commands have landed in the repository on screen:
+   * a fetch moves `origin/main`, and the graph is drawn against it, but the
+   * signature is built from local tips and cannot see a remote ref move.
+   */
+  const [refreshEpoch, setRefreshEpoch] = useState(0);
+  // Read through a ref so `synced` and `refreshRepo` keep one identity. Each
+  // session holds the copy of `refreshRepo` it was handed when its pane was
+  // open, and a copy with the selection baked in would fill the changes pane
+  // from whichever repository last had a dev server print something.
+  const selectedRef = useRef(selectedPath);
+  selectedRef.current = selectedPath;
+  const synced = useCallback((path: string) => {
+    if (path === selectedRef.current) setRefreshEpoch((epoch) => epoch + 1);
+  }, []);
   const {
     batch,
     batchKind,
@@ -380,7 +396,7 @@ export default function App() {
     setFetchedAt,
     transcriptSeen,
     setTranscriptSeen,
-  } = useBatch({ repos, prefs, swept, upsert, setNote, setNoteWith });
+  } = useBatch({ repos, prefs, swept, upsert, synced, setNote, setNoteWith });
 
   const loadPrefs = useCallback(async () => {
     try {
@@ -621,10 +637,10 @@ export default function App() {
    * reaches the picture. Working-tree counts are left out on purpose, because
    * a build writing files is not a ref moving.
    *
-   * `refreshEpoch` is the Refresh button. It asks for everything, including
-   * the tags and remote refs a signature built from the sweep cannot see.
+   * `refreshEpoch` is the Refresh button, and a fetch that settled here. Both
+   * ask for everything, including the tags and remote refs a signature built
+   * from the sweep cannot see.
    */
-  const [refreshEpoch, setRefreshEpoch] = useState(0);
   const refSignature = selected
     ? [
         refreshEpoch,
@@ -949,13 +965,8 @@ export default function App() {
   }, [scan, refreshInbox, info?.gh.version, refreshing]);
 
 
-  // Read through a ref so `refreshRepo` keeps one identity. Each session holds
-  // the copy it was handed when its pane was open, and a copy that had the
-  // selection baked in would fill the changes pane from whichever repository
-  // last had a dev server print something.
-  const selectedRef = useRef(selectedPath);
-  selectedRef.current = selectedPath;
   const lastPush = useRef<number | null>(null);
+  const lastFetch = useRef<number | null>(null);
 
   const refreshRepo = useCallback(
     // `id` is the shell that settled, which is where its blocks are: the
@@ -976,6 +987,17 @@ export default function App() {
         if (pushed && pushed.id !== lastPush.current) {
           lastPush.current = pushed.id;
           setPushEpoch((n) => n + 1);
+        }
+        // A fetch is the opposite: it moves remote refs and nothing local, and
+        // `refSignature` is built from local tips, so the header's Sync typed
+        // at this prompt would leave the graph drawn against the old
+        // `origin/main`. Same guard, same reason.
+        const fetched = [...getBlocks(id)]
+          .reverse()
+          .find((b) => b.endedAt !== null && /^git (fetch|pull)\b/.test(b.command));
+        if (fetched && fetched.id !== lastFetch.current) {
+          lastFetch.current = fetched.id;
+          setRefreshEpoch((n) => n + 1);
         }
       }
 

@@ -10,6 +10,12 @@ interface Args {
   /** The first sweep has resolved, which is when a launch fetch may plan. */
   swept: boolean;
   upsert: (repo: RepoState) => void;
+  /**
+   * A repository's share of a batch has landed. `upsert` already carried its
+   * new state, but a fetch moves remote refs the sweep never reads, so the
+   * caller bumps the refresh epoch for the repository on screen.
+   */
+  synced: (path: string) => void;
   setNote: (text: string) => void;
   /** A note with something to click: the one that opens the transcript. */
   setNoteWith: (text: string, onClick: () => void) => void;
@@ -21,7 +27,7 @@ interface Args {
  * the status bar) and the fetch that runs on its own when the last one has
  * gone stale.
  */
-export function useBatch({ repos, prefs, swept, upsert, setNote, setNoteWith }: Args) {
+export function useBatch({ repos, prefs, swept, upsert, synced, setNote, setNoteWith }: Args) {
   /** The last batch, running or finished, and whether its transcript is up. */
   const [batch, setBatch] = useState<BatchRun | null>(null);
   const [batchKind, setBatchKind] = useState<BatchKind>("sync");
@@ -91,6 +97,7 @@ export function useBatch({ repos, prefs, swept, upsert, setNote, setNoteWith }: 
         const result = await runRepo(kind, repo, upsert);
         if (result.failed) failures += 1;
         else if (result.steps.some((step) => step.outcome)) acted += 1;
+        synced(repo.path);
 
         patch(repo.path, (row) => ({
           ...row,
@@ -125,7 +132,7 @@ export function useBatch({ repos, prefs, swept, upsert, setNote, setNoteWith }: 
         () => setBatchOpen(true),
       );
     },
-    [repos, upsert, setNoteWith],
+    [repos, upsert, synced, setNoteWith],
   );
 
   /**
