@@ -22,5 +22,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
+    // The one chunk is 740 kB minified, most of it xterm with its five addons and
+    // React. Vite warns past 500 kB because a browser fetching that over a network
+    // waits on it before painting. GitView's page loads from the installer's own
+    // files inside a WebView2 window, so splitting the chunk would defer the terminal
+    // to a second read of the same disk and gain nothing. The limit is raised to say
+    // so rather than left to warn on every build.
+    chunkSizeWarningLimit: 1000,
   },
 });
