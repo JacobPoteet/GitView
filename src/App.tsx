@@ -2388,6 +2388,11 @@ gh pr view ${branchPr.number} --web`}
             scan();
           }}
           info={info}
+          shell={shell}
+          onCommand={(command, typeOnly) => {
+            emitOwn(command, typeOnly);
+            setSettingsOpen(null);
+          }}
           onClose={() => setSettingsOpen(null)}
         />
       )}
