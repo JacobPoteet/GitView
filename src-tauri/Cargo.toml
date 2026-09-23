@@ -8,7 +8,9 @@ rust-version = "1.77"
 
 [lib]
 name = "gitview_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# The template's staticlib and cdylib are for mobile. Under fat LTO each one
+# cost a whole-program pass of its own, and nothing on Windows links them.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -35,6 +37,7 @@ arboard = { version = "3", default-features = false }
 [profile.release]
 opt-level = "s"
 lto = true
-codegen-units = 1
+# One unit put the app crate's 68 s on a single thread for a 0.9% smaller exe.
+codegen-units = 16
 panic = "abort"
 strip = true
