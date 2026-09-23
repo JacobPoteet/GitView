@@ -4419,3 +4419,82 @@ button.inbox-check-name.link:hover {
   color: var(--text);
   background: var(--bg-hover);
 }
+
+/* ------------------------------------------------------------------ welcome */
+
+/* The main column before anything is watched. Sits on the terminal's inset
+   surface, where the shell will be, and reads as a page rather than a dialog:
+   nothing here can be dismissed, because there is nothing behind it yet. */
+.welcome {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px;
+}
+
+.welcome-body {
+  width: 100%;
+  max-width: 540px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.welcome-body h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.welcome-body h3 {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 28px 0 8px;
+}
+
+.welcome-found li em {
+  flex: none;
+  font-family: var(--font-ui);
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.welcome-dim {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.welcome-dim code,
+.welcome-command code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.welcome-command {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.welcome-foot {
+  margin-top: 32px;
+  font-size: 11px;
+  color: var(--text-faint);
+}

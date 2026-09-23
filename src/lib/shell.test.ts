@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  cloneCommand,
+  cloneName,
+  clonePath,
   commitCommand,
   discardCommands,
   quote,
@@ -130,5 +133,33 @@ describe("validRefName", () => {
     ["a/b.lock/c", false],
   ])("%j is %s", (name, ok) => {
     expect(validRefName(name)).toBe(ok);
+  });
+});
+
+describe("clone", () => {
+  it("names the folder the way git does", () => {
+    expect(cloneName("https://github.com/JacobPoteet/GitView.git")).toBe("GitView");
+    expect(cloneName("https://github.com/JacobPoteet/GitView/")).toBe("GitView");
+    expect(cloneName("git@github.com:JacobPoteet/GitView.git")).toBe("GitView");
+    expect(cloneName("git@host:solo")).toBe("solo");
+    expect(cloneName("C:\\origins\\atlas.git")).toBe("atlas");
+  });
+
+  it("refuses a URL with no usable name", () => {
+    expect(cloneName("")).toBeNull();
+    expect(cloneName("https://")).toBeNull();
+    expect(cloneName("not a url")).toBeNull();
+  });
+
+  it("joins with the parent's own separator", () => {
+    expect(clonePath("F:\\GitHub", "x")).toBe("F:\\GitHub\\x");
+    expect(clonePath("F:\\GitHub\\", "x")).toBe("F:\\GitHub\\x");
+    expect(clonePath("/home/me/src", "x")).toBe("/home/me/src/x");
+  });
+
+  it("quotes both arguments", () => {
+    expect(cloneCommand(" https://h/o/r.git ", "C:\\My Code\\r", "powershell")).toBe(
+      "git clone 'https://h/o/r.git' 'C:\\My Code\\r'",
+    );
   });
 });

@@ -327,3 +327,36 @@ export function installUpdateCommand(
   // stops at the download rather than pretending it can run what it fetched.
   return `${download} --dir "\${TMPDIR:-/tmp}" --clobber`;
 }
+
+/**
+ * The folder `git clone` would make for a URL, or null when there is no name
+ * to be had from it.
+ *
+ * The same rule git uses: the last path segment, without a trailing `.git` or
+ * slash, and for an scp-style `git@host:owner/repo` the part after the colon.
+ * A local path works too, which is what the rehearsal fixtures clone from.
+ * The welcome screen needs it ahead of time, to know which new repository to
+ * open once the clone lands.
+ */
+export function cloneName(url: string): string | null {
+  const trimmed = url.trim().replace(/[/\\]+$/, "").replace(/\.git$/i, "");
+  const name = trimmed.split(/[/\\:]/).pop() ?? "";
+  return name && !/[\s"'`$]/.test(name) && name !== "." && name !== ".." ? name : null;
+}
+
+/** Where a clone into `parent` lands, with the separator the parent already uses. */
+export function clonePath(parent: string, name: string): string {
+  const sep = parent.includes("/") && !parent.includes("\\") ? "/" : "\\";
+  return parent.replace(/[/\\]+$/, "") + sep + name;
+}
+
+/**
+ * `git clone` into a watched folder, with the destination spelled out.
+ *
+ * Naming the destination rather than relying on the shell's current folder
+ * means the line reads the same wherever the prompt happens to be, and runs the
+ * same when it is copied out of the scrollback later.
+ */
+export function cloneCommand(url: string, destination: string, kind: ShellKind): string {
+  return `git clone ${quote(url.trim(), kind)} ${quote(destination, kind)}`;
+}
