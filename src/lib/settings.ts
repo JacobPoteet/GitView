@@ -72,6 +72,12 @@ export interface Settings {
      */
     mergeMethod: Record<string, MergeMethod>;
   };
+  tour: {
+    /** The step on screen, an index into `STEPS` in `lib/tour.ts`. */
+    step: number;
+    /** Finished or closed. Replaying from the palette or About clears it. */
+    done: boolean;
+  };
 }
 
 export const DEFAULTS: Settings = {
@@ -81,6 +87,7 @@ export const DEFAULTS: Settings = {
   layout: { sidebar: 296, changes: 300 },
   inbox: { mode: "repo", collapsed: [] },
   github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
+  tour: { step: 0, done: false },
 };
 
 export const FONT_SIZE_MIN = 9;
@@ -165,6 +172,7 @@ function read(): Settings {
     layout: { ...DEFAULTS.layout, ...stored.layout },
     inbox: { ...DEFAULTS.inbox, ...stored.inbox },
     github: { ...DEFAULTS.github, ...stored.github },
+    tour: { ...DEFAULTS.tour, ...stored.tour },
   };
   const reader = getItem(LEGACY.reader);
   if (reader !== null && stored.terminal?.screenReader === undefined) {
@@ -209,6 +217,9 @@ function read(): Settings {
   gh.busyMinutes = minutes(gh.busyMinutes, DEFAULTS.github.busyMinutes);
   gh.idleMinutes = minutes(gh.idleMinutes, DEFAULTS.github.idleMinutes);
   gh.launchStaleMinutes = minutes(gh.launchStaleMinutes, DEFAULTS.github.launchStaleMinutes);
+  const tour = settings.tour;
+  tour.step = Number.isInteger(tour.step) && tour.step >= 0 ? tour.step : 0;
+  tour.done = tour.done === true;
   return settings;
 }
 

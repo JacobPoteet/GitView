@@ -41,6 +41,8 @@ interface Props {
   shell: ShellKind;
   /** A link in About types the command that opens it, like every other action. */
   onCommand: (command: string, typeOnly: boolean) => void;
+  /** Starts the first-run tour again from its first step. */
+  onReplayTour: () => void;
   onClose: () => void;
 }
 
@@ -70,6 +72,7 @@ export default function SettingsDialog({
   info,
   shell,
   onCommand,
+  onReplayTour,
   onClose,
 }: Props) {
   return (
@@ -94,7 +97,9 @@ export default function SettingsDialog({
           {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
           {section === "github" && <GitHubSection info={info} />}
           {section === "keyboard" && <Keyboard />}
-          {section === "about" && <About info={info} shell={shell} onCommand={onCommand} />}
+          {section === "about" && (
+            <About info={info} shell={shell} onCommand={onCommand} onReplayTour={onReplayTour} />
+          )}
         </div>
       </div>
     </Dialog>
@@ -622,10 +627,12 @@ function About({
   info,
   shell,
   onCommand,
+  onReplayTour,
 }: {
   info: AppInfo | null;
   shell: ShellKind;
   onCommand: (command: string, typeOnly: boolean) => void;
+  onReplayTour: () => void;
 }) {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
@@ -660,6 +667,11 @@ function About({
             {label}
           </Link>
         ))}
+      </p>
+      <p className="about-links">
+        <button type="button" className="link-btn" onClick={onReplayTour}>
+          Replay the tour
+        </button>
       </p>
       <p className="about-made-by">
         Made by{" "}

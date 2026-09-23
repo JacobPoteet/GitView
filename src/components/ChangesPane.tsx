@@ -436,7 +436,7 @@ export default function ChangesPane({
   }
 
   return (
-    <aside className="changes-pane">
+    <aside className="changes-pane" data-tour="changes">
       <div className="pane-tab-bar">
         <span>changes</span>
         {changes.length > 0 && (

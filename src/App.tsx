@@ -31,7 +31,9 @@ import { itemKey } from "./lib/inbox";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import Welcome from "./components/Welcome";
+import Tour from "./components/Tour";
 import { useBatch } from "./hooks/useBatch";
+import { useTour } from "./hooks/useTour";
 import { useInbox } from "./hooks/useInbox";
 import { useUpdate } from "./hooks/useUpdate";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
@@ -1201,6 +1203,29 @@ export default function App() {
     [selected, closedShell, info, tabOf],
   );
 
+  // The tour waits for a repository to point at, and for the splash to lift.
+  // Without gh there is no inbox button, so its step is left out of the count.
+  const tourSkip = useMemo(() => (info?.gh.version ? [] : ["inbox"]), [info?.gh.version]);
+  const tour = useTour(booted && roots.length > 0 && repos.length > 0, tourSkip);
+  const { fire: fireTour } = tour;
+  const { close: closeTour } = tour;
+  const endTour = useCallback(() => {
+    closeTour();
+    setNote("Show the tour, in Ctrl+K, walks through the window again.");
+  }, [closeTour, setNote]);
+  useEffect(() => {
+    if (selectedPath) fireTour("select");
+  }, [selectedPath, fireTour]);
+  useEffect(() => {
+    if (paletteOpen) fireTour("palette");
+  }, [paletteOpen, fireTour]);
+  const finishedBlocks = blocks.filter((block) => block.exitCode !== null).length;
+  const seenBlocks = useRef(finishedBlocks);
+  useEffect(() => {
+    if (finishedBlocks > seenBlocks.current) fireTour("block");
+    seenBlocks.current = finishedBlocks;
+  }, [finishedBlocks, fireTour]);
+
   const ownSettled = useCallback(() => {
     if (cloneTarget) scan();
   }, [cloneTarget, scan]);
@@ -1768,6 +1793,13 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       hint: "terminal, launch, GitHub, keyboard, and the folders GitView watches · Ctrl+,",
       run: () => setSettingsOpen("terminal"),
     });
+    items.push({
+      id: "action:tour",
+      label: "Show the tour",
+      kind: "fleet",
+      hint: "the first-run walk through the window, from the top",
+      run: tour.replay,
+    });
     // For reviewing the first run over and over under `npm run dev:ftue`.
     // Vite drops the branch from a production bundle.
     if (import.meta.env.DEV) {
@@ -1778,6 +1810,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         hint: "dev build only: forget the watched folders and reload",
         run: async () => {
           await api.settingsSetRoots([]);
+          tour.replay();
           window.location.reload();
         },
       });
@@ -2209,7 +2242,7 @@ gh pr view ${branchPr.number} --web`}
                 </span>
               </div>
 
-              <div className="head-actions">
+              <div className="head-actions" data-tour="actions">
                 {push && (
                   <button
                     className="btn"
@@ -2228,7 +2261,11 @@ gh pr view ${branchPr.number} --web`}
                 >
                   Sync
                 </button>
-                <button className="btn accent" onClick={() => setPaletteOpen(true)}>
+                <button
+                  className="btn accent"
+                  data-tour="palette"
+                  onClick={() => setPaletteOpen(true)}
+                >
                   Ctrl+K
                 </button>
               </div>
@@ -2488,6 +2525,10 @@ gh pr view ${branchPr.number} --web`}
             emitOwn(command, typeOnly);
             setSettingsOpen(null);
           }}
+          onReplayTour={() => {
+            setSettingsOpen(null);
+            tour.replay();
+          }}
           onClose={() => setSettingsOpen(null)}
         />
       )}
@@ -2704,6 +2745,15 @@ gh pr view ${branchPr.number} --web`}
           <p>{confirmation.body}</p>
           {confirmation.command && <pre>{confirmation.command}</pre>}
         </Dialog>
+      )}
+      {tour.step && (
+        <Tour
+          step={tour.step}
+          index={tour.index}
+          total={tour.total}
+          onNext={() => fireTour("next")}
+          onClose={endTour}
+        />
       )}
       <Splash done={booted} />
     </div>

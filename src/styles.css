@@ -4498,3 +4498,63 @@ button.inbox-check-name.link:hover {
   font-size: 11px;
   color: var(--text-faint);
 }
+
+/* -------------------------------------------------------------------- tour */
+
+/* Under every backdrop (50 and up), so a dialog the tour sent you to is never
+   drawn beneath its own card. The ring takes no pointer events: what it
+   circles is still what you click. */
+.tour-ring {
+  position: fixed;
+  z-index: 45;
+  pointer-events: none;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 2px var(--accent-line), 0 0 0 6px var(--accent-soft);
+  transition: left 0.18s var(--ease), top 0.18s var(--ease), width 0.18s var(--ease),
+    height 0.18s var(--ease);
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 46;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--accent-line);
+  background: var(--bg-raised);
+  box-shadow: 0 12px 32px oklch(0% 0 0 / 0.45);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  animation: fade 0.12s var(--ease);
+}
+
+.tour-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.tour-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.tour-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.tour-action {
+  margin-top: 6px;
+  color: var(--accent);
+}
+
+.tour-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}

@@ -91,6 +91,15 @@ describe("settings", () => {
     expect(MINUTES_MAX).toBe(1440);
   });
 
+  it("starts the tour on an install that never saw it, and repairs a bad step", async () => {
+    const fresh = await load({});
+    expect(fresh.settings().tour).toEqual({ step: 0, done: false });
+    const bad = await load({
+      "gitview.settings": JSON.stringify({ tour: { step: -2.5, done: "yes" } }),
+    });
+    expect(bad.settings().tour).toEqual({ step: 0, done: false });
+  });
+
   it("tells a subscriber once per write and replaces the object", async () => {
     const { settings, updateSettings, subscribeSettings } = await load({});
     const before = settings();
