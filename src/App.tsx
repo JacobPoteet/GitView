@@ -371,7 +371,7 @@ export default function App() {
   );
   const { update, updateOpen, setUpdateOpen, checkUpdate } = useUpdate(info, setNote);
   const {
-    inbox,
+    inbox: inboxRead,
     setInbox,
     inboxOpen,
     setInboxOpen,
@@ -383,6 +383,16 @@ export default function App() {
     armAfter,
     settled: inboxSettled,
   } = useInbox(info, setNote);
+  /**
+   * The inbox without the hidden repositories. The next read leaves them out
+   * of the query, but the stored one still holds them, and hiding a repository
+   * should drop its rows now rather than at the next poll.
+   */
+  const inbox = useMemo(() => {
+    if (!inboxRead) return inboxRead;
+    const items = inboxRead.items.filter((item) => !prefs.get(item.repoPath)?.hidden);
+    return items.length === inboxRead.items.length ? inboxRead : { ...inboxRead, items };
+  }, [inboxRead, prefs]);
   /**
    * The Refresh button's count, and part of `refSignature` below. A batch
    * bumps it too, once its commands have landed in the repository on screen:
@@ -1092,8 +1102,11 @@ export default function App() {
       // Leaving a hidden repository open would keep a shell attached to something
       // the list no longer shows, with no obvious way back to it.
       if (hidden && path === selectedPath) setSelectedPath(null);
+      // The sweep stopped reading it while it was hidden, so its row is as old
+      // as the day it was hidden.
+      if (!hidden) api.repoRefresh(path).then(upsert).catch(() => undefined);
     },
-    [loadPrefs, selectedPath, setNote],
+    [loadPrefs, selectedPath, setNote, upsert],
   );
 
   const setTaskHidden = useCallback(
