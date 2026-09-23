@@ -48,6 +48,8 @@ interface Props {
   onCopy: (text: string, what: string) => void;
   onManageRoots: () => void;
   onOpenSettings: () => void;
+  /** Whether any folder is watched, which decides what an empty list says. */
+  watching: boolean;
 }
 
 function BranchIcon() {
@@ -463,6 +465,7 @@ export default function FleetSidebar({
   onCopy,
   onManageRoots,
   onOpenSettings,
+  watching,
 }: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const menu = useContextMenu<RepoState>();
@@ -690,7 +693,11 @@ export default function FleetSidebar({
       <div className="repo-list">
         {repos.length === 0 && (
           <p className="empty">
-            {scanning ? "Scanning…" : "No repositories in the watched folders."}
+            {scanning
+              ? "Scanning…"
+              : watching
+                ? "No repositories in the watched folders."
+                : "Nothing watched yet."}
           </p>
         )}
 

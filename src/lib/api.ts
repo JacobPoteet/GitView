@@ -14,6 +14,7 @@ import type {
   IssueDetail,
   RepoPref,
   RepoState,
+  RootSuggestion,
   ScanReport,
   Squashed,
   StoredBlock,
@@ -159,6 +160,8 @@ export const api = {
   settingsSetRoots: (roots: string[]) => invoke<void>("settings_set_roots", { roots }),
   settingsAddRoot: (path: string) => invoke<string[]>("settings_add_root", { path }),
   settingsRemoveRoot: (path: string) => invoke<string[]>("settings_remove_root", { path }),
+  /** Folders worth watching that nobody has added yet, with what each holds. */
+  settingsSuggestRoots: () => invoke<RootSuggestion[]>("settings_suggest_roots"),
   /** Seconds since the epoch at which the fleet was last fetched, or 0. */
   settingsFetchedAt: () => invoke<number>("settings_fetched_at"),
   settingsSetFetchedAt: (at: number) => invoke<void>("settings_set_fetched_at", { at }),

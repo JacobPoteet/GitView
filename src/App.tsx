@@ -1748,6 +1748,20 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       hint: "terminal, launch, GitHub, keyboard, and the folders GitView watches · Ctrl+,",
       run: () => setSettingsOpen("terminal"),
     });
+    // For reviewing the first run over and over under `npm run dev:ftue`.
+    // Vite drops the branch from a production bundle.
+    if (import.meta.env.DEV) {
+      items.push({
+        id: "action:reset-first-run",
+        label: "Reset first run",
+        kind: "fleet",
+        hint: "dev build only: forget the watched folders and reload",
+        run: async () => {
+          await api.settingsSetRoots([]);
+          window.location.reload();
+        },
+      });
+    }
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2051,6 +2065,7 @@ ${landing} ${cleanup}${warning}`,
       <div className="rail">
         <FleetSidebar
           repos={repos}
+          watching={roots.length > 0}
           prefs={prefs}
           github={repoGithub}
           inboxWaiting={inboxWaiting}
