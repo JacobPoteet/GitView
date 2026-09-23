@@ -100,6 +100,13 @@ describe("settings", () => {
     expect(bad.settings().tour).toEqual({ step: 0, done: false });
   });
 
+  it("counts the tour as seen on an install that saved settings before it existed", async () => {
+    const { settings } = await load({
+      "gitview.settings": JSON.stringify({ layout: { sidebar: 300 } }),
+    });
+    expect(settings().tour.done).toBe(true);
+  });
+
   it("tells a subscriber once per write and replaces the object", async () => {
     const { settings, updateSettings, subscribeSettings } = await load({});
     const before = settings();

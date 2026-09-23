@@ -172,7 +172,13 @@ function read(): Settings {
     layout: { ...DEFAULTS.layout, ...stored.layout },
     inbox: { ...DEFAULTS.inbox, ...stored.inbox },
     github: { ...DEFAULTS.github, ...stored.github },
-    tour: { ...DEFAULTS.tour, ...stored.tour },
+    // An install that already wrote settings before the tour existed is not a
+    // first run, so it starts with the tour behind it rather than over it.
+    tour: stored.tour
+      ? { ...DEFAULTS.tour, ...stored.tour }
+      : getItem(KEY) !== null
+        ? { ...DEFAULTS.tour, done: true }
+        : { ...DEFAULTS.tour },
   };
   const reader = getItem(LEGACY.reader);
   if (reader !== null && stored.terminal?.screenReader === undefined) {
