@@ -40,6 +40,7 @@ impl Task {
 pub fn discover(repo: &Path) -> Vec<Task> {
     let mut tasks = Vec::new();
 
+    gitview_tasks(repo, &mut tasks);
     node_tasks(repo, &mut tasks);
     cargo_tasks(repo, &mut tasks);
     make_tasks(repo, &mut tasks);
@@ -55,6 +56,69 @@ pub fn discover(repo: &Path) -> Vec<Task> {
 
 fn read(repo: &Path, name: &str) -> Option<String> {
     std::fs::read_to_string(repo.join(name)).ok()
+}
+
+/// A tool-independent manifest for the one case none of the others cover: a bespoke script
+/// with no `package.json` or `Makefile` to live in. Checked in, so the task travels with the
+/// repository through git rather than staying a saved row on whichever machine typed it first.
+/// Parses only the shape below, not general TOML.
+///
+/// ```toml
+/// [[task]]
+/// name = "install"
+/// command = "powershell -ExecutionPolicy Bypass -File tools/install-local.ps1"
+/// ```
+fn gitview_tasks(repo: &Path, out: &mut Vec<Task>) {
+    let Some(contents) = read(repo, "gitview.toml") else {
+        return;
+    };
+
+    let mut name: Option<String> = None;
+    let mut command: Option<String> = None;
+    let mut in_task = false;
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == "[[task]]" {
+            flush_task(&mut name, &mut command, out);
+            in_task = true;
+            continue;
+        }
+        if line.starts_with('[') {
+            flush_task(&mut name, &mut command, out);
+            in_task = false;
+            continue;
+        }
+        if !in_task {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = toml_string(value.trim());
+        match key.trim() {
+            "name" => name = value,
+            "command" => command = value,
+            _ => {}
+        }
+    }
+    flush_task(&mut name, &mut command, out);
+}
+
+fn flush_task(name: &mut Option<String>, command: &mut Option<String>, out: &mut Vec<Task>) {
+    if let (Some(n), Some(c)) = (name.take(), command.take()) {
+        out.push(Task::new("gitview.toml", &n, c));
+    }
+}
+
+/// A double-quoted TOML string, unescaped for `\"` and `\\`. Single quotes, multi-line strings
+/// and every other TOML value type are out of scope for a file that holds a name and a command.
+fn toml_string(value: &str) -> Option<String> {
+    let inner = value.strip_prefix('"')?.strip_suffix('"')?;
+    Some(inner.replace("\\\"", "\"").replace("\\\\", "\\"))
 }
 
 /// npm, and whichever of pnpm, yarn or bun the lockfile points at.
@@ -248,4 +312,76 @@ fn compose_tasks(repo: &Path, out: &mut Vec<Task>) {
         "down",
         "docker compose down".to_string(),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("gitview-tasks-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn gitview_toml_proposes_each_task() {
+        let dir = scratch_dir("basic");
+        std::fs::write(
+            dir.join("gitview.toml"),
+            "[[task]]\nname = \"install\"\ncommand = \"powershell -File tools/install-local.ps1\"\n\n[[task]]\nname = \"lint\"\ncommand = \"npm run lint\"\n",
+        )
+        .unwrap();
+
+        let mut out = Vec::new();
+        gitview_tasks(&dir, &mut out);
+
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].id, "gitview.toml:install");
+        assert_eq!(out[0].command, "powershell -File tools/install-local.ps1");
+        assert_eq!(out[1].name, "lint");
+        assert_eq!(out[1].command, "npm run lint");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A task missing either key contributes nothing rather than a half-built row.
+    #[test]
+    fn a_task_needs_both_a_name_and_a_command() {
+        let dir = scratch_dir("incomplete");
+        std::fs::write(dir.join("gitview.toml"), "[[task]]\nname = \"orphan\"\n").unwrap();
+
+        let mut out = Vec::new();
+        gitview_tasks(&dir, &mut out);
+
+        assert!(out.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_escaped_quote_survives_parsing() {
+        let dir = scratch_dir("escaped");
+        std::fs::write(
+            dir.join("gitview.toml"),
+            "[[task]]\nname = \"greet\"\ncommand = \"echo \\\"hello\\\"\"\n",
+        )
+        .unwrap();
+
+        let mut out = Vec::new();
+        gitview_tasks(&dir, &mut out);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].command, "echo \"hello\"");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn no_manifest_proposes_nothing() {
+        let dir = scratch_dir("absent");
+        let mut out = Vec::new();
+        gitview_tasks(&dir, &mut out);
+        assert!(out.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
