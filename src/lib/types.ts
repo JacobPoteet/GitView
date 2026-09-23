@@ -114,6 +114,8 @@ export interface Task {
   saved: boolean;
   /** Sent to the collapsed section at the foot of the pane, and out of the palette. */
   hidden: boolean;
+  /** A personal note, set by hand. Shown as a tooltip; never written into the manifest. */
+  description: string | null;
 }
 
 /** A display choice about one repository, kept apart from the scanned state. */

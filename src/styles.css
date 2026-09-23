@@ -953,6 +953,16 @@ select:focus-visible,
   color: var(--text-dim);
 }
 
+/* A task with a description someone wrote. The description itself is the
+   button's title, so this only has to say one exists. */
+.task-desc-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
 /* Centred in whatever column it sits in. Inside a flex column it takes the room
    and puts the sentence in the middle of it; inside a block it is a padded
    paragraph, which is what it always was. A whole column with one line at the

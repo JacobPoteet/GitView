@@ -330,6 +330,19 @@ fn task_set_hidden(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn task_set_description(
+    state: State<'_, AppState>,
+    repo_path: String,
+    task_id: String,
+    description: Option<String>,
+) -> Result<(), String> {
+    state
+        .cache
+        .set_task_description(&repo_path, &task_id, description.as_deref())
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------- tasks
 
 #[tauri::command]
@@ -345,9 +358,12 @@ async fn repo_tasks(state: State<'_, AppState>, path: String) -> Result<Vec<Task
         }
         // The list arrives whole and flagged. The pane decides where a hidden
         // task is drawn; the palette drops it entirely.
-        if let Ok(hidden) = cache.hidden_tasks(&path) {
+        if let Ok(prefs) = cache.task_prefs(&path) {
             for task in &mut all {
-                task.hidden = hidden.iter().any(|id| id == &task.id);
+                if let Some(pref) = prefs.iter().find(|p| p.task_id == task.id) {
+                    task.hidden = pref.hidden;
+                    task.description = pref.description.clone();
+                }
             }
         }
         all
@@ -708,6 +724,7 @@ pub fn run() {
             repo_set_pinned,
             repo_reorder_pins,
             task_set_hidden,
+            task_set_description,
             repo_tasks,
             task_save,
             task_delete,
