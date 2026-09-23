@@ -37,7 +37,8 @@ Three rules shape the whole app:
   projects keeps the session, the scrollback and any running process.
 - **Task discovery.** Reads `package.json` (with the package manager taken from the lockfile),
   `Cargo.toml`, `Makefile`, `justfile`, `pyproject.toml` and `uv.lock`, `.sln` and `.csproj`,
-  `CMakeLists.txt`, Unity's `ProjectVersion.txt`, and Docker Compose files.
+  `CMakeLists.txt`, Unity's `ProjectVersion.txt`, Docker Compose files, and a `gitview.toml` for the
+  script that fits none of those, checked in so it travels with the repository.
 - **Sync and prune.** Both type their command into the repository's own shell, so the output is
   where you already look. Prune lists the branches first and uses `git branch -d`, which refuses
   anything unmerged.
