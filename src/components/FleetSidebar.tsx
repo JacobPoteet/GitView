@@ -594,6 +594,7 @@ export default function FleetSidebar({
         {onOpenInbox && (
           <button
             className={`icon-btn${inboxWaiting > 0 ? " badged" : ""}`}
+            data-tour="inbox"
             onClick={onOpenInbox}
             title={
               inboxWaiting > 0
@@ -690,7 +691,7 @@ export default function FleetSidebar({
         />
       </div>
 
-      <div className="repo-list">
+      <div className="repo-list" data-tour="fleet">
         {repos.length === 0 && (
           <p className="empty">
             {scanning

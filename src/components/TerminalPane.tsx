@@ -1013,6 +1013,7 @@ export default function TerminalPane({
   return (
     <div
       className="terminal-pane"
+      data-tour="terminal"
       onKeyDownCapture={(event) => {
         // Ctrl+F from the shell, which the key handler above lets through.
         if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {

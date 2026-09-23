@@ -262,7 +262,7 @@ export default function BranchGraph({
   const summary = describe(graph, squashed);
 
   return (
-    <section className={`graph${collapsed ? " collapsed" : ""}`}>
+    <section className={`graph${collapsed ? " collapsed" : ""}`} data-tour="graph">
       <div className="graph-bar">
         <button
           className="graph-toggle"
