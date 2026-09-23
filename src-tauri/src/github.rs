@@ -85,12 +85,27 @@ pub struct InboxItem {
     /// `--delete-branch` would only be repeating it.
     #[serde(default)]
     pub delete_branch_on_merge: bool,
+    /// PRs only. The open issues GitHub closes when this merges: a closing
+    /// keyword in the body or a link from the Development sidebar. Empty when
+    /// the base is not the default branch, since GitHub closes nothing then.
+    #[serde(default)]
+    pub closes: Vec<IssueRef>,
     /// Opened by the person holding the token.
     pub mine: bool,
     /// A review is requested of them.
     pub review_requested: bool,
     /// An issue assigned to them.
     pub assigned: bool,
+}
+
+/// An issue a pull request names, which may live in another repository.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueRef {
+    pub owner_repo: String,
+    pub number: i64,
+    pub title: String,
+    pub url: String,
 }
 
 /// One check on a pull request's head commit, whether it came from Actions as
@@ -164,6 +179,13 @@ struct RepoBits {
     rebase_merge_allowed: bool,
     #[serde(default)]
     delete_branch_on_merge: bool,
+    #[serde(default)]
+    default_branch_ref: Option<BranchName>,
+}
+
+#[derive(Deserialize)]
+struct BranchName {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -203,6 +225,23 @@ struct PrNode {
     review_requests: Nodes<ReviewRequest>,
     #[serde(default)]
     commits: Nodes<CommitNode>,
+    #[serde(default)]
+    closing_issues_references: Nodes<ClosingIssue>,
+}
+
+#[derive(Deserialize)]
+struct ClosingIssue {
+    number: i64,
+    title: String,
+    url: String,
+    state: String,
+    repository: NameWithOwner,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NameWithOwner {
+    name_with_owner: String,
 }
 
 #[derive(Deserialize)]
@@ -335,11 +374,16 @@ const PAGE: usize = 20;
 /// passed, and the browser has the list.
 const CHECKS: usize = 10;
 
+/// Issues per pull request that it closes. One is the usual case, and past a
+/// handful the pull request is doing too much for a chip to say so.
+const CLOSES: usize = 5;
+
 fn fragment() -> String {
     format!(
         r#"
 fragment FleetBits on Repository {{
   squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed deleteBranchOnMerge
+  defaultBranchRef {{ name }}
   pullRequests(states: OPEN, first: {PAGE}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
     nodes {{
       number title url isDraft updatedAt headRefName baseRefName reviewDecision
@@ -354,6 +398,9 @@ fragment FleetBits on Repository {{
           ... on StatusContext {{ context state targetUrl }}
         }} }}
       }} }} }} }}
+      closingIssuesReferences(first: {CLOSES}) {{ nodes {{
+        number title url state repository {{ nameWithOwner }}
+      }} }}
     }}
   }}
   issues(states: OPEN, first: {PAGE}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
@@ -673,7 +720,27 @@ fn collect(
         merge_methods.push("rebase".to_string());
     }
 
+    let default_branch = bits.default_branch_ref.as_ref().map(|b| b.name.as_str());
+
     for pr in &bits.pull_requests.nodes {
+        // GitHub only closes an issue when the pull request lands on the
+        // default branch. Into anything else the link is a note, and a chip
+        // saying "closes" would be promising a close that never happens.
+        let closes = if default_branch.is_some() && pr.base_ref_name.as_deref() == default_branch {
+            pr.closing_issues_references
+                .nodes
+                .iter()
+                .filter(|issue| issue.state == "OPEN")
+                .map(|issue| IssueRef {
+                    owner_repo: issue.repository.name_with_owner.clone(),
+                    number: issue.number,
+                    title: issue.title.clone(),
+                    url: issue.url.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let author = pr
             .author
             .as_ref()
@@ -727,6 +794,7 @@ fn collect(
             changed_files: pr.changed_files,
             merge_methods: merge_methods.clone(),
             delete_branch_on_merge: bits.delete_branch_on_merge,
+            closes,
             review_requested,
             assigned: false,
         });
@@ -770,6 +838,7 @@ fn collect(
             changed_files: 0,
             merge_methods: Vec::new(),
             delete_branch_on_merge: false,
+            closes: Vec::new(),
             review_requested: false,
             assigned,
         });
@@ -1178,6 +1247,44 @@ mod tests {
         assert!(item.mergeable.is_none());
         assert_eq!(item.additions, 0);
         assert!(!item.delete_branch_on_merge);
+        assert!(item.closes.is_empty());
+    }
+
+    /// A pull request into the default branch closes its open issues, one
+    /// into anything else closes none, and an issue already closed is not
+    /// news. The shape gh returned for #102 on 23 Sep 2026.
+    #[test]
+    fn a_pull_request_names_the_issues_it_closes() {
+        let pr = |number: i64, base: &str| {
+            format!(
+                r#"{{"number": {number}, "title": "T", "url": "u", "isDraft": false,
+                "updatedAt": "2026-09-23T00:00:00Z", "headRefName": "b{number}",
+                "baseRefName": "{base}", "reviewDecision": null, "author": null,
+                "closingIssuesReferences": {{"nodes": [
+                  {{"number": 85, "title": "Three copies", "url": "u85", "state": "OPEN",
+                    "repository": {{"nameWithOwner": "o/r"}}}},
+                  {{"number": 9, "title": "Elsewhere", "url": "u9", "state": "OPEN",
+                    "repository": {{"nameWithOwner": "o/other"}}}},
+                  {{"number": 3, "title": "Done", "url": "u3", "state": "CLOSED",
+                    "repository": {{"nameWithOwner": "o/r"}}}}
+                ]}}}}"#
+            )
+        };
+        let raw = format!(
+            r#"{{"defaultBranchRef": {{"name": "main"}},
+              "pullRequests": {{"nodes": [{}, {}]}}, "issues": {{"nodes": []}}}}"#,
+            pr(1, "main"),
+            pr(2, "develop")
+        );
+        let bits: RepoBits = serde_json::from_str(&raw).unwrap();
+        let mut items = Vec::new();
+        collect(&bits, "p", "n", "o/r", None, &mut items);
+
+        let closes = &items[0].closes;
+        assert_eq!(closes.len(), 2);
+        assert_eq!(closes[0].number, 85);
+        assert_eq!(closes[1].owner_repo, "o/other");
+        assert!(items[1].closes.is_empty());
     }
 
     /// A pull request with no checks configured, no reviewer asked, and a

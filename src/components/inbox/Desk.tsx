@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { settings, updateSettings } from "../../lib/settings";
 import { mergeCommand, openUrlCommand, rerunCommand, type ShellKind } from "../../lib/shell";
-import { checkTone, itemKey, mergeBlock } from "../../lib/inbox";
+import { checkTone, itemKey, mergeBlock, refKey, refLabel } from "../../lib/inbox";
+import { Links } from "./Links";
 import type { InboxItem, MergeMethod } from "../../lib/types";
 
 const CHECK_GLYPH = { ok: "✓", bad: "✕", pending: "•", off: "–" } as const;
@@ -34,13 +35,19 @@ export function Desk({
   waiting,
   onCommand,
   onMerge,
+  known,
+  onReveal,
 }: {
   item: InboxItem;
   shell: ShellKind;
   /** A `gh` write the inbox typed and has not seen exit, in whichever repository. */
-  waiting: { path: string; command: string; drops?: string } | null;
+  waiting: { path: string; command: string; drops?: string[] } | null;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
+  /** Whether the inbox holds a row with this key, so a link can jump to it. */
+  known: (key: string) => boolean;
+  /** Opens that row's desk and scrolls it into view. */
+  onReveal: (key: string) => void;
 }) {
   const [method, setMethod] = useState<MergeMethod>(() => storedMethod(item));
 
@@ -57,7 +64,7 @@ export function Desk({
   // replace the exit the inbox is waiting on. `merging` is the write that
   // removes this row, and the merge button says so rather than going dim.
   const busy = waiting !== null && waiting.path === item.repoPath;
-  const merging = busy && waiting.drops === itemKey(item);
+  const merging = busy && waiting.drops?.[0] === itemKey(item);
   const block = mergeBlock(item);
   const command = mergeCommand(item.number, method, !item.deleteBranchOnMerge);
   const passed = item.checkRuns.filter((run) => run.state === "SUCCESS").length;
@@ -82,6 +89,22 @@ export function Desk({
   const typed = (command: string) => `${command}
 
 Typed into ${item.repoName}'s shell.`;
+
+  // An issue the inbox holds is one jump away. One it does not, in a
+  // repository outside the fleet or past the twenty it reads, opens on
+  // GitHub, and names the repository so it works from this repository's shell.
+  const closes = item.closes.map((ref) => {
+    const key = refKey(ref);
+    const view = `gh issue view ${ref.number} --repo ${ref.ownerRepo} --web`;
+    const here = known(key);
+    return {
+      key,
+      label: refLabel(ref, item.ownerRepo),
+      title: ref.title,
+      hint: here ? "Show it in the inbox, with its thread" : typed(view),
+      onOpen: (typeOnly: boolean) => (here ? onReveal(key) : onCommand(item.repoPath, view, typeOnly)),
+    };
+  });
 
   return (
     <div className="inbox-desk">
@@ -108,6 +131,8 @@ Typed into ${item.repoName}'s shell.`;
           <span className="inbox-badge approved">mergeable</span>
         )}
       </div>
+
+      <Links lead={`Merging into ${item.baseRef ?? "the base"} closes`} links={closes} />
 
       {item.checkRuns.length > 0 ? (
         <ul className="inbox-checklist">

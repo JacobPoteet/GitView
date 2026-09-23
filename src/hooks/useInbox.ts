@@ -27,19 +27,20 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
    * way to know the command finished except the block it left behind in that
    * shell. `settled` runs when the shell's output settles and checks here.
    *
-   * `drops` names the row the command removes when it exits 0. A merge is
+   * `drops` names the rows the command removes when it exits 0: the pull
+   * request a merge lands, then the issues GitHub closes with it. A merge is
    * final the moment `gh pr merge` returns, and the row goes on that rather
    * than on the read that follows, because the read is not always right: a
    * poll that started a second before the merge landed answers with the list
    * as it was, and GitHub's own answer can lag the merge by a few seconds.
    */
-  const inboxAfter = useRef<{ path: string; command: string; drops?: string } | null>(null);
+  const inboxAfter = useRef<{ path: string; command: string; drops?: string[] } | null>(null);
   /**
    * The same, as state, for the desk. The ref is what `settled` reads; the
    * state is what disables the merge button while `gh pr merge` is still in
    * the shell, so a second click cannot type it twice.
    */
-  const [inboxTyped, setInboxTyped] = useState<{ path: string; command: string; drops?: string } | null>(
+  const [inboxTyped, setInboxTyped] = useState<{ path: string; command: string; drops?: string[] } | null>(
     null,
   );
   /**
@@ -145,7 +146,7 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
   }, [info, inbox, refreshInbox]);
 
   /** A `gh` write was typed into a repository's shell; re-read once it has exited. */
-  const armAfter = useCallback((path: string, command: string, drops?: string) => {
+  const armAfter = useCallback((path: string, command: string, drops?: string[]) => {
     inboxAfter.current = { path, command, drops };
     setInboxTyped(inboxAfter.current);
   }, []);
@@ -167,10 +168,10 @@ export function useInbox(info: AppInfo | null, setNote: (text: string) => void) 
         inboxAfter.current = null;
         setInboxTyped(null);
         if (waiting.drops && block?.exitCode === 0) {
-          const key = waiting.drops;
-          inboxGone.current.add(key);
+          const keys = new Set(waiting.drops);
+          keys.forEach((key) => inboxGone.current.add(key));
           setInbox((current) =>
-            current ? { ...current, items: current.items.filter((item) => itemKey(item) !== key) } : current,
+            current ? { ...current, items: current.items.filter((item) => !keys.has(itemKey(item))) } : current,
           );
         }
         refreshInbox(true);

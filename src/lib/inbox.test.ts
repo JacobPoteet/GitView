@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byNeed, byRepo, checkTone, itemKey, mergeBlock } from "./inbox";
+import { byNeed, byRepo, checkTone, closedBy, itemKey, mergeBlock, refKey, refLabel } from "./inbox";
 import type { InboxItem } from "./types";
 
 function item(over: Partial<InboxItem>): InboxItem {
@@ -26,6 +26,7 @@ function item(over: Partial<InboxItem>): InboxItem {
     changedFiles: 1,
     mergeMethods: ["squash", "merge"],
     deleteBranchOnMerge: false,
+    closes: [],
     mine: true,
     reviewRequested: false,
     assigned: false,
@@ -95,5 +96,33 @@ describe("checkTone and mergeBlock", () => {
     expect(mergeBlock(item({ mergeMethods: [] }))).toMatch(/no merge method/);
     // GitHub still computing leaves the button on and lets the scrollback say.
     expect(mergeBlock(item({ mergeable: "UNKNOWN" }))).toBeNull();
+  });
+});
+
+describe("closing references", () => {
+  const ref = (number: number, ownerRepo = "someone/example") => ({
+    ownerRepo,
+    number,
+    title: `Issue ${number}`,
+    url: `https://github.com/${ownerRepo}/issues/${number}`,
+  });
+
+  it("keys a reference the way the issue's own row is keyed", () => {
+    expect(refKey(ref(130))).toBe(itemKey(item({ kind: "issue", number: 130 })));
+  });
+
+  it("writes the repository only when it is another one", () => {
+    expect(refLabel(ref(130), "someone/example")).toBe("#130");
+    expect(refLabel(ref(9, "someone/other"), "someone/example")).toBe("someone/other#9");
+  });
+
+  it("finds every pull request that closes an issue, from the issue's side", () => {
+    const a = item({ number: 131, closes: [ref(130), ref(9, "someone/other")] });
+    const b = item({ number: 132, closes: [ref(130)] });
+    const issue = item({ kind: "issue", number: 130, closes: [] });
+    const map = closedBy([a, b, issue]);
+    expect(map.get(refKey(ref(130)))?.map((pr) => pr.number)).toEqual([131, 132]);
+    expect(map.get(refKey(ref(9, "someone/other")))).toEqual([a]);
+    expect(map.has(itemKey(a))).toBe(false);
   });
 });

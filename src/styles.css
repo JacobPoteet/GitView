@@ -2967,6 +2967,15 @@ button.branch-name.has-other .branch-count {
   color: var(--text-faint);
 }
 
+/* The link to the other end, a pull request or the issue it closes. The one
+   badge in the row that is neither a state nor a request of you, so it takes
+   the monospace of the number it names rather than a colour. */
+.inbox-badge.link {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+}
+
 .inbox-checks {
   font-size: 11px;
   font-weight: 700;
@@ -3053,6 +3062,66 @@ button.inbox-expand:hover {
 
 .inbox-desk-size .del {
   color: var(--red);
+}
+
+.inbox-links {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.inbox-links-lead {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.inbox-links ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inbox-link {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
+  color: var(--text);
+}
+
+.inbox-link-number {
+  flex: none;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+.inbox-link-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-link:hover .inbox-link-title,
+.inbox-link:focus-visible .inbox-link-title {
+  text-decoration: underline;
+  color: var(--accent);
+}
+
+/* A row a link jumped to. Once, and short: it is saying "here", not "look".
+   A fade of colour with nothing moving, so reduced motion keeps it. */
+.inbox-row.flash {
+  animation: inbox-flash 900ms ease-out;
+}
+
+@keyframes inbox-flash {
+  from {
+    background: var(--accent-soft);
+  }
 }
 
 .inbox-checklist {

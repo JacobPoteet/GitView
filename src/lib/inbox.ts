@@ -5,7 +5,7 @@
  * `components/inbox/`.
  */
 
-import type { CheckRun, InboxItem, RepoState } from "./types";
+import type { CheckRun, InboxItem, IssueRef, RepoState } from "./types";
 
 /**
  * Groups, in the order they want something from you.
@@ -27,6 +27,37 @@ export type Mode = "need" | "repo";
 /** One key per row, stable across refreshes, so an open desk stays open. */
 export function itemKey(item: Pick<InboxItem, "ownerRepo" | "kind" | "number">): string {
   return `${item.ownerRepo}#${item.kind}${item.number}`;
+}
+
+/** The row an issue a pull request closes would have, whether or not the inbox holds it. */
+export function refKey(ref: IssueRef): string {
+  return itemKey({ ownerRepo: ref.ownerRepo, kind: "issue", number: ref.number });
+}
+
+/**
+ * How a pull request names an issue: `#130` in its own repository, and the
+ * whole `owner/repo#130` across one, the way GitHub writes a closing keyword.
+ */
+export function refLabel(ref: IssueRef, from: string): string {
+  return ref.ownerRepo === from ? `#${ref.number}` : `${ref.ownerRepo}#${ref.number}`;
+}
+
+/**
+ * The other end of `closes`: for each issue some open pull request will
+ * close, the pull requests that will. GitHub only records the link on the
+ * pull request, so an issue row learns it has one from here.
+ */
+export function closedBy(items: InboxItem[]): Map<string, InboxItem[]> {
+  const out = new Map<string, InboxItem[]>();
+  for (const item of items) {
+    for (const ref of item.closes ?? []) {
+      const key = refKey(ref);
+      const existing = out.get(key);
+      if (existing) existing.push(item);
+      else out.set(key, [item]);
+    }
+  }
+  return out;
 }
 
 /** What each row wants from you, which is the question an inbox exists for. */
