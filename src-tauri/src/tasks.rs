@@ -22,6 +22,11 @@ pub struct Task {
     /// only CI or an agent ever runs.
     #[serde(default)]
     pub hidden: bool,
+    /// A personal note, set by hand and shown as a tooltip. Never written into
+    /// the manifest: it is GitView's own record of what a task is for, not the
+    /// project's, so it stays out of a `git diff` nobody else asked for.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 impl Task {
@@ -33,6 +38,7 @@ impl Task {
             source: source.to_string(),
             saved: false,
             hidden: false,
+            description: None,
         }
     }
 }

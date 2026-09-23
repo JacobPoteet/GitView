@@ -37,6 +37,13 @@ pub struct RepoPref {
     pub pinned_pos: Option<i64>,
 }
 
+/// One task's saved preferences, joined onto discovery's result by `task_id`.
+pub struct TaskPref {
+    pub task_id: String,
+    pub hidden: bool,
+    pub description: Option<String>,
+}
+
 /// A set of preferences that followed a repository to a new folder.
 ///
 /// Reported rather than done silently: the whole complaint about the old
@@ -195,9 +202,10 @@ impl Cache {
 
             -- Task ids are only unique inside a repository, so the key is both.
             CREATE TABLE IF NOT EXISTS task_pref (
-                repo_path TEXT NOT NULL,
-                task_id   TEXT NOT NULL,
-                hidden    INTEGER NOT NULL DEFAULT 0,
+                repo_path   TEXT NOT NULL,
+                task_id     TEXT NOT NULL,
+                hidden      INTEGER NOT NULL DEFAULT 0,
+                description TEXT,
                 PRIMARY KEY (repo_path, task_id)
             );
             ",
@@ -207,6 +215,10 @@ impl Cache {
         // order the user is already looking at.
         add_column_if_missing(&conn, "repo_pref", "pinned_pos", "INTEGER")?;
         backfill_pin_order(&conn)?;
+
+        // An installed database predates the column. A row with no description
+        // reads back as NULL, same as one that was never created.
+        add_column_if_missing(&conn, "task_pref", "description", "TEXT")?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -320,11 +332,21 @@ impl Cache {
         Ok(())
     }
 
-    pub fn hidden_tasks(&self, repo_path: &str) -> Result<Vec<String>> {
+    /// Every preference saved against this repository's tasks: whether each is
+    /// hidden, and the description someone wrote for it by hand. Both stay here
+    /// rather than in the manifest, which is shared with the project's other
+    /// tooling and, on most of these repositories, its other contributors.
+    pub fn task_prefs(&self, repo_path: &str) -> Result<Vec<TaskPref>> {
         let conn = self.conn.lock();
-        let mut stmt =
-            conn.prepare("SELECT task_id FROM task_pref WHERE repo_path = ?1 AND hidden = 1")?;
-        let rows = stmt.query_map(params![repo_path], |r| r.get::<_, String>(0))?;
+        let mut stmt = conn
+            .prepare("SELECT task_id, hidden, description FROM task_pref WHERE repo_path = ?1")?;
+        let rows = stmt.query_map(params![repo_path], |r| {
+            Ok(TaskPref {
+                task_id: r.get(0)?,
+                hidden: r.get::<_, i64>(1)? != 0,
+                description: r.get(2)?,
+            })
+        })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
@@ -334,6 +356,22 @@ impl Cache {
             "INSERT INTO task_pref (repo_path, task_id, hidden) VALUES (?1, ?2, ?3)
              ON CONFLICT(repo_path, task_id) DO UPDATE SET hidden = ?3",
             params![repo_path, task_id, hidden as i64],
+        )?;
+        Ok(())
+    }
+
+    /// `None` clears it back to nothing, the same as it never having been set.
+    pub fn set_task_description(
+        &self,
+        repo_path: &str,
+        task_id: &str,
+        description: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO task_pref (repo_path, task_id, description) VALUES (?1, ?2, ?3)
+             ON CONFLICT(repo_path, task_id) DO UPDATE SET description = ?3",
+            params![repo_path, task_id, description],
         )?;
         Ok(())
     }
@@ -477,6 +515,7 @@ impl Cache {
                 source: "saved".to_string(),
                 saved: true,
                 hidden: false,
+                description: None,
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -498,6 +537,7 @@ impl Cache {
             source: "saved".to_string(),
             saved: true,
             hidden: false,
+            description: None,
         })
     }
 

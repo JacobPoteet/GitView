@@ -107,6 +107,13 @@ interface PendingTask {
   name: string;
 }
 
+/** A task's description, being edited before it is saved. */
+interface PendingDescription {
+  repoPath: string;
+  task: Task;
+  text: string;
+}
+
 /** A commit on its way to being tagged, waiting for the name. */
 interface PendingTag {
   repoPath: string;
@@ -306,6 +313,7 @@ export default function App() {
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
+  const [pendingDescription, setPendingDescription] = useState<PendingDescription | null>(null);
   const [pendingTag, setPendingTag] = useState<PendingTag | null>(null);
 
   const selected = useMemo(
@@ -1088,6 +1096,41 @@ export default function App() {
     },
     [selectedPath, setNote],
   );
+
+  const askSetDescription = useCallback(
+    (task: Task) => {
+      if (!selectedPath) return;
+      setPendingDescription({ repoPath: selectedPath, task, text: task.description ?? "" });
+    },
+    [selectedPath],
+  );
+
+  const clearDescription = useCallback(
+    async (task: Task) => {
+      if (!selectedPath) return;
+      setTasks((current) =>
+        current.map((t) => (t.id === task.id ? { ...t, description: null } : t)),
+      );
+      await api
+        .taskSetDescription(selectedPath, task.id, null)
+        .catch((err) => setNote(String(err)));
+    },
+    [selectedPath, setNote],
+  );
+
+  const saveDescription = useCallback(async () => {
+    if (!pendingDescription) return;
+    const { repoPath, task, text } = pendingDescription;
+    const trimmed = text.trim();
+    const description = trimmed.length > 0 ? trimmed : null;
+    setTasks((current) =>
+      current.map((t) => (t.id === task.id ? { ...t, description } : t)),
+    );
+    setPendingDescription(null);
+    await api
+      .taskSetDescription(repoPath, task.id, description)
+      .catch((err) => setNote(String(err)));
+  }, [pendingDescription, setNote]);
 
   /**
    * Ending a session always asks first.
@@ -2033,6 +2076,8 @@ ${landing} ${cleanup}${warning}`,
           disabled={!shellReady}
           onRun={(task, typeOnly) => emit(task.command, typeOnly)}
           onSetHidden={setTaskHidden}
+          onSetDescription={askSetDescription}
+          onClearDescription={clearDescription}
           onDelete={askDeleteTask}
           onCopy={copy}
         />
@@ -2445,6 +2490,38 @@ gh pr view ${branchPr.number} --web`}
             value={pendingTask.name}
             placeholder="A name for it"
             onChange={(e) => setPendingTask({ ...pendingTask, name: e.target.value })}
+          />
+        </Dialog>
+      )}
+
+      {pendingDescription && (
+        <Dialog
+          label={`Description for ${pendingDescription.task.name}`}
+          onClose={() => setPendingDescription(null)}
+          onSubmit={saveDescription}
+          actions={
+            <>
+              <button type="button" className="btn" onClick={() => setPendingDescription(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn accent">
+                Save
+              </button>
+            </>
+          }
+        >
+          <p>
+            Shown as a tooltip over this task. Kept in GitView's own database, keyed to this
+            folder: nothing is written into the repository.
+          </p>
+          <input
+            className="text-input"
+            autoFocus
+            value={pendingDescription.text}
+            placeholder="What this task is for"
+            onChange={(e) =>
+              setPendingDescription({ ...pendingDescription, text: e.target.value })
+            }
           />
         </Dialog>
       )}

@@ -70,6 +70,8 @@ export const api = {
   repoReorderPins: (paths: string[]) => invoke<void>("repo_reorder_pins", { paths }),
   taskSetHidden: (repoPath: string, taskId: string, hidden: boolean) =>
     invoke<void>("task_set_hidden", { repoPath, taskId, hidden }),
+  taskSetDescription: (repoPath: string, taskId: string, description: string | null) =>
+    invoke<void>("task_set_description", { repoPath, taskId, description }),
 
   taskSave: (repoPath: string, name: string, command: string) =>
     invoke<Task>("task_save", { repoPath, name, command }),

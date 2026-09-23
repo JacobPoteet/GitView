@@ -7,6 +7,10 @@ interface Props {
   disabled: boolean;
   onRun: (task: Task, typeOnly?: boolean) => void;
   onSetHidden: (task: Task, hidden: boolean) => void;
+  /** Opens the dialog that sets or edits a task's description. */
+  onSetDescription: (task: Task) => void;
+  /** Clears it immediately, the same directness as toggling hidden. */
+  onClearDescription: (task: Task) => void;
   /** Only a saved task can be deleted. A discovered one belongs to a manifest. */
   onDelete: (task: Task) => void;
   /** Copies, and says so in the status bar. `what` finishes "Copied …". */
@@ -46,9 +50,10 @@ function Row({
         className="task-row"
         disabled={disabled}
         onClick={() => onRun(task)}
-        title={task.command}
+        title={task.description ?? task.command}
       >
         <span className="name">{task.name}</span>
+        {task.description && <span className="task-desc-dot" aria-hidden />}
         <span className="cmd">{task.command}</span>
       </button>
       <button
@@ -84,6 +89,8 @@ export default function TaskList({
   disabled,
   onRun,
   onSetHidden,
+  onSetDescription,
+  onClearDescription,
   onDelete,
   onCopy,
 }: Props) {
@@ -100,6 +107,13 @@ export default function TaskList({
         title: task.hidden ? undefined : "Drops it from the list and the palette",
         run: () => onSetHidden(task, !task.hidden),
       },
+      {
+        label: task.description ? "Edit description…" : "Set description…",
+        run: () => onSetDescription(task),
+      },
+      ...(task.description
+        ? [{ label: "Remove description", run: () => onClearDescription(task) }]
+        : []),
       ...(task.saved
         ? [{ label: "Delete task", danger: true, run: () => onDelete(task) }]
         : []),
