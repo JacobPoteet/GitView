@@ -5,7 +5,7 @@
  * `components/inbox/`.
  */
 
-import type { CheckRun, InboxItem, RepoState } from "./types";
+import type { CheckRun, InboxItem, IssueRef, RepoState } from "./types";
 
 /**
  * Groups, in the order they want something from you.
@@ -19,6 +19,11 @@ export interface Group {
   label: string;
   hint?: string;
   items: InboxItem[];
+  /**
+   * Issues drawn under a pull request in `items` rather than on their own,
+   * keyed by the pull request's `itemKey`. Filled by `nestClosed`.
+   */
+  nested?: Map<string, InboxItem[]>;
 }
 
 /** Which question the groups are answering. */
@@ -27,6 +32,87 @@ export type Mode = "need" | "repo";
 /** One key per row, stable across refreshes, so an open desk stays open. */
 export function itemKey(item: Pick<InboxItem, "ownerRepo" | "kind" | "number">): string {
   return `${item.ownerRepo}#${item.kind}${item.number}`;
+}
+
+/** The row an issue a pull request closes would have, whether or not the inbox holds it. */
+export function refKey(ref: IssueRef): string {
+  return itemKey({ ownerRepo: ref.ownerRepo, kind: "issue", number: ref.number });
+}
+
+/**
+ * How a pull request names an issue: `#130` in its own repository, and the
+ * whole `owner/repo#130` across one, the way GitHub writes a closing keyword.
+ */
+export function refLabel(ref: IssueRef, from: string): string {
+  return ref.ownerRepo === from ? `#${ref.number}` : `${ref.ownerRepo}#${ref.number}`;
+}
+
+/**
+ * The other end of `closes`: for each issue some open pull request will
+ * close, the pull requests that will. GitHub only records the link on the
+ * pull request, so an issue row learns it has one from here.
+ */
+export function closedBy(items: InboxItem[]): Map<string, InboxItem[]> {
+  const out = new Map<string, InboxItem[]>();
+  for (const item of items) {
+    for (const ref of item.closes ?? []) {
+      const key = refKey(ref);
+      const existing = out.get(key);
+      if (existing) existing.push(item);
+      else out.set(key, [item]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Moves each issue under the pull request that closes it.
+ *
+ * While the pull request is open, the issue's fate is that pull request's, so
+ * the two read as one piece of work rather than two rows in two places. Only
+ * within a repository: an issue closed from another one stays in its own
+ * group, where somebody reading that repository looks for it, and the chips
+ * still link the two. An issue two pull requests close goes under the one
+ * that moved last, which is the one more likely to land. Groups left empty
+ * drop out.
+ */
+export function nestClosed(groups: Group[]): Group[] {
+  const all = groups.flatMap((group) => group.items);
+  const byKey = new Map(all.map((item) => [itemKey(item), item]));
+  const owner = new Map<string, InboxItem>();
+  for (const pr of all) {
+    if (pr.kind !== "pr") continue;
+    for (const ref of pr.closes ?? []) {
+      if (ref.ownerRepo !== pr.ownerRepo) continue;
+      const key = refKey(ref);
+      if (!byKey.has(key)) continue;
+      const current = owner.get(key);
+      if (!current || pr.updatedAt > current.updatedAt) owner.set(key, pr);
+    }
+  }
+  if (owner.size === 0) return groups;
+
+  return groups
+    .map((group) => {
+      const items = group.items.filter((item) => !owner.has(itemKey(item)));
+      const nested = new Map<string, InboxItem[]>();
+      for (const pr of items) {
+        const children = (pr.closes ?? [])
+          .map(refKey)
+          .filter((key) => owner.get(key) === pr)
+          .map((key) => byKey.get(key) as InboxItem);
+        if (children.length > 0) nested.set(itemKey(pr), children);
+      }
+      return { ...group, items, nested };
+    })
+    .filter((group) => group.items.length > 0);
+}
+
+/** Every row a group draws, nested ones included, which is what its count says. */
+export function groupSize(group: Group): number {
+  let size = group.items.length;
+  group.nested?.forEach((children) => (size += children.length));
+  return size;
 }
 
 /** What each row wants from you, which is the question an inbox exists for. */

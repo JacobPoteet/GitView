@@ -439,12 +439,26 @@ export interface InboxItem {
   mergeMethods: MergeMethod[];
   /** GitHub deletes the head branch itself, so `--delete-branch` is not needed. */
   deleteBranchOnMerge: boolean;
+  /**
+   * The open issues GitHub closes when this merges, from a closing keyword or
+   * the Development sidebar. Empty on an issue, and on a pull request whose
+   * base is not the default branch, since GitHub closes nothing then.
+   */
+  closes: IssueRef[];
   mine: boolean;
   reviewRequested: boolean;
   assigned: boolean;
 }
 
 export type MergeMethod = "squash" | "merge" | "rebase";
+
+/** An issue a pull request names. It can live in another repository. */
+export interface IssueRef {
+  ownerRepo: string;
+  number: number;
+  title: string;
+  url: string;
+}
 
 export type MergeState =
   | "CLEAN"

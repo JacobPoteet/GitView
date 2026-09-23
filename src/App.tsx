@@ -27,7 +27,7 @@ import ContextMenu, { isEditable, type MenuAt, type MenuEntry } from "./componen
 import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
-import { itemKey } from "./lib/inbox";
+import { itemKey, refKey, refLabel } from "./lib/inbox";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import Welcome from "./components/Welcome";
@@ -2017,17 +2017,27 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
             : pending > 0
               ? ` ${pending} ${pending === 1 ? "check is" : "checks are"} still running.`
               : "";
+        // The issues go in the dialog because this is the click that closes
+        // them, and a merge the dialog did not warn about closing #130 is a
+        // reopen later.
+        const closing =
+          item.closes.length === 0
+            ? ""
+            : `
+
+When it lands, GitHub closes:
+${item.closes.map((ref) => `${refLabel(ref, item.ownerRepo)}  ${ref.title}`).join("\n")}`;
         setConfirmation({
           title: `Merge #${item.number} into ${base}`,
           body: `${item.title}
 
-${landing} ${cleanup}${warning}`,
+${landing} ${cleanup}${warning}${closing}`,
           command,
           confirmLabel: "Merge",
           onConfirm: () => {
             setSelectedPath(item.repoPath);
             setPendingCommand({ path: item.repoPath, command, typeOnly: false });
-            armAfter(item.repoPath, command, itemKey(item));
+            armAfter(item.repoPath, command, [itemKey(item), ...item.closes.map(refKey)]);
           },
         });
       }}

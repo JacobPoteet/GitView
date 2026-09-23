@@ -1,7 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "../../lib/api";
 import { issueCommentCommand, type ShellKind } from "../../lib/shell";
+import { itemKey } from "../../lib/inbox";
 import { relativeTime, type InboxItem, type IssueDetail } from "../../lib/types";
+import { Links } from "./Links";
 
 /**
  * The desk under an issue row: the body, the labels, and the tail of the
@@ -13,9 +15,14 @@ export function IssueDesk({
   shell,
   onCommand,
   onError,
+  closedBy,
+  onReveal,
 }: {
   item: InboxItem;
   shell: ShellKind;
+  /** The open pull requests that close this issue when they merge. */
+  closedBy: InboxItem[];
+  onReveal: (key: string) => void;
   onCommand: (path: string, command: string, typeOnly?: boolean) => void;
   onError: (message: string) => void;
 }) {
@@ -69,8 +76,17 @@ export function IssueDesk({
   const when = (iso: string) => relativeTime(Math.floor(Date.parse(iso) / 1000));
   const left = detail ? detail.commentCount - detail.comments.length : 0;
 
+  const links = closedBy.map((pr) => ({
+    key: itemKey(pr),
+    label: pr.ownerRepo === item.ownerRepo ? `#${pr.number}` : `${pr.ownerRepo}#${pr.number}`,
+    title: pr.title,
+    hint: "Show it in the inbox, with its checks and its merge button",
+    onOpen: () => onReveal(itemKey(pr)),
+  }));
+
   return (
     <div className="inbox-desk">
+      <Links lead={closedBy.length === 1 ? "Closed when it merges" : "Closed when one of these merges"} links={links} />
       {error && <p className="inbox-when">Could not read the issue: {error}</p>}
       {!error && !detail && <p className="inbox-when">Reading…</p>}
 

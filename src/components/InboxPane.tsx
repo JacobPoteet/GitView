@@ -1,10 +1,27 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { Desk, CheckMark } from "./inbox/Desk";
 import { IssueDesk } from "./inbox/IssueDesk";
 import { NewIssue } from "./inbox/NewIssue";
 import { NewPullRequest } from "./inbox/NewPullRequest";
-import { byNeed, byRepo, itemKey, type Group, type Mode } from "../lib/inbox";
+import {
+  byNeed,
+  byRepo,
+  closedBy,
+  groupSize,
+  itemKey,
+  nestClosed,
+  refLabel,
+  type Group,
+  type Mode,
+} from "../lib/inbox";
 import { settings, updateSettings } from "../lib/settings";
 import type { ShellKind } from "../lib/shell";
 import {
@@ -31,7 +48,7 @@ interface Props {
    * repository holds its buttons until it does, and the row the write is
    * about to remove says so on its merge button.
    */
-  waiting: { path: string; command: string; drops?: string } | null;
+  waiting: { path: string; command: string; drops?: string[] } | null;
   onClose: () => void;
   /** Selects the repository an item belongs to and closes the pane. */
   onSelect: (path: string) => void;
@@ -83,6 +100,40 @@ function NeedBadge({ item }: { item: InboxItem }) {
   return null;
 }
 
+/**
+ * The link between a pull request and the issues it closes, from whichever end
+ * the row is. It sits on the meta line so the list answers "is somebody on
+ * this" and "what does this finish" without opening anything; the desk has
+ * the titles and the jump.
+ */
+function LinkBadge({ item, closers }: { item: InboxItem; closers: InboxItem[] }) {
+  if (item.kind === "pr" && item.closes.length > 0) {
+    const names = item.closes.map((ref) => refLabel(ref, item.ownerRepo));
+    return (
+      <span
+        className="inbox-badge link"
+        title={`Merging closes ${item.closes.map((ref) => `${refLabel(ref, item.ownerRepo)} ${ref.title}`).join(", ")}`}
+      >
+        closes {names.length > 2 ? `${names[0]} +${names.length - 1}` : names.join(" ")}
+      </span>
+    );
+  }
+  if (item.kind === "issue" && closers.length > 0) {
+    const first = closers[0];
+    const label = first.ownerRepo === item.ownerRepo ? `#${first.number}` : `${first.ownerRepo}#${first.number}`;
+    return (
+      <span
+        className="inbox-badge link"
+        title={`Closed when ${closers.map((pr) => `#${pr.number} ${pr.title}`).join(", or ")} merges`}
+      >
+        PR {label}
+        {closers.length > 1 && ` +${closers.length - 1}`}
+      </span>
+    );
+  }
+  return null;
+}
+
 function Row({
   item,
   showNeed,
@@ -94,8 +145,15 @@ function Row({
   onMerge,
   onError,
   onMenu,
+  closers,
+  known,
+  onReveal,
 }: {
   item: InboxItem;
+  /** The open pull requests that close this issue. Empty for a pull request. */
+  closers: InboxItem[];
+  known: (key: string) => boolean;
+  onReveal: (key: string) => void;
   /** Set in repo mode, where nothing above the row says why it is here. */
   showNeed: boolean;
   /** The desk is showing under this row. */
@@ -125,7 +183,7 @@ function Row({
       : "The description and the thread";
 
   return (
-    <div className={`inbox-row${open ? " open" : ""}`}>
+    <div className={`inbox-row${open ? " open" : ""}`} data-key={itemKey(item)}>
       {/* The head is what the actions hang off. They used to float over the
           whole row, and a row with its desk open put them in the middle of
           the checks, where a click on the desk landed on Check out. */}
@@ -150,6 +208,7 @@ function Row({
           <span className="inbox-meta">
             <span className="inbox-repo">{item.repoName}</span>
             {showNeed ? <NeedBadge item={item} /> : <ReviewBadge item={item} />}
+            <LinkBadge item={item} closers={closers} />
             <CheckMark state={item.checks} />
             <span className="inbox-when">
               {item.author && `${item.author} · `}
@@ -185,9 +244,26 @@ function Row({
       </div>
 
       {open && pr && (
-        <Desk item={item} shell={shell} waiting={waiting} onCommand={onCommand} onMerge={onMerge} />
+        <Desk
+          item={item}
+          shell={shell}
+          waiting={waiting}
+          onCommand={onCommand}
+          onMerge={onMerge}
+          known={known}
+          onReveal={onReveal}
+        />
       )}
-      {open && !pr && <IssueDesk item={item} shell={shell} onCommand={onCommand} onError={onError} />}
+      {open && !pr && (
+        <IssueDesk
+          item={item}
+          shell={shell}
+          onCommand={onCommand}
+          onError={onError}
+          closedBy={closers}
+          onReveal={onReveal}
+        />
+      )}
     </div>
   );
 }
@@ -261,11 +337,46 @@ Typed into ${item.repoName}'s shell.`;
 
   const groups = useMemo<Group[]>(() => {
     const items = inbox?.items ?? [];
-    if (mode === "repo") return byRepo(items);
-    return byNeed(items);
+    return nestClosed(mode === "repo" ? byRepo(items) : byNeed(items));
   }, [inbox, mode]);
 
   const missing = !gh?.version || !gh.loggedIn;
+
+  // GitHub records the link on the pull request only, so the issue end of it
+  // is worked out here, across the whole list rather than the visible groups.
+  const closers = useMemo(() => closedBy(inbox?.items ?? []), [inbox]);
+  const keys = useMemo(() => new Set((inbox?.items ?? []).map(itemKey)), [inbox]);
+  const known = (key: string) => keys.has(key);
+
+  // A link in a desk jumps to the row at the other end: its group opens if it
+  // was folded, its desk opens, and it scrolls into view with focus on it so
+  // the keyboard lands where the eye does.
+  const list = useRef<HTMLDivElement>(null);
+  const [revealing, setRevealing] = useState<string | null>(null);
+  const reveal = (key: string) => {
+    const group = groups.find(
+      (g) =>
+        g.items.some((entry) => itemKey(entry) === key) ||
+        [...(g.nested?.values() ?? [])].some((children) => children.some((entry) => itemKey(entry) === key)),
+    );
+    if (group && collapsed.has(group.key)) toggle(group.key);
+    setOpen((current) => (current.has(key) ? current : new Set(current).add(key)));
+    setRevealing(key);
+  };
+  useEffect(() => {
+    if (!revealing) return;
+    setRevealing(null);
+    const row = list.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(revealing)}"]`);
+    if (!row) return;
+    // The desk opened under it, so the row can be taller than the list. The
+    // head is the part that says which row this is, and it wins.
+    row.scrollIntoView({ block: "nearest" });
+    row.querySelector(".inbox-head")?.scrollIntoView({ block: "nearest" });
+    row.querySelector<HTMLElement>(".inbox-main")?.focus({ preventScroll: true });
+    row.classList.remove("flash");
+    void row.offsetWidth;
+    row.classList.add("flash");
+  }, [revealing]);
 
   const toggle = (key: string) =>
     setCollapsed((current) => {
@@ -274,6 +385,34 @@ Typed into ${item.repoName}'s shell.`;
       else next.add(key);
       return next;
     });
+
+  const renderRow = (item: InboxItem, showNeed: boolean) => {
+    const key = itemKey(item);
+    return (
+      <Row
+        item={item}
+        showNeed={showNeed}
+        open={open.has(key)}
+        shell={shell}
+        waiting={waiting}
+        onToggle={() =>
+          setOpen((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+          })
+        }
+        onCommand={onCommand}
+        onMerge={onMerge}
+        onError={onError}
+        onMenu={menu.open}
+        closers={closers.get(key) ?? []}
+        known={known}
+        onReveal={reveal}
+      />
+    );
+  };
 
   return (
     <section className="inbox-pane">
@@ -329,7 +468,7 @@ Typed into ${item.repoName}'s shell.`;
         </button>
       </div>
 
-      <div className="inbox-list">
+      <div className="inbox-list" ref={list}>
         {composing === "issue" && (
           <NewIssue
             repos={repos}
@@ -403,33 +542,27 @@ Typed into ${item.repoName}'s shell.`;
                 <span className="chevron" aria-hidden>
                   {shut ? "▸" : "▾"}
                 </span>
-                {group.label} <span className="count">{group.items.length}</span>
+                {group.label} <span className="count">{groupSize(group)}</span>
                 {group.hint && <span className="group-hint">{group.hint}</span>}
               </button>
               {!shut &&
                 group.items.map((item) => {
-                  const key = itemKey(item);
+                  const children = group.nested?.get(itemKey(item)) ?? [];
                   return (
-                    <Row
-                      key={key}
-                      item={item}
-                      showNeed={mode === "repo"}
-                      open={open.has(key)}
-                      shell={shell}
-                      waiting={waiting}
-                      onToggle={() =>
-                        setOpen((current) => {
-                          const next = new Set(current);
-                          if (next.has(key)) next.delete(key);
-                          else next.add(key);
-                          return next;
-                        })
-                      }
-                      onCommand={onCommand}
-                      onMerge={onMerge}
-                      onError={onError}
-                      onMenu={menu.open}
-                    />
+                    <Fragment key={itemKey(item)}>
+                      {renderRow(item, mode === "repo")}
+                      {/* An issue this pull request closes rides under it,
+                          indented behind a rail, since until the merge the
+                          two are one piece of work. It has left its own group,
+                          so it always says what it wants from you. */}
+                      {children.length > 0 && (
+                        <div className="inbox-nested" role="group" aria-label={`Closed when #${item.number} merges`}>
+                          {children.map((child) => (
+                            <Fragment key={itemKey(child)}>{renderRow(child, true)}</Fragment>
+                          ))}
+                        </div>
+                      )}
+                    </Fragment>
                   );
                 })}
             </div>
