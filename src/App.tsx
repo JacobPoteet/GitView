@@ -30,6 +30,7 @@ import InboxPane from "./components/InboxPane";
 import { itemKey } from "./lib/inbox";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
+import Welcome from "./components/Welcome";
 import { useBatch } from "./hooks/useBatch";
 import { useInbox } from "./hooks/useInbox";
 import { useUpdate } from "./hooks/useUpdate";
@@ -310,6 +311,13 @@ export default function App() {
    * without ending it, the same as any other session.
    */
   const [ownShell, setOwnShell] = useState(false);
+  /**
+   * Where a clone typed from the welcome screen will land. Each time GitView's
+   * own shell goes quiet the fleet is swept again, and once a sweep finds this
+   * path the new repository is opened. A clone that fails leaves it set, which
+   * costs a sweep per quiet shell until the next clone replaces it.
+   */
+  const [cloneTarget, setCloneTarget] = useState<string | null>(null);
   /** Bumped when a task is saved or deleted, to re-read the list. */
   const [taskEpoch, setTaskEpoch] = useState(0);
   const [pendingTask, setPendingTask] = useState<PendingTask | null>(null);
@@ -1192,6 +1200,18 @@ export default function App() {
     },
     [selected, closedShell, info, tabOf],
   );
+
+  const ownSettled = useCallback(() => {
+    if (cloneTarget) scan();
+  }, [cloneTarget, scan]);
+
+  useEffect(() => {
+    if (!cloneTarget) return;
+    const landed = repos.find((repo) => repo.path.toLowerCase() === cloneTarget.toLowerCase());
+    if (!landed) return;
+    setCloneTarget(null);
+    setSelectedPath(landed.path);
+  }, [cloneTarget, repos]);
 
   /**
    * Every action in the app goes through here, so the command is always visible
@@ -2277,7 +2297,7 @@ gh pr view ${branchPr.number} --web`}
               sessionId={info.dataDir}
               onSelectTab={noop}
               open
-              onSettled={noop}
+              onSettled={ownSettled}
               onLiveChange={onLiveChange}
               onRequestClose={askCloseShell}
               onNote={setNote}
@@ -2293,11 +2313,26 @@ gh pr view ${branchPr.number} --web`}
               <div className="pane-tab-bar">
                 <span>terminal</span>
               </div>
-              <p className="empty">
-                {repos.length === 0 && scanning
-                  ? "Scanning the roots…"
-                  : "Pick a repository on the left, or press Ctrl+K."}
-              </p>
+              {roots.length === 0 || (repos.length === 0 && !scanning) ? (
+                <Welcome
+                  roots={roots}
+                  shell={shell}
+                  onRoots={(next) => {
+                    setRoots(next);
+                    scan();
+                  }}
+                  onClone={(command, typeOnly, target) => {
+                    setCloneTarget(target);
+                    emitOwn(command, typeOnly);
+                  }}
+                />
+              ) : (
+                <p className="empty">
+                  {repos.length === 0 && scanning
+                    ? "Scanning the roots…"
+                    : "Pick a repository on the left to open its shell, or press Ctrl+K."}
+                </p>
+              )}
             </div>
           )
         )}
