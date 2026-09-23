@@ -88,6 +88,11 @@ fn fleet_cached(state: State<'_, AppState>) -> Result<Vec<RepoState>, String> {
 
 /// Walks the scan roots and streams one row per repository as it is read, so a
 /// slow project never holds up the fast ones.
+///
+/// A hidden repository is treated as archived: its cached row goes out as it
+/// stands and the repository is never opened. Only one with no row at all is
+/// read, so the Hidden group has a name and a branch to draw. Unhiding reads it
+/// fresh through `repo_refresh`.
 #[tauri::command]
 async fn fleet_scan(
     state: State<'_, AppState>,
@@ -109,12 +114,25 @@ async fn fleet_scan(
             }
         };
         note(cache.retain_repos(&keep));
+        let hidden = cache.hidden_repos();
 
         let mut scanned = 0usize;
         let mut identity: Vec<(String, Option<String>)> = Vec::with_capacity(paths.len());
         for path in paths {
-            let repo_state = fleet::read_repo(&path);
-            note(cache.put_repo(&repo_state));
+            let key = path.to_string_lossy().to_string();
+            let cached = if hidden.contains(&key) {
+                cache.repo(&key)
+            } else {
+                None
+            };
+            let repo_state = match cached {
+                Some(row) => row,
+                None => {
+                    let fresh = fleet::read_repo(&path);
+                    note(cache.put_repo(&fresh));
+                    fresh
+                }
+            };
             identity.push((repo_state.path.clone(), repo_state.owner_repo.clone()));
             if on_repo.send(repo_state).is_err() {
                 break;
@@ -406,10 +424,14 @@ fn github_cached(state: State<'_, AppState>) -> Option<Inbox> {
 async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
     let cache = state.cache.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // A hidden repository's issues and pull requests are as archived as the
+        // repository, so they cost the query nothing.
+        let hidden = cache.hidden_repos();
         let targets: Vec<(String, String, String)> = cache
             .all_repos()
             .unwrap_or_default()
             .into_iter()
+            .filter(|repo| !hidden.contains(&repo.path))
             .filter_map(|repo| repo.owner_repo.map(|owner| (repo.path, repo.name, owner)))
             .collect();
 

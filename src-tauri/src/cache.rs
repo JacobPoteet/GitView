@@ -249,7 +249,31 @@ impl Cache {
         Ok(out)
     }
 
+    /// One repository's row as the last read left it.
+    pub fn repo(&self, path: &str) -> Option<RepoState> {
+        let conn = self.conn.lock();
+        let json: String = conn
+            .query_row(
+                "SELECT json FROM repo_state WHERE path = ?1",
+                params![path],
+                |r| r.get(0),
+            )
+            .ok()?;
+        serde_json::from_str(&json).ok()
+    }
+
     // ------------------------------------------------------------ preferences
+
+    /// The repositories the user has hidden, which the sweep and the inbox skip.
+    pub fn hidden_repos(&self) -> HashSet<String> {
+        let conn = self.conn.lock();
+        let Ok(mut stmt) = conn.prepare("SELECT path FROM repo_pref WHERE hidden = 1") else {
+            return HashSet::new();
+        };
+        stmt.query_map([], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+    }
 
     /// Every repository the user has pinned or hidden.
     ///
@@ -673,6 +697,16 @@ mod tests {
         // one rather than the count.
         cache.set_repo_pinned("d", true).unwrap();
         assert_eq!(pin_order(&cache), ["a", "c", "d"]);
+    }
+
+    #[test]
+    fn hidden_repos_lists_only_the_hidden() {
+        let cache = Cache::in_memory().unwrap();
+        cache.set_repo_pinned("a", true).unwrap();
+        cache.set_repo_hidden("b", true).unwrap();
+        cache.set_repo_hidden("c", true).unwrap();
+        cache.set_repo_hidden("c", false).unwrap();
+        assert_eq!(cache.hidden_repos(), HashSet::from(["b".to_string()]));
     }
 
     #[test]
