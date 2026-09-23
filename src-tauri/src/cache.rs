@@ -144,7 +144,7 @@ impl Cache {
     /// A cache with no file behind it. The schema and its migrations are what
     /// the tests are for, and neither needs a disk.
     #[cfg(test)]
-    fn in_memory() -> Result<Self> {
+    pub(crate) fn in_memory() -> Result<Self> {
         Self::from_connection(Connection::open_in_memory()?)
     }
 

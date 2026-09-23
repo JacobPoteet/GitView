@@ -81,6 +81,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | `src-tauri/examples/scan.rs` | Headless scanner check, no window |
 | `site/index.html` | The project page. Static, served by `pages.yml` |
 | `scripts/install-local.ps1` | `npm run install:local`: build the installer, run it over the installed GitView, start the new one. Never rename the script to `install`, npm runs that on every `npm install` and `npm ci` |
+| `scripts/ftue.ps1` | `npm run dev:ftue`: a dev build with a fresh data folder, fresh `localStorage` and fixture repositories, for rehearsing the first run. The wiki's `Operations/Local Development.md` lists the scenarios |
 
 ## Rules that hold across changes
 

@@ -538,6 +538,12 @@ export interface AppInfo {
   roots: string[];
 }
 
+/** A folder the welcome screen offers to watch, and how many repositories it holds. */
+export interface RootSuggestion {
+  path: string;
+  repos: number;
+}
+
 /**
  * One command typed at the prompt, as the shell integration reported it.
  *

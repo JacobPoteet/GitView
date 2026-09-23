@@ -620,6 +620,19 @@ fn settings_add_root(state: State<'_, AppState>, path: String) -> Result<Vec<Str
     Ok(roots)
 }
 
+/// Folders worth watching that nobody has added yet, for the welcome screen.
+///
+/// Reads the disk, one level deep per candidate, so it runs off the main thread.
+#[tauri::command]
+async fn settings_suggest_roots(
+    state: State<'_, AppState>,
+) -> Result<Vec<settings::Suggestion>, String> {
+    let watched = settings::roots(&state.cache);
+    tauri::async_runtime::spawn_blocking(move || settings::suggest(&watched))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn settings_remove_root(state: State<'_, AppState>, path: String) -> Result<Vec<String>, String> {
     let roots: Vec<String> = settings::roots(&state.cache)
@@ -750,6 +763,7 @@ pub fn run() {
             app_quit,
             settings_roots,
             settings_set_roots,
+            settings_suggest_roots,
             settings_add_root,
             settings_remove_root,
             settings_fetched_at,
