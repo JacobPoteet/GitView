@@ -55,7 +55,7 @@
   --radius: 8px;
   --radius-lg: 12px;
 
-  --font-ui: "Inter var", "Inter", "Segoe UI Variable Text", "Segoe UI",
+  --font-ui: "Inter Variable", "Inter", "Segoe UI Variable Text", "Segoe UI",
     system-ui, sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", "Consolas", ui-monospace,
     monospace;
