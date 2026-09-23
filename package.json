@@ -1,7 +1,7 @@
 {
   "name": "gitview",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "A fleet-first git client for people who keep many repos and type most of their git by hand.",
   "scripts": {
