@@ -374,9 +374,23 @@ select:focus-visible,
   background: var(--bg-hover);
 }
 
+/* The selected row is a raised surface with the accent as a rule down its
+   edge. A violet fill and a violet border made it the loudest thing in the
+   rail, louder than the rows asking for attention. */
 .repo-row-wrap.selected {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
+  background: var(--bg-active);
+}
+
+/* On the button rather than the wrap, whose own ::before is the drop line. */
+.repo-row-wrap.selected > .repo-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
 }
 
 .repo-row-wrap.muted {
@@ -388,6 +402,7 @@ select:focus-visible,
 }
 
 .repo-row {
+  position: relative;
   display: block;
   width: 100%;
   text-align: left;
