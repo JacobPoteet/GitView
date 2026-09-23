@@ -54,7 +54,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-          # Release uses lto = true and codegen-units = 1, so its artifacts are
+          # Release uses lto = true and opt-level = "s", so its artifacts are
           # nothing like the debug ones CI caches. Sharing a key would evict one
           # on every run of the other.
           key: release
