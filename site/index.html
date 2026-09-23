@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GitView: the fleet-first git client</title>
-<meta name="description" content="A Windows git client for the developer who keeps twenty repositories and types most of their git by hand.">
+<meta name="description" content="A Windows git client for the developer who keeps twenty repositories and types most of their git by hand. Tauri, Rust and React, by Jacob Poteet.">
 <meta property="og:title" content="GitView: the fleet-first git client">
-<meta property="og:description" content="All your repositories on one screen, a terminal that outlives the view, and GitHub through gh.">
+<meta property="og:description" content="All your repositories on one screen, a terminal that outlives the view, the whole history down to one line, and GitHub through gh.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23181a24'/%3E%3Ccircle cx='10' cy='9' r='3' fill='%23a78bfa'/%3E%3Ccircle cx='10' cy='23' r='3' fill='%23a78bfa'/%3E%3Ccircle cx='22' cy='16' r='3' fill='%2360d394'/%3E%3Cpath d='M10 12v8M10 12c0 6 12 -2 12 4' stroke='%23a78bfa' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,17 +15,19 @@
 :root{
   --bg:oklch(15.5% .008 268);--bg-raised:oklch(18.5% .010 268);--bg-hover:oklch(22% .012 268);
   --bg-inset:oklch(12.5% .008 268);--line:oklch(25% .010 268);--line-strong:oklch(34% .014 268);
-  --text:oklch(94% .004 268);--text-dim:oklch(70% .010 268);--text-faint:oklch(58% .010 268);
+  --text:oklch(94% .004 268);--text-dim:oklch(70% .010 268);--text-faint:oklch(60% .010 268);
   --accent:oklch(70% .185 292);--accent-soft:oklch(70% .185 292 / .14);--accent-line:oklch(70% .185 292 / .42);
   --green:oklch(76% .155 155);--amber:oklch(82% .145 80);--red:oklch(68% .185 24);--blue:oklch(74% .135 242);
   --lane-1:oklch(72% .150 292);--lane-2:oklch(72% .130 242);--lane-3:oklch(72% .140 155);--lane-4:oklch(72% .140 330);
+  --lane-5:oklch(72% .110 196);--lane-6:oklch(72% .130 108);
+  --age-0:oklch(78% .170 292);--age-1:oklch(74% .130 292);--age-2:oklch(68% .090 292);--age-3:oklch(62% .055 292);--age-4:oklch(56% .030 292);
   --radius:10px;--radius-lg:16px;
   --font-ui:"Inter",system-ui,"Segoe UI",sans-serif;--font-mono:"JetBrains Mono","Cascadia Code",Consolas,ui-monospace,monospace;
   --ease:cubic-bezier(.2,.9,.25,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--text);font-family:var(--font-ui);line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--font-ui);line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:clip}
 a{color:inherit;text-decoration:none}
 a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
 ::selection{background:var(--accent-soft)}
@@ -43,15 +45,16 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem}
 .brand svg{width:26px;height:26px;transition:transform .4s var(--ease)}
 .brand:hover svg{transform:rotate(-8deg) scale(1.08)}
-.navlinks{display:flex;gap:6px;align-items:center}
-.navlinks a{padding:8px 12px;border-radius:8px;color:var(--text-dim);font-size:.9rem;font-weight:500;transition:.2s;position:relative}
+.navlinks{display:flex;gap:4px;align-items:center}
+.navlinks a{padding:8px 11px;border-radius:8px;color:var(--text-dim);font-size:.9rem;font-weight:500;transition:.2s;position:relative;white-space:nowrap}
 .navlinks a:hover{color:var(--text);background:var(--bg-hover)}
 .navlinks a.active:not(.cta){color:var(--text)}
-.navlinks a:not(.cta)::after{content:"";position:absolute;left:12px;right:12px;bottom:4px;height:2px;border-radius:2px;background:var(--accent);transform:scaleX(0);transform-origin:0 50%;transition:transform .3s var(--ease)}
+.navlinks a:not(.cta)::after{content:"";position:absolute;left:11px;right:11px;bottom:4px;height:2px;border-radius:2px;background:var(--accent);transform:scaleX(0);transform-origin:0 50%;transition:transform .3s var(--ease)}
 .navlinks a.active:not(.cta)::after{transform:scaleX(1)}
-.navlinks a.cta{color:var(--text);background:var(--accent-soft);border:1px solid var(--accent-line)}
+.navlinks a.cta{color:var(--text);background:var(--accent-soft);border:1px solid var(--accent-line);margin-left:4px}
 .navlinks a.cta:hover{background:oklch(70% .185 292 / .24)}
-@media(max-width:640px){.navlinks a:not(.cta){display:none}}
+@media(max-width:900px){.navlinks a.src{display:none}}
+@media(max-width:720px){.navlinks a:not(.cta){display:none}}
 
 /* ---------- hero ---------- */
 .hero{position:relative;padding:96px 0 40px;text-align:center;overflow:hidden}
@@ -71,7 +74,7 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 @keyframes wordin{to{opacity:1;transform:none}}
 .hero h1 .shine{background:linear-gradient(100deg,var(--lane-1),var(--lane-2) 40%,var(--lane-3) 70%,var(--lane-4));background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 7s linear infinite}
 @keyframes shine{to{background-position:200% 0}}
-.hero p.lede{font-size:clamp(1.05rem,2vw,1.3rem);color:var(--text-dim);max-width:56ch;margin:0 auto 34px}
+.hero p.lede{font-size:clamp(1.05rem,2vw,1.3rem);color:var(--text-dim);max-width:58ch;margin:0 auto 34px}
 .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 .btn{display:inline-flex;align-items:center;gap:10px;padding:13px 22px;border-radius:12px;font-weight:600;font-size:.98rem;border:1px solid var(--line-strong);background:var(--bg-raised);transition:transform .6s var(--ease),box-shadow .25s,background .2s;position:relative;overflow:hidden;transform:translate(var(--tx,0),var(--ty,0))}
 .btn:hover{background:var(--bg-hover)}
@@ -80,8 +83,10 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 @keyframes sheen{to{left:130%}}
 .btn.primary{background:var(--accent);color:oklch(14% .03 292);border-color:transparent;box-shadow:0 8px 32px -8px oklch(70% .185 292 / .7)}
 .btn.primary:hover{box-shadow:0 14px 40px -8px oklch(70% .185 292 / .85);background:oklch(74% .185 292)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text-dim)}
+.btn.ghost:hover{color:var(--text);background:var(--bg-hover)}
 .btn svg{width:18px;height:18px;transition:transform .35s var(--ease)}
-.btn.primary:hover svg{transform:translateY(2px)}
+.btn.primary:hover svg,.btn.ghost:hover svg{transform:translateY(2px)}
 .hero .fine{margin-top:14px;font-size:.82rem;color:var(--text-faint)}
 .hero .fine code{font-family:var(--font-mono);color:var(--text-dim)}
 
@@ -96,14 +101,14 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 .app:hover::after{opacity:1}
 .app .titlebar{display:flex;align-items:center;gap:8px;height:38px;padding:0 14px;background:var(--bg-raised);border-bottom:1px solid var(--line)}
 .dot{width:11px;height:11px;border-radius:50%;background:var(--line-strong)}
-.titlebar .name{margin-left:8px;color:var(--text-faint);font-size:12px}
+.titlebar .name{margin-left:8px;color:var(--text-faint);font-size:12px;font-family:var(--font-mono)}
 .titlebar .status{margin-left:auto;display:flex;gap:14px;color:var(--text-faint);font-size:11.5px}
 .titlebar .status .ok{color:var(--green)}
 .app .body{display:grid;grid-template-columns:250px 1fr 240px;min-height:440px}
 @media(max-width:900px){.app .body{grid-template-columns:230px 1fr}.app .right{display:none}}
 @media(max-width:600px){.app .body{grid-template-columns:1fr}.app .side{display:none}}
 .side{border-right:1px solid var(--line);padding:10px}
-.side .hdr,.right .hdr{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);padding:6px 8px 8px;display:flex;justify-content:space-between}
+.side .hdr,.right .hdr{font-size:11px;color:var(--text-faint);padding:6px 8px 8px;display:flex;justify-content:space-between;font-weight:600}
 .repo{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:7px 9px;border-radius:8px;opacity:0;transform:translateX(-10px);animation:rowin .5s var(--ease) forwards}
 .repo{cursor:pointer;transition:background .2s,box-shadow .2s,transform .2s var(--ease)}
 .repo:hover{background:var(--bg-hover);transform:translateX(2px)}
@@ -155,9 +160,12 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 
 /* ---------- sections ---------- */
 section{padding:110px 0}
-.eyebrow{font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);margin-bottom:14px}
+.eyebrow{font-family:var(--font-mono);font-size:.78rem;letter-spacing:.06em;color:var(--accent);margin-bottom:14px}
 h2{font-size:clamp(1.9rem,4vw,2.9rem);font-weight:750;max-width:22ch}
-.sub{color:var(--text-dim);font-size:1.1rem;max-width:58ch;margin-top:14px}
+h3.sh{font-size:clamp(1.3rem,2.4vw,1.6rem);font-weight:700;margin-top:88px}
+.sub{color:var(--text-dim);font-size:1.1rem;max-width:60ch;margin-top:14px}
+.sub code,.step code,.dec code,.proc code{font-family:var(--font-mono);font-size:.86em;color:var(--text)}
+.dec p code,.process code,.step code,.sub code{white-space:nowrap}
 .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:56px}
 @media(max-width:800px){.cards{grid-template-columns:1fr}}
 .card{position:relative;padding:28px;border-radius:var(--radius-lg);border:1px solid var(--line);background:linear-gradient(180deg,var(--bg-raised),var(--bg));transition:transform .35s var(--ease),border-color .3s;overflow:hidden}
@@ -192,7 +200,7 @@ h2{font-size:clamp(1.9rem,4vw,2.9rem);font-weight:750;max-width:22ch}
 .panel::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),var(--accent),transparent 70%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .4s;pointer-events:none;z-index:2}
 .panel:hover::before{opacity:.9}
 .panel .ph{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--bg-raised);font-size:12px;color:var(--text-faint)}
-.panel .ph .x{margin-left:auto;width:14px;height:14px;opacity:.6;transition:opacity .2s,transform .3s var(--ease)}
+.panel .ph .x{margin-left:auto;width:14px;height:14px;opacity:.6;transition:opacity .2s,transform .3s var(--ease);flex:none}
 .panel .ph .x:hover{opacity:1;transform:rotate(90deg)}
 .replay{position:absolute;right:34px;top:6px;z-index:3;font-family:var(--font-mono);font-size:11px;padding:5px 10px;border-radius:7px;border:1px solid var(--line-strong);background:var(--bg-raised);color:var(--text-dim);cursor:pointer;opacity:0;transform:translateY(6px);transition:.35s var(--ease)}
 .replay.show{opacity:1;transform:none}
@@ -203,7 +211,7 @@ h2{font-size:clamp(1.9rem,4vw,2.9rem);font-weight:750;max-width:22ch}
 .fleet .repo.pending{opacity:.35}
 .fleet .repo .c .tag{transition:.35s var(--ease)}
 .fleet .foot{display:flex;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);background:var(--bg-raised);font-size:12px;color:var(--text-dim)}
-.fleet .foot .go{margin-left:auto;padding:5px 12px;border-radius:7px;background:var(--accent);color:oklch(14% .03 292);font-weight:600;font-size:12px;cursor:default}
+.fleet .foot .go{margin-left:auto;padding:5px 12px;border-radius:7px;background:var(--accent);color:oklch(14% .03 292);font-weight:600;font-size:12px;cursor:default;white-space:nowrap}
 .fleet .foot .go.busy{background:var(--bg-hover);color:var(--text-dim)}
 .sweep{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);top:36px;opacity:0;pointer-events:none}
 .sweep.on{animation:sweep 1.4s var(--ease)}
@@ -235,21 +243,176 @@ h2{font-size:clamp(1.9rem,4vw,2.9rem);font-weight:750;max-width:22ch}
 .hint{position:absolute;right:14px;top:44px;font-size:11px;padding:4px 9px;border-radius:6px;background:var(--bg-raised);border:1px solid var(--line-strong);color:var(--text-dim);font-family:var(--font-mono);opacity:0;transform:translateY(-4px);transition:.4s var(--ease);pointer-events:none}
 .hint.show{opacity:1;transform:none}
 
-/* stats strip */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:64px}
+/* ---------- the reading-back story: text scrolls, the window stays ---------- */
+.story{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:56px;margin-top:24px}
+.stage{grid-column:2;grid-row:1;position:sticky;top:calc(50vh - 250px);align-self:start;z-index:2}
+.steps{grid-column:1;grid-row:1}
+.step{min-height:78vh;display:flex;flex-direction:column;justify-content:center;padding:24px 0;opacity:.32;transition:opacity .5s var(--ease)}
+.step.on{opacity:1}
+.step:first-child{min-height:60vh;justify-content:flex-start;padding-top:120px}
+.step:last-child{min-height:70vh}
+.step .num{font-family:var(--font-mono);font-size:.78rem;color:var(--accent);margin-bottom:10px}
+.step h3{font-size:1.45rem;margin-bottom:12px}
+.step p{color:var(--text-dim);font-size:1.02rem;max-width:44ch}
+.win{font-size:12px}
+.win .ph{justify-content:flex-start}
+.win .ttl{position:relative;flex:1;height:100%;min-width:0}
+.win .ttl span{position:absolute;inset:0;display:flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win .wbody{position:relative;height:430px;overflow:hidden}
+[data-on]{opacity:0;visibility:hidden;transition:opacity .45s var(--ease),visibility 0s .45s}
+[data-on].on{opacity:1;visibility:visible;transition:opacity .45s var(--ease),visibility 0s}
+.frame{position:absolute;inset:0;display:flex;flex-direction:column}
+.dots{display:flex;gap:8px;justify-content:center;margin-top:16px}
+.dots i{width:22px;height:4px;border-radius:2px;background:var(--line-strong);transition:background .3s,width .4s var(--ease)}
+.dots i.on{background:var(--accent);width:34px}
+
+/* history frame */
+.hfilter{display:flex;align-items:center;gap:8px;height:38px;padding:0 12px;border-bottom:1px solid var(--line)}
+.hfilter .box{flex:1;height:26px;border:1px solid var(--line-strong);border-radius:7px;padding:0 9px;display:flex;align-items:center;font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);position:relative;overflow:hidden;background:var(--bg)}
+.hfilter .box{white-space:nowrap}
+.hfilter .ghost{overflow:hidden;text-overflow:ellipsis}
+.frame>.diff>.hh{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hfilter .typed{color:var(--text);white-space:nowrap;overflow:hidden;width:0;border-right:2px solid transparent}
+.win.st-1 .hfilter .box{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+.win.st-1 .hfilter .ghost{display:none}
+.win.st-1 .hfilter .typed{animation:typeit 1s steps(21) .3s forwards,caret 1s steps(1) 1.3s 3}
+@keyframes typeit{to{width:21ch}}
+@keyframes caret{50%{border-color:var(--text)}}
+.hfilter .count{font-size:11px;color:var(--text-faint);white-space:nowrap}
+.hlist{position:relative;flex:1;padding-top:4px}
+.hlanes{position:absolute;left:0;top:4px;width:60px;height:336px;transition:opacity .4s}
+.win.st-1 .hlanes{opacity:0}
+.hrow{display:grid;grid-template-columns:60px 62px minmax(0,1fr) auto;align-items:center;gap:8px;height:28px;padding-right:12px;overflow:hidden;transition:height .45s var(--ease),opacity .35s}
+.hrow .sha{font-family:var(--font-mono);color:var(--text-faint);font-size:11px}
+.hrow .msg{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .who{color:var(--text-faint);font-size:11px;white-space:nowrap}
+.hrow .ref{font-family:var(--font-mono);font-size:10px;padding:0 5px;border-radius:4px;border:1px solid var(--accent-line);color:var(--text);margin-right:6px;background:var(--accent-soft)}
+.hrow .ref.r2{border-color:oklch(72% .130 242 / .45);background:oklch(72% .130 242 / .12)}
+.hrow .ref.r3{border-color:oklch(72% .140 155 / .45);background:oklch(72% .140 155 / .12)}
+.hrow .pd{justify-self:center;width:8px;height:8px;border-radius:50%;background:var(--lane-1);opacity:0;transition:opacity .3s}
+.win.st-1 .hrow:not(.m){height:0;opacity:0}
+.win.st-1 .hrow .pd{opacity:1}
+.win.st-1 .hrow.m{background:linear-gradient(90deg,transparent,var(--accent-soft) 40%,transparent)}
+
+/* commit frame */
+.chead{padding:12px 14px;border-bottom:1px solid var(--line)}
+.chead .t{font-size:13.5px;font-weight:600;color:var(--text)}
+.chead .m{margin-top:4px;color:var(--text-faint);font-size:11px;display:flex;gap:10px;flex-wrap:wrap}
+.chead .m .sig{color:var(--green)}
+.cfiles{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.cfiles span{font-family:var(--font-mono);font-size:10.5px;padding:2px 7px;border-radius:5px;border:1px solid var(--line);color:var(--text-dim)}
+.cfiles span.sel{border-color:var(--accent-line);background:var(--accent-soft);color:var(--text)}
+.cfiles span i{font-style:normal;color:var(--green)}.cfiles span em{font-style:normal;color:var(--red)}
+.cfiles .bl{margin-left:auto;font-family:var(--font-ui);transition:.3s}
+.win.st-3 .cfiles .bl{border-color:var(--accent-line);color:var(--text);background:var(--accent-soft)}
+.diff{font-family:var(--font-mono);font-size:11px;line-height:22px;flex:1;overflow:hidden}
+.diff .hh{color:var(--lane-2);background:oklch(72% .130 242 / .07);padding-left:12px;border-bottom:1px solid var(--line)}
+.dl{display:grid;grid-template-columns:auto 34px 16px minmax(0,1fr);white-space:pre;color:var(--text-dim)}
+.dl .ln{color:var(--text-faint);text-align:right;padding-right:8px}
+.dl .sg{color:var(--text-faint)}
+.dl.add{background:oklch(76% .155 155 / .09)}.dl.add .sg,.dl.add .tx{color:oklch(84% .12 155)}
+.dl.del{background:oklch(68% .185 24 / .09)}.dl.del .sg,.dl.del .tx{color:oklch(78% .12 24)}
+.dl .tx{overflow:hidden;text-overflow:ellipsis}
+.bg{width:0;overflow:hidden;transition:width .55s var(--ease);display:flex;gap:6px;align-items:center;white-space:nowrap;color:var(--text-faint);font-size:10.5px}
+.win.st-3 .bg{width:132px;padding-right:8px}
+.bg b{width:3px;align-self:stretch;flex:none}
+.bg .s{color:var(--text-dim)}
+.bg.cont .s,.bg.cont .a{visibility:hidden}
+
+/* hunk frame */
+.hunks{flex:1;overflow:hidden}
+.hunk{border-bottom:1px solid var(--line);transition:opacity .5s}
+.hunk .hh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stg{font-family:var(--font-ui);font-size:10.5px;padding:1px 8px;border-radius:5px;border:1px solid var(--line-strong);color:var(--text-dim);margin-right:8px;white-space:nowrap}
+.on .hunk.two .stg{animation:press 2.2s var(--ease) .2s both}
+@keyframes press{0%,30%{border-color:var(--line-strong);background:none;color:var(--text-dim)}40%,100%{border-color:var(--accent-line);background:var(--accent-soft);color:var(--text)}}
+.on .hunk.two{animation:staged .5s var(--ease) 3.3s both}
+@keyframes staged{to{opacity:.3}}
+.mini{border-top:1px solid var(--line);background:var(--bg-inset);font-family:var(--font-mono);font-size:11px;line-height:1.65;padding:9px 12px;color:var(--text-dim);white-space:normal;word-break:break-all;min-height:96px}
+.mini .p{color:var(--lane-2)}
+.mini .cmdt{color:var(--text)}
+.mini .after{opacity:0;transition:opacity .3s}
+.mini .after.show{opacity:1}
+.mini .ok{color:var(--green)}
+
+/* rebase frame */
+.opbar{display:flex;align-items:center;gap:10px;padding:9px 12px;background:oklch(82% .145 80 / .09);border-bottom:1px solid oklch(82% .145 80 / .3);color:var(--text-dim);font-size:11.5px;flex-wrap:wrap}
+.opbar .mk{color:var(--amber);font-size:14px}
+.opbar strong{color:var(--text);font-weight:600}
+.opbar .txt{flex:1;min-width:200px}
+.opbar .acts{display:flex;gap:6px}
+.opbar .acts span{padding:3px 10px;border-radius:6px;border:1px solid var(--line-strong);background:var(--bg-raised);color:var(--text);font-size:11px}
+.opbar .acts span.dz{color:var(--red);border-color:oklch(68% .185 24 / .4)}
+.on .opbar{animation:drop .5s var(--ease) both}
+@keyframes drop{from{transform:translateY(-100%);opacity:0}}
+.conf{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+.conf b{color:var(--red)}
+.rterm{flex:1;padding:10px 12px;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--text-dim);white-space:pre-wrap;word-break:break-word}
+.rterm .p{color:var(--lane-2)}.rterm .c{color:var(--text)}.rterm .er{color:var(--red)}.rterm .h{color:var(--amber)}
+
+/* ---------- how it's built ---------- */
+.arch{margin-top:56px;display:flex;flex-direction:column;align-items:center}
+.layer{width:100%;max-width:720px;border:1px solid var(--line-strong);border-radius:12px;background:var(--bg-raised);padding:14px 18px;display:flex;justify-content:space-between;gap:6px 16px;align-items:baseline;flex-wrap:wrap}
+.layer b{font-weight:650}
+.layer span{font-family:var(--font-mono);font-size:.8rem;color:var(--text-dim)}
+.wire{width:2px;height:30px;background:linear-gradient(var(--line-strong),var(--accent));transform:scaleY(0);transform-origin:top;transition:transform .5s var(--ease)}
+.arch.in .wire{transform:none}
+.arch.in .wire.w2{transition-delay:.35s}
+.procs{position:relative;width:100%;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding-top:22px}
+.procs::before{content:"";position:absolute;top:0;left:10%;right:10%;height:2px;background:var(--accent);transform:scaleX(0);transition:transform .6s var(--ease) .6s}
+.arch.in .procs::before{transform:none}
+.proc{position:relative;border:1px solid var(--line);border-top:3px solid var(--c);border-radius:10px;background:var(--bg-raised);padding:14px;opacity:0;transform:translateY(12px);transition:opacity .5s var(--ease),transform .5s var(--ease)}
+.proc::before{content:"";position:absolute;top:-25px;left:50%;width:2px;height:22px;background:var(--accent);opacity:.8}
+.arch.in .proc{opacity:1;transform:none}
+.arch.in .proc:nth-child(1){transition-delay:.9s}.arch.in .proc:nth-child(2){transition-delay:1s}.arch.in .proc:nth-child(3){transition-delay:1.1s}.arch.in .proc:nth-child(4){transition-delay:1.2s}.arch.in .proc:nth-child(5){transition-delay:1.3s}
+.proc h4{font-family:var(--font-mono);font-size:.95rem;color:var(--c);margin-bottom:6px}
+.proc p{font-size:.84rem;color:var(--text-dim);line-height:1.5}
+.proc .for{margin-top:10px;font-size:.74rem;color:var(--text-faint);font-family:var(--font-mono)}
+@media(max-width:900px){.procs{grid-template-columns:repeat(2,minmax(0,1fr))}.procs::before,.proc::before{display:none}.proc:last-child{grid-column:1/-1}}
+@media(max-width:480px){.procs{grid-template-columns:1fr}}
+
+.decs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:32px}
+@media(max-width:1000px){.decs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.decs{grid-template-columns:1fr}}
+.dec{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--bg-raised);padding:22px;display:flex;flex-direction:column;gap:10px;transition:border-color .3s,transform .35s var(--ease)}
+.dec:hover{border-color:var(--accent-line);transform:translateY(-3px)}
+.dec h4{font-size:1.02rem;font-weight:650}
+.dec p{font-size:.9rem;color:var(--text-dim)}
+.dec dl{margin-top:auto;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;padding-top:12px;border-top:1px solid var(--line);font-size:.82rem}
+.dec dt{color:var(--text-faint)}
+.dec dd{color:var(--text-dim)}
+.dec dd.ms{color:var(--green);font-family:var(--font-mono);font-size:.8rem}
+.process{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;align-items:start;margin-top:32px}
+@media(max-width:900px){.process{grid-template-columns:1fr;gap:28px}}
+.process p{color:var(--text-dim);font-size:1rem}
+.process p+p{margin-top:14px}
+.process code{font-family:var(--font-mono);font-size:.86em;color:var(--text)}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 @media(max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}}
-.stat{padding:22px 24px;border-radius:var(--radius-lg);border:1px solid var(--line);background:var(--bg-raised);position:relative;overflow:hidden;transition:transform .35s var(--ease),border-color .3s}
+.stat{padding:20px 22px;border-radius:var(--radius-lg);border:1px solid var(--line);background:var(--bg-raised);position:relative;overflow:hidden;transition:transform .35s var(--ease),border-color .3s}
 .stat::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(300px circle at var(--mx,50%) var(--my,50%),oklch(70% .185 292 / .12),transparent 60%);opacity:0;transition:opacity .35s}
 .stat:hover{transform:translateY(-3px);border-color:var(--accent-line)}
 .stat:hover::after{opacity:1}
-.stat b{display:block;font-size:2rem;font-weight:800;letter-spacing:-.03em;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.stat b{display:block;font-size:1.7rem;font-weight:800;letter-spacing:-.03em;font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .stat b em{font-style:normal;color:var(--accent)}
-.stat span{color:var(--text-faint);font-size:.85rem}
+.stat b small{font-size:.55em;font-weight:600;color:var(--text-dim);letter-spacing:0}
+.stat span{color:var(--text-faint);font-size:.82rem;display:block;margin-top:2px}
+.asof{margin-top:10px;font-size:.78rem;color:var(--text-faint)}
+.byline{margin-top:72px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:22px 24px;border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(90deg,var(--accent-soft),transparent 60%)}
+.byline .who{flex:1;min-width:240px}
+.byline .who b{display:block;font-size:1.05rem}
+.byline .who span{color:var(--text-dim);font-size:.92rem}
+.byline .links{display:flex;gap:8px;flex-wrap:wrap}
+.byline .links a{padding:8px 14px;border-radius:9px;border:1px solid var(--line-strong);font-size:.88rem;color:var(--text-dim);transition:.2s}
+.byline .links a:hover{color:var(--text);border-color:var(--accent-line);background:var(--accent-soft)}
 
 /* install */
 .install{text-align:center;padding:120px 0 90px;position:relative;overflow:hidden}
 .install .glow{position:absolute;left:50%;top:40%;width:700px;height:400px;transform:translate(-50%,-50%);background:radial-gradient(ellipse,oklch(70% .185 292 / .28),transparent 70%);filter:blur(30px);z-index:-1;pointer-events:none}
 .install h2{margin:0 auto}
+.install .sub{margin:14px auto 0}
 .cmdbox{margin:32px auto 0;max-width:640px;text-align:left;font-family:var(--font-mono);font-size:13px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--bg-inset);padding:14px 18px;color:var(--text-dim);line-height:1.8}
 .cmdbox{position:relative;transition:border-color .3s,box-shadow .3s}
 .cmdbox:hover{border-color:var(--accent-line);box-shadow:0 0 0 4px var(--accent-soft)}
@@ -263,11 +426,23 @@ h2{font-size:clamp(1.9rem,4vw,2.9rem);font-weight:750;max-width:22ch}
 .reqs code{font-family:var(--font-mono);color:var(--text)}
 footer{border-top:1px solid var(--line);padding:32px 0;color:var(--text-faint);font-size:.85rem}
 footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+footer a{color:var(--text-dim)}
 footer a:hover{color:var(--text)}
 
 /* ---------- narrow screens ---------- */
+@media(max-width:900px){
+  .story{grid-template-columns:1fr;gap:0}
+  .stage{grid-column:1;grid-row:1;top:60px;background:var(--bg);padding:12px 0 10px;margin:0 -24px;padding-left:24px;padding-right:24px}
+  .stage::after{content:"";position:absolute;left:0;right:0;bottom:-28px;height:28px;background:linear-gradient(var(--bg),transparent);pointer-events:none}
+  .steps{grid-column:1;grid-row:2}
+  .win .wbody{height:300px}
+  .dots{margin-top:10px}
+  .step,.step:first-child,.step:last-child{min-height:62vh;justify-content:flex-start;padding:48px 0 0}
+  .step:last-child{min-height:80vh}
+}
 @media(max-width:760px){
   section{padding:72px 0}
+  h3.sh{margin-top:64px}
   .hero{padding:56px 0 32px}
   .hero h1{margin-top:20px}
   .app{margin-top:40px;border-radius:12px}
@@ -276,29 +451,38 @@ footer a:hover{color:var(--text)}
   .cards{margin-top:40px;gap:14px}
   .split{gap:36px}
   .copy ul{margin-top:22px;gap:12px}
-  .stats{margin-top:44px;gap:12px}
-  .stat{padding:18px 20px}
-  .stat b{font-size:1.6rem}
+  .stat{padding:16px 18px}
+  .stat b{font-size:1.4rem}
   .transcript .row i{width:76px}
   .install{padding:88px 0 64px}
   .cmdbox{font-size:12px;padding:12px 64px 12px 14px}
   .cmdbox .lines{overflow-x:auto;white-space:nowrap;scrollbar-width:thin}
   .cmdbox .cp{opacity:1;transform:none}
   .hint{display:none}
+  .hrow{grid-template-columns:60px 56px minmax(0,1fr)}
+  .hrow .who{display:none}
+  .win.st-3 .bg{width:92px}
+  .bg .a{display:none}
   footer .wrap{flex-direction:column;gap:8px}
 }
 @media(max-width:480px){
   .wrap{padding:0 16px}
+  .stage{margin:0 -16px;padding-left:16px;padding-right:16px}
   .stats{grid-template-columns:1fr}
   .btns{flex-direction:column;align-items:stretch}
   .btns .btn{justify-content:center}
   .pill{font-size:.76rem}
   .app .body{min-height:380px}
   .reqs span{font-size:.78rem}
+  .win .wbody{height:270px}
+  .win{font-size:11px}
+  .chead .t{font-size:12px}
+  .cfiles span:first-child{display:none}
+  .dl{grid-template-columns:auto 28px 12px minmax(0,1fr)}
 }
 @media(hover:none){.card::before,.card::after,.stat::after,.panel::before,.app::after{display:none}.cmdbox .cp{opacity:1;transform:none}}
 
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.rv{opacity:1;transform:none}.hero h1 .w{opacity:1;transform:none}.orbs{transform:none!important}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important;transition-delay:0s!important}.rv{opacity:1;transform:none}.hero h1 .w{opacity:1;transform:none}.orbs{transform:none!important}}
 </style>
 </head>
 <body>
@@ -309,8 +493,8 @@ footer a:hover{color:var(--text)}
     GitView
   </a>
   <div class="navlinks">
-    <a href="#fleet">Fleet</a><a href="#terminal">Terminal</a><a href="#github">GitHub</a>
-    <a href="https://github.com/JacobPoteet/GitView">Source</a>
+    <a href="#fleet">Fleet</a><a href="#terminal">Terminal</a><a href="#history">History</a><a href="#github">GitHub</a><a href="#built">How it’s built</a>
+    <a class="src" href="https://github.com/JacobPoteet/GitView">Source</a>
     <a class="cta" href="https://github.com/JacobPoteet/GitView/releases/latest">Download</a>
   </div>
 </div></nav>
@@ -319,9 +503,9 @@ footer a:hover{color:var(--text)}
   <div class="grid-bg"></div>
   <div class="orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
   <div class="wrap">
-    <div class="pill rv in"><b>v0.5</b> Windows · Tauri · MIT</div>
+    <div class="pill rv in"><b>v0.7</b> Windows · Tauri · Rust · MIT</div>
     <h1 class="rv in"><span class="w">Twenty repos</span><br><span class="w">on one screen,</span><br><span class="w shine">your git.</span></h1>
-    <p class="lede rv in d1">GitView is a Windows git client for the developer who keeps twenty repositories and types most of their git by hand. The home screen is the fleet, and each button shows the command it is about to run.</p>
+    <p class="lede rv in d1">GitView is a Windows git client for the developer who keeps twenty repositories and types most of their git by hand. The fleet is the home screen, the terminal is the main pane, and each button names the command it runs.</p>
     <div class="btns rv in d2">
       <a class="btn primary" href="https://github.com/JacobPoteet/GitView/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M6 11l6 6 6-6M4 21h16"/></svg>
@@ -329,10 +513,14 @@ footer a:hover{color:var(--text)}
       </a>
       <a class="btn" href="https://github.com/JacobPoteet/GitView">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-        Star on GitHub
+        Read the source
+      </a>
+      <a class="btn ghost" href="#built">
+        How it’s built
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
       </a>
     </div>
-    <p class="fine rv in d3">It has no account, no telemetry and no generated commit messages. It needs <code>git</code> on PATH, and <code>gh</code> for the GitHub parts.</p>
+    <p class="fine rv in d3">No account, no telemetry, no generated commit messages. It needs <code>git</code> on PATH, and <code>gh</code> for the GitHub parts.</p>
 
     <!-- app mock -->
     <div class="app rv d2" id="app">
@@ -373,7 +561,7 @@ footer a:hover{color:var(--text)}
     <div class="card rv">
       <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="4" rx="1.5"/><rect x="3" y="10" width="18" height="4" rx="1.5"/><rect x="3" y="16" width="18" height="4" rx="1.5"/></svg></div>
       <h3>The fleet is the home screen</h3>
-      <p>The scanner reads branch, ahead/behind, dirty files and merged branches for each repository and streams the rows in as it goes. A cold start paints the list from SQLite before it opens a single repository.</p>
+      <p>The scanner reads branch, ahead and behind, dirty files, stashes and merged branches for each repository, and streams the rows in as it goes. A cold start paints the list from SQLite before it opens a single repository.</p>
     </div>
     <div class="card rv d1">
       <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></div>
@@ -395,10 +583,10 @@ footer a:hover{color:var(--text)}
       <div class="eyebrow rv">Built for the solo dev with too many repos</div>
       <h2 class="rv d1">Sync the whole fleet from one button.</h2>
       <ul>
-        <li class="rv d1"><span><b>Sync and prune across repositories.</b> The transcript keeps the command as typed, the exit code and the output for each repository, so you can read what ran and copy a line out of it.</span></li>
-        <li class="rv d2"><span><b>Reads again between commands.</b> A fetch changes ahead and behind, so the batch reads the repository again before it decides whether to pull.</span></li>
-        <li class="rv d3"><span><b>Pin the repositories you are working on and hide the rest.</b> A hidden repository or script leaves the <span class="kbd">Ctrl+K</span> palette too, so a project’s thirty npm scripts stay out of your way.</span></li>
-        <li class="rv d3"><span><b>GitView finds the tasks.</b> <code>package.json</code>, <code>Cargo.toml</code>, <code>Makefile</code>, <code>justfile</code>, <code>pyproject.toml</code>, <code>.csproj</code>, <code>CMakeLists.txt</code>, Compose files, Unity projects.</span></li>
+        <li class="rv d1"><span><b>Sync and prune across repositories.</b> The transcript keeps each command as typed, its exit code and its output, so you can read what ran and copy a line out of it. The batch reads each repository again between commands, since a fetch changes what the pull should do.</span></li>
+        <li class="rv d2"><span><b>A sort that knows what needs you.</b> Behind, dirty, a paused rebase, and commits that exist only on this disk on any local branch. GitView fetches on launch, so the ↓ counts are today’s.</span></li>
+        <li class="rv d3"><span><b>Pin what you work on, archive the rest.</b> A hidden repository drops out of the sweep, the inbox and the <span class="kbd">Ctrl+K</span> palette. A hidden npm script leaves the palette too.</span></li>
+        <li class="rv d3"><span><b>GitView finds the tasks.</b> <code>package.json</code>, <code>Cargo.toml</code>, <code>Makefile</code>, <code>justfile</code>, <code>pyproject.toml</code>, <code>.csproj</code>, <code>CMakeLists.txt</code>, Compose files, Unity projects, and a checked-in <code>gitview.toml</code> for the script none of those cover.</span></li>
       </ul>
     </div>
     <div class="panel fleet rv d1" id="fleetPanel">
@@ -418,12 +606,12 @@ footer a:hover{color:var(--text)}
     <div class="copy">
       <div class="eyebrow rv">The terminal is the app</div>
       <h2 class="rv d1">One shell per repository, and it outlives the view.</h2>
-      <p class="sub rv d1">Switch projects and come back: the scrollback and the dev server you left running are still there.</p>
+      <p class="sub rv d1">Switch projects and come back: the scrollback and the dev server you left running are still there. Close the app and reopen it, and the scrollback is too.</p>
       <ul>
         <li class="rv d2"><span><b>Command blocks.</b> PowerShell tells GitView where each command started and how it exited. A bar in the scrollback turns green or red with the exit code, and violet while the command runs.</span></li>
         <li class="rv d2"><span><b>Ports as chips.</b> A running command prints <code>localhost:5183</code> and GitView shows it as a chip. Click it and GitView types <code>Start-Process</code>, the same as any other button.</span></li>
         <li class="rv d3"><span><b>Keep a command you already ran.</b> One button saves the last block as a task for that repository. GitView writes nothing into the repository itself.</span></li>
-        <li class="rv d3"><span><b>A failing build, in one copy.</b> One button copies the command, its directory, its exit code and its output together, ready to paste into whatever you debug with.</span></li>
+        <li class="rv d3"><span><b>Scrollback across restarts.</b> Each shell’s buffer goes to disk as it settles and on close, and comes back above the next launch’s first prompt. <span class="kbd">Ctrl+F</span> searches it, and a second shell keeps git free while the first one runs the dev server.</span></li>
         <li class="rv d3"><span><b>Your prompt survives.</b> Starship and oh-my-posh keep working. GitView wraps the prompt in memory and writes nothing to your profile.</span></li>
       </ul>
     </div>
@@ -436,16 +624,114 @@ footer a:hover{color:var(--text)}
   </div>
 </div></section>
 
+<!-- ---------- history: a pinned window, six steps scrolling past it ---------- -->
+<section id="history" style="padding-top:0"><div class="wrap">
+  <div class="eyebrow rv">Reading back</div>
+  <h2 class="rv d1">From the whole history down to one line.</h2>
+  <p class="sub rv d2">GitView reads the history, a commit, its hunks and its blame in process through libgit2, so reading costs you no typing. Anything that changes the repository still types its git into the shell.</p>
+
+  <div class="story">
+    <div class="stage" aria-hidden="true">
+      <div class="panel win st-0" id="win">
+        <div class="ph"><div class="ttl mono">
+          <span data-on="0" class="on">History · gitview · 5,512 commits</span>
+          <span data-on="1">History · path:src/lib/shell.ts · 4 commits</span>
+          <span data-on="2 3">e4a1c07 · src/lib/shell.ts</span>
+          <span data-on="4">Unstaged · src/components/Welcome.tsx</span>
+          <span data-on="5">gitview · HEAD detached at 3a9c1e2</span>
+        </div><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+        <div class="wbody">
+
+          <div class="frame on" data-on="0 1">
+            <div class="hfilter"><div class="box"><span class="ghost">Filter: text, author:name, path:src/lib</span><span class="typed">path:src/lib/shell.ts</span></div><span class="count" id="hcount">5,512</span></div>
+            <div class="hlist" id="hlist"></div>
+          </div>
+
+          <div class="frame" data-on="2 3">
+            <div class="chead"><div class="t">A refining pass: six type sizes, Inter bundled</div>
+              <div class="m"><span class="mono">e4a1c07</span><span>Jacob Poteet · 2 hours ago</span><span class="sig">● signed, ssh</span></div></div>
+            <div class="cfiles"><span>src/styles.css <i>+84</i> <em>−61</em></span><span class="sel">src/lib/shell.ts <i>+3</i> <em>−1</em></span><span class="bl">Blame</span></div>
+            <div class="diff" id="cdiff"></div>
+          </div>
+
+          <div class="frame" data-on="4">
+            <div class="hunks">
+              <div class="hunk"><div class="diff"><div class="hh"><span>@@ -12,6 +12,7 @@ export default function Welcome(</span><span class="stg">Stage hunk</span></div>
+                <div class="dl"><span></span><span class="ln">12</span><span class="sg"> </span><span class="tx">  const [url, setUrl] = useState("");</span></div>
+                <div class="dl add"><span></span><span class="ln">13</span><span class="sg">+</span><span class="tx">  const [dest, setDest] = useState(roots[0] ?? "");</span></div>
+                <div class="dl"><span></span><span class="ln">14</span><span class="sg"> </span><span class="tx">  const name = cloneName(url);</span></div>
+              </div></div>
+              <div class="hunk two"><div class="diff"><div class="hh"><span>@@ -58,4 +59,6 @@ export default function Welcome(</span><span class="stg">Stage hunk</span></div>
+                <div class="dl del"><span></span><span class="ln">59</span><span class="sg">-</span><span class="tx">  const line = `git clone ${url}`;</span></div>
+                <div class="dl add"><span></span><span class="ln">59</span><span class="sg">+</span><span class="tx">  const line = `git clone ${quote(url)} ${quote(target)}`;</span></div>
+                <div class="dl add"><span></span><span class="ln">60</span><span class="sg">+</span><span class="tx">  // Shift-click types it without running it.</span></div>
+              </div></div>
+            </div>
+            <div class="mini"><span class="p">PS F:\GitHub\gitview&gt;</span> <span class="cmdt" id="applyCmd" data-cmd="git apply --cached 'C:\Users\you\AppData\Roaming\GitView\patches\gitview-stage-src-components-welcome-tsx-h2.patch'"></span><div class="after" id="applyAfter"><span class="ok">■ exit 0</span> · 1 hunk staged, the first one left alone</div></div>
+          </div>
+
+          <div class="frame" data-on="5">
+            <div class="opbar"><span class="mk">⟳</span><span class="txt"><strong>Rebasing feat/inbox-filters onto main, 2 of 5 applied.</strong> 1 file is conflicted. Resolve and stage them, then Continue.</span><span class="acts"><span>Continue</span><span>Skip</span><span class="dz">Abort</span></span></div>
+            <div class="conf"><b>U</b> src/lib/api.ts</div>
+            <div class="rterm"><span class="p">PS F:\GitHub\gitview&gt;</span> <span class="c">git rebase main</span>
+Auto-merging src/lib/api.ts
+<span class="er">CONFLICT (content): Merge conflict in src/lib/api.ts</span>
+<span class="er">error: could not apply 3a9c1e2... Inbox filters read a saved view</span>
+<span class="h">hint: Resolve all conflicts manually, mark them as resolved with
+hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</span>
+<span class="p">PS F:\GitHub\gitview&gt;</span> </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="dots" id="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+
+    <div class="steps">
+      <article class="step on" data-step="0">
+        <div class="num">01 · the whole history</div>
+        <h3>Every commit on every branch</h3>
+        <p>GitView draws the lanes on a canvas under rows that exist only while they are on screen. It packs the lanes in Rust and reads 5,500 commits at 140 ms a page, whichever page you scroll to.</p>
+      </article>
+      <article class="step" data-step="1">
+        <div class="num">02 · the filter</div>
+        <h3>Narrow it the way <code>git log</code> would</h3>
+        <p>Type words to match the message, <code>author:</code> for a name, <code>path:</code> for a file or a folder. History of this file, on any file row, is the same filter with the path filled in.</p>
+      </article>
+      <article class="step" data-step="2">
+        <div class="num">03 · one commit</div>
+        <h3>Its files and its hunks</h3>
+        <p>Click a row to read the commit in the pane, or shift-click to type <code>git show</code>. Right-click offers revert, cherry-pick and reset, each typed at the prompt. A signed commit wears a mark; GitView reads that the signature is there and leaves checking it to <code>git verify-commit</code>.</p>
+      </article>
+      <article class="step" data-step="3">
+        <div class="num">04 · blame</div>
+        <h3>Who wrote each line, and when</h3>
+        <p>The gutter groups lines by the commit that last touched them and tints each group by age in the accent’s hue, brightest for the newest. Click a sha to open that commit on the same file.</p>
+      </article>
+      <article class="step" data-step="4">
+        <div class="num">05 · one hunk</div>
+        <h3>Stage a hunk you can’t type</h3>
+        <p>A hunk is the one argument nobody can type at a prompt. GitView writes it to a patch under its own data folder and types <code>git apply --cached</code> against that path, which is what <code>git add -p</code> does underneath. The scrollback keeps the command.</p>
+      </article>
+      <article class="step" data-step="5">
+        <div class="num">06 · a paused rebase</div>
+        <h3>The state a prompt hides</h3>
+        <p>With nothing conflicted, a paused rebase looks like a detached HEAD. GitView reads the state and keeps a strip under the header, with git’s own next steps as buttons. Continue and Skip type straight away. Abort asks first, because it throws away what you resolved.</p>
+      </article>
+    </div>
+  </div>
+</div></section>
+
 <!-- ---------- github ---------- -->
-<section id="github" style="padding-top:0"><div class="wrap">
+<section id="github"><div class="wrap">
   <div class="split">
     <div class="copy">
       <div class="eyebrow rv">GitHub, without the browser</div>
       <h2 class="rv d1">Reads GitHub out of sight, writes to it by typing.</h2>
       <p class="sub rv d1">One aliased GraphQL query through <code class="mono">gh</code> pulls the pull requests, issues and check runs for the whole fleet. <code class="mono">gh</code> holds the token; GitView has no HTTP client and no place to store one.</p>
       <ul>
-        <li class="rv d2"><span><b>The inbox.</b> Open pull requests, issues and check runs from all your repositories in one list, each row labelled with its repository.</span></li>
-        <li class="rv d2"><span><b>The PR desk.</b> Push, open a pull request from a form, watch the checks by name, then merge and delete the branch. GitView types each step as a <code>gh</code> command into that repository’s shell.</span></li>
+        <li class="rv d2"><span><b>The inbox.</b> Open pull requests, issues and check runs from all your repositories in one list, grouped by repository. A pull request names the issues it closes, and an issue names its pull request.</span></li>
+        <li class="rv d2"><span><b>The PR desk.</b> Push, open a pull request from a form, watch the checks by name, then merge and delete the branch. Merge stays off, with the reason, for a draft, a conflict or a branch behind. Each step goes into that repository’s shell as a <code>gh</code> command.</span></li>
         <li class="rv d3"><span><b>Updates that name their command.</b> GitView checks its own latest release through <code>gh release view</code> and hands you the <code>gh release download</code> line to run yourself.</span></li>
       </ul>
     </div>
@@ -457,12 +743,65 @@ footer a:hover{color:var(--text)}
       <button class="replay" id="inboxReplay" type="button">↻ run it again</button>
     </div>
   </div>
+</div></section>
 
-  <div class="stats">
-    <div class="stat rv"><b><em data-n="5,500">0</em></b><span>commits in the history pane, 140 ms a page</span></div>
-    <div class="stat rv d1"><b><em data-n="1">0</em> query</b><span>for the whole fleet’s PRs, issues and checks</span></div>
-    <div class="stat rv d2"><b><em data-n="0">0</em> tokens</b><span>held by GitView. <code class="mono">gh</code> and <code class="mono">git.exe</code> own auth</span></div>
-    <div class="stat rv d3"><b><em data-n="0">0</em> bytes</b><span>written to your repositories, your profile, or a server</span></div>
+<!-- ---------- how it's built ---------- -->
+<section id="built"><div class="wrap">
+  <div class="eyebrow rv">How it’s built</div>
+  <h2 class="rv d1">It reads in process and writes through the tools you already trust.</h2>
+  <p class="sub rv d2">Tauri v2, a Rust core and a React front end. One rule decides which process each call reaches, and that rule is why GitView holds no credentials: credential helpers, SSH agents and GitHub tokens stay with the tools that already own them.</p>
+
+  <div class="arch rv" id="arch">
+    <div class="layer"><b>Window</b><span>React 18 · TypeScript · xterm.js on WebGL · WebView2</span></div>
+    <div class="wire"></div>
+    <div class="layer"><b>Rust core</b><span>Tauri commands · a sweep that streams rows · 85 unit tests</span></div>
+    <div class="wire w2"></div>
+    <div class="procs">
+      <div class="proc" style="--c:var(--lane-1)"><h4>git2</h4><p>Every repository read, in process: status, the graph, the history, a diff, blame.</p><div class="for">no spawn per read</div></div>
+      <div class="proc" style="--c:var(--lane-2)"><h4>git.exe</h4><p>Anything that touches a remote. Your credential helper and SSH agent work unchanged.</p><div class="for">fetch · pull · push</div></div>
+      <div class="proc" style="--c:var(--lane-3)"><h4>gh</h4><p>One aliased GraphQL query for the fleet, and the release check. <code>gh</code> holds the token.</p><div class="for">cost 1 of 5,000 an hour</div></div>
+      <div class="proc" style="--c:var(--lane-4)"><h4>ConPTY</h4><p>A PowerShell per repository, with an OSC 133 hook that marks where each command starts and ends.</p><div class="for">portable-pty</div></div>
+      <div class="proc" style="--c:var(--lane-5)"><h4>SQLite</h4><p>Cached scans, pins, saved tasks. It paints the list before the sweep opens a repository.</p><div class="for">rusqlite</div></div>
+    </div>
+  </div>
+
+  <h3 class="sh rv">Six decisions, and what each one ruled out</h3>
+  <p class="sub rv d1">From a decision log that holds 121 choices and 69 dead ends, kept so nobody tries the same thing twice.</p>
+  <div class="decs">
+    <div class="dec rv"><h4>Updates go through <code>gh</code></h4><p><code>gh release view</code> reads the latest release, and the install is a typed <code>gh release download</code>, so the one action that replaces the binary still names what it ran.</p>
+      <dl><dt>Ruled out</dt><dd><code>tauri-plugin-updater</code>: an HTTP client, a TLS stack and a signing key in an Actions secret</dd><dt>Result</dt><dd>No HTTP client in the binary</dd></dl></div>
+    <div class="dec rv d1"><h4>Lanes packed in Rust</h4><p>A lane depends on every commit newer than it, so a page from the middle has nothing to start from. The walk runs from the top each time and reads text only for the rows asked for.</p>
+      <dl><dt>Ruled out</dt><dd>Packing lanes in the front end</dd><dt>Measured</dt><dd class="ms">140 ms a page over 5,500 commits, any page</dd></dl></div>
+    <div class="dec rv d2"><h4>The terminal is the file watcher</h4><p>The shell in the next pane makes most of the changes, so GitView refreshes a repository 900 ms after its output goes quiet.</p>
+      <dl><dt>Ruled out</dt><dd><code>notify</code> on each <code>.git</code>: two crates and a debouncer</dd><dt>Trade-off</dt><dd>It misses an edit another program makes while GitView idles</dd></dl></div>
+    <div class="dec rv"><h4>A cap in place of virtualisation</h4><p>One file’s diff paints plain DOM up to 6,000 rows. Past that, the pane names the <code>git diff</code> that has the rest.</p>
+      <dl><dt>Ruled out</dt><dd>A second scroll engine for the regenerated lockfile nobody reads</dd><dt>Measured</dt><dd class="ms">6,000 rows painted in 695 ms</dd></dl></div>
+    <div class="dec rv d1"><h4>A prompt hook that touches no file</h4><p>The OSC 133 script arrives as <code>-EncodedCommand</code> after your profile loads, and wraps whatever <code>prompt</code> it finds.</p>
+      <dl><dt>Ruled out</dt><dd>Replacing <code>prompt</code>, which drops Starship, and editing your profile</dd><dt>Result</dt><dd>oh-my-posh and Starship keep working</dd></dl></div>
+    <div class="dec rv d2"><h4>Contrast, measured</h4><p>Faint text at 53% lightness measured 3.3 to 3.8:1 on every surface, under the 4.5:1 that 10.5 px metadata needs.</p>
+      <dl><dt>Ruled out</dt><dd>62%, which passes everywhere but sits too close to dim text to read as its own level</dd><dt>Measured</dt><dd class="ms">60% gives 4.4 to 5.1:1</dd></dl></div>
+  </div>
+
+  <h3 class="sh rv">How a change gets checked</h3>
+  <div class="process">
+    <div class="rv d1">
+      <p>Every bug found in GitView so far passed clippy, <code>cargo test</code>, a full CI build and a read-through, then showed up within minutes of opening the window. A pull request ends with the real app driven over the WebView’s debugging port, against throwaway repositories built for the case: an unrelated history, a paused rebase, six branches alive at once, 5,500 commits from <code>git fast-import</code>.</p>
+      <p>Each pull request updates the wiki note that owns what changed, and a number in the wiki is a measurement. The page you are reading follows the same rule: every figure on it came from the app, the repository or the log.</p>
+    </div>
+    <div class="stats rv d2">
+      <div class="stat"><b><em data-n="79">0</em></b><span>pull requests merged in 14 days</span></div>
+      <div class="stat"><b><em data-n="157">0</em></b><span>unit tests, 85 Rust and 72 TypeScript</span></div>
+      <div class="stat"><b><em data-n="121">0</em></b><span>decisions logged, with 69 dead ends</span></div>
+      <div class="stat"><b><em data-n="140">0</em><small> ms</small></b><span>a history page, over 5,500 commits</span></div>
+      <div class="stat"><b><em data-n="1">0</em><small> query</small></b><span>for the fleet’s PRs, issues and checks</span></div>
+      <div class="stat"><b><em data-n="0">0</em><small> tokens</small></b><span>held by GitView</span></div>
+    </div>
+  </div>
+  <p class="asof rv">Counts as of 23 Sep 2026.</p>
+
+  <div class="byline rv">
+    <div class="who"><b>Jacob Poteet</b><span>Designed, built and documented GitView: the Rust core, the interface, the page you are reading.</span></div>
+    <div class="links"><a href="https://github.com/JacobPoteet">GitHub profile</a><a href="https://github.com/JacobPoteet/GitView">Source</a><a href="https://github.com/JacobPoteet/GitView/pulls?q=is%3Apr+is%3Amerged">Merged pull requests</a></div>
   </div>
 </div></section>
 
@@ -472,6 +811,7 @@ footer a:hover{color:var(--text)}
   <div class="wrap">
     <div class="eyebrow rv">Install</div>
     <h2 class="rv d1">Download it and point it at a folder.</h2>
+    <p class="sub rv d1">On first launch GitView lists the folders on this machine that hold repositories, with a count for each. Watch one, pick another, or paste a URL and read the <code>git clone</code> line before it runs. A seven-step tour follows, and <span class="kbd">Esc</span> ends it.</p>
     <div class="btns rv d2" style="margin-top:32px">
       <a class="btn primary" href="https://github.com/JacobPoteet/GitView/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13M6 11l6 6 6-6M4 21h16"/></svg>
@@ -479,7 +819,7 @@ footer a:hover{color:var(--text)}
       </a>
       <a class="btn" href="https://github.com/JacobPoteet/GitView#running-it">Build from source</a>
     </div>
-    <div class="cmdbox rv d2" id="cmdbox"><div class="lines"><span class="p">PS F:\GitHub&gt;</span> <span class="c">gh release download -R JacobPoteet/GitView -p "*setup.exe"</span><br><span class="p">PS F:\GitHub&gt;</span> <span class="c">Start-Process .\GitView_0.6.0_x64-setup.exe</span></div><button class="cp" id="copyCmd" type="button">copy</button></div>
+    <div class="cmdbox rv d2" id="cmdbox"><div class="lines"><span class="p">PS F:\GitHub&gt;</span> <span class="c">gh release download -R JacobPoteet/GitView -p "*setup.exe"</span><br><span class="p">PS F:\GitHub&gt;</span> <span class="c">Start-Process .\GitView_0.7.0_x64-setup.exe</span></div><button class="cp" id="copyCmd" type="button">copy</button></div>
     <div class="reqs rv d3">
       <span>Windows 10 / 11</span><span><code>git</code> on PATH</span><span><code>gh</code> logged in, for GitHub</span><span>PowerShell for command blocks</span><span>Installs per user, no elevation</span>
     </div>
@@ -488,7 +828,7 @@ footer a:hover{color:var(--text)}
 </section>
 
 <footer><div class="wrap">
-  <span>GitView · MIT · Tauri v2, React, Rust, libgit2, xterm.js</span>
+  <span>GitView by <a href="https://github.com/JacobPoteet">Jacob Poteet</a> · MIT · Tauri v2, React, Rust, libgit2, xterm.js</span>
   <span><a href="https://github.com/JacobPoteet/GitView">Source</a> · <a href="https://github.com/JacobPoteet/GitView/releases">Releases</a> · <a href="https://github.com/JacobPoteet/GitView/issues">Issues</a></span>
 </div></footer>
 
@@ -611,14 +951,14 @@ once('#app',async()=>{
   await type(p,'npm run dev');c.remove();
   bar.className='bar run';blk.textContent='npm run dev';
   await sleep(400);
-  line(t,'<span style="color:var(--text-faint)">&gt; gitview@0.6.0 dev</span>');
+  line(t,'<span style="color:var(--text-faint)">&gt; gitview@0.7.0 dev</span>');
   line(t,'<span style="color:var(--text-faint)">&gt; tauri dev</span>');
   await sleep(600);
   line(t,'  <span class="ok">VITE v5.4</span>  ready in <b style="color:var(--text)">312 ms</b>');
   line(t,'  ➜  Local:   <span style="color:var(--blue);text-decoration:underline">http://localhost:5183/</span>');
   await sleep(300);chip.classList.add('show');
   await sleep(900);
-  line(t,'<span style="color:var(--text-faint)">   Compiling gitview v0.6.0 (F:\\GitHub\\gitview\\src-tauri)</span>');
+  line(t,'<span style="color:var(--text-faint)">   Compiling gitview v0.7.0 (F:\\GitHub\\gitview\\src-tauri)</span>');
   await sleep(1400);
   line(t,'<span style="color:var(--text-faint)">    Finished `dev` profile in 4.82s</span>');
   line(t,'<span style="color:var(--text-faint)">     Running `target\\debug\\gitview.exe`</span>');
@@ -698,9 +1038,7 @@ const termRun=replayable('#termReplay',async()=>{
   await sleep(400);
   line(t,'<span class="er">test result: FAILED.</span> 47 passed; <span class="er">1 failed</span>');
   bar.className='bar';bar.style.background='var(--red)';ex.textContent='exit 101';ex.style.color='var(--red)';
-  await sleep(700);
-  line(t,'<span style="color:var(--text-faint);font-style:italic">[copied: command, cwd, exit code, 52 lines]</span>');
-  await sleep(1100);
+  await sleep(1500);
   p=prompt(t,'F:\\GitHub\\orbit-api');c=cursor(p);
   await type(p,'cargo test rate::burst_is_capped');c.remove();
   bar.style.background='';bar.className='bar run';blk.textContent='cargo test rate::burst_is_capped';ex.textContent='';
@@ -725,9 +1063,84 @@ $('#demoChip').addEventListener('click',()=>{
   if(!tasks.querySelector('.task.new')){const d=document.createElement('div');d.className='task new';d.innerHTML='burst <span>cargo test rate::burst…</span>';tasks.querySelector('.hdr.files').before(d)}
 });
 
+/* ---- the reading-back story ---- */
+/* twelve commits over three lanes: [sha, message, lane, refs, author, age, matches path:src/lib/shell.ts] */
+const commits=[
+  ['e4a1c07','A refining pass: six type sizes, Inter bundled',0,[['main',''],['origin/main','']],'Jacob Poteet','2h',1],
+  ['9b2d4f3','Mono for what a prompt would accept',1,[['refining-pass','r2']],'Jacob Poteet','3h',0],
+  ['71c0e8a','Six --fs- tokens replace fourteen sizes',1,[],'Jacob Poteet','4h',0],
+  ['5f3e912','An issue names its pull request',0,[],'Jacob Poteet','6h',1],
+  ['c08d1b4','Hidden repositories skip the sweep',2,[['archive','r3']],'Jacob Poteet','8h',0],
+  ['a17e6d0','A seven-step tour walks a new user through the window',0,[],'Jacob Poteet','9h',0],
+  ['3e9f2a7','The inbox skips a hidden repository',2,[],'Jacob Poteet','10h',0],
+  ['d52b8c1','cloneName reads a URL the way git does',0,[],'Jacob Poteet','2d',1],
+  ['b6a04f9','A welcome screen offers the folders it found',0,[],'Jacob Poteet','2d',0],
+  ['0f7c3e2','Quote a path with an apostrophe for PowerShell',0,[],'Jacob Poteet','4d',1],
+  ['8e21d5a','Task discovery reads a gitview.toml',0,[],'Jacob Poteet','5d',0],
+  ['6c4f0b8','Every action names the command it runs',0,[],'Jacob Poteet','9d',0],
+];
+{
+  const list=$('#hlist'),R=28,X=l=>14+l*16,Y=i=>14+i*R,col=['var(--lane-1)','var(--lane-2)','var(--lane-3)'];
+  /* the rails: trunk straight down, refining-pass merged at the top, archive still open */
+  const paths=[
+    [0,`M${X(0)} ${Y(0)}V${Y(11)+14}`],
+    [1,`M${X(0)} ${Y(0)}C${X(0)} ${Y(0)+14} ${X(1)} ${Y(1)-14} ${X(1)} ${Y(1)}V${Y(2)}C${X(1)} ${Y(2)+14} ${X(0)} ${Y(3)-14} ${X(0)} ${Y(3)}`],
+    [2,`M${X(2)} ${Y(4)}V${Y(7)}C${X(2)} ${Y(7)+14} ${X(0)} ${Y(8)-14} ${X(0)} ${Y(8)}`],
+  ];
+  const svg=`<svg class="hlanes" viewBox="0 0 60 336" fill="none">${paths.map(([l,d])=>`<path d="${d}" stroke="${col[l]}" stroke-width="2"/>`).join('')}${commits.map((c,i)=>i===0?`<circle cx="${X(0)}" cy="${Y(0)}" r="5" fill="var(--bg-inset)" stroke="${col[0]}" stroke-width="2"/>`:`<circle cx="${X(c[2])}" cy="${Y(i)}" r="4" fill="${col[c[2]]}"/>`).join('')}</svg>`;
+  list.innerHTML=svg+commits.map(c=>`<div class="hrow${c[6]?' m':''}"><span class="pd"></span><span class="sha">${c[0]}</span><span class="msg">${c[3].map(r=>`<span class="ref ${r[1]}">${r[0]}</span>`).join('')}${c[1]}</span><span class="who">${c[4].split(' ')[0]} · ${c[5]}</span></div>`).join('');
+
+  /* the commit's diff, with a blame gutter that opens on step four */
+  const diff=[
+    ['',41,' ','export function quote(arg: string): string {','4','6c4f0b8','Jacob','9d'],
+    ['',42,' ','  // PowerShell doubles a quote inside single quotes.','4','',''],
+    ['del',43,'-','  return `\'${arg}\'`;','','','',''],
+    ['add',43,'+','  return `\'${arg.replace(/\'/g, "\'\'")}\'`;','0','e4a1c07','Jacob','2h'],
+    ['',44,' ','}','3','0f7c3e2','Jacob','4d'],
+    ['',45,' ','','3','',''],
+    ['',46,' ','export function cloneName(url: string): string {','3','',''],
+    ['add',47,'+','  const tail = url.replace(/[\\\\/]+$/, "").split(/[\\\\/:]/).pop() ?? "";','1','d52b8c1','Jacob','2d'],
+    ['add',48,'+','  return tail.replace(/\\.git$/, "");','1','',''],
+  ];
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  $('#cdiff').innerHTML='<div class="hh">@@ -41,6 +41,8 @@ export function quote(arg: string): string {</div>'+diff.map(d=>{
+    const g=d[4]===''?'<span class="bg"></span>':`<span class="bg${d[5]?'':' cont'}"><b style="background:var(--age-${d[4]})"></b><span class="s mono">${d[5]||'·'}</span><span class="a">${d[6]} · ${d[7]}</span></span>`;
+    return `<div class="dl ${d[0]}">${g}<span class="ln">${d[1]}</span><span class="sg">${d[2]}</span><span class="tx">${esc(d[3])}</span></div>`}).join('');
+
+  /* each step, when it crosses the middle of the viewport, sets the window's state */
+  const win=$('#win'),dots=$$('#dots i'),steps=$$('.step'),count=$('#hcount');
+  let cur=-1;
+  function show(n){
+    if(n===cur)return;cur=n;
+    win.className='panel win st-'+n;
+    $$('#win [data-on]').forEach(el=>el.classList.toggle('on',el.dataset.on.split(' ').includes(String(n))));
+    dots.forEach((d,i)=>d.classList.toggle('on',i===n));
+    steps.forEach((s,i)=>s.classList.toggle('on',i===n));
+    count.textContent=n===1?'4 of 5,512':'5,512';
+    if(n===4)typeApply();
+  }
+  /* step five types its command the way the app would, and a step change stops it */
+  const cmd=$('#applyCmd'),after=$('#applyAfter');let run=0;
+  async function typeApply(){
+    const me=++run;cmd.textContent='';after.classList.remove('show');
+    await sleep(reduced?0:1100);
+    for(const ch of cmd.dataset.cmd){if(me!==run||cur!==4)return;cmd.textContent+=ch;if(!reduced)await sleep(14)}
+    await sleep(reduced?0:300);if(me===run&&cur===4)after.classList.add('show');
+  }
+  /* the band sits lower on a phone, where the window covers the top half of the screen */
+  const narrow=matchMedia('(max-width:900px)').matches;
+  const stepIo=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)show(+e.target.dataset.step)}),
+    {rootMargin:narrow?'-62% 0px -30% 0px':'-45% 0px -45% 0px'});
+  steps.forEach(s=>stepIo.observe(s));
+  show(0);
+}
+
+/* ---- the architecture draws its wires when it arrives ---- */
+{const a=$('#arch');const o=new IntersectionObserver(es=>{if(es[0].isIntersecting){a.classList.add('in');o.disconnect()}},{threshold:.3});o.observe(a)}
+
 /* ---- inbox demo ---- */
 const inboxItems=[
-  ['pr','gitview','#42 Inbox filters and a saved view per repo','feat/inbox-filters → main','ggg','gh pr merge 42 --squash --delete-branch'],
+  ['pr','gitview','#42 Inbox filters and a saved view per repo','feat/inbox-filters → main · closes #38','ggg','gh pr merge 42 --squash --delete-branch'],
   ['pr','orbit-api','#118 Cap burst window at 30 req/s','fix/rate-limit → main','ggp','gh pr checkout 118'],
   ['issue','fleetview','#9 Splash stays after a folder is removed','opened 2 days ago','','gh issue view 9 --web'],
   ['pr','homelab','#7 Bump traefik to 3.1','renovate/traefik → main','ggr','gh pr checks 7'],
