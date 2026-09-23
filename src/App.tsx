@@ -2373,7 +2373,7 @@ gh pr view ${branchPr.number} --web`}
           pane ?? (
             <div className="terminal-pane">
               <div className="pane-tab-bar">
-                <span>terminal</span>
+                <span>Terminal</span>
               </div>
               {roots.length === 0 || (repos.length === 0 && !scanning) ? (
                 <Welcome

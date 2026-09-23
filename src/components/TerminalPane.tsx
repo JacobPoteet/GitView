@@ -956,7 +956,7 @@ export default function TerminalPane({
     return (
       <div className="terminal-pane">
         <div className="pane-tab-bar">
-          <span>terminal</span>
+          <span>Terminal</span>
         </div>
         <p className="empty">Pick a repository to open its shell.</p>
       </div>
@@ -976,7 +976,7 @@ export default function TerminalPane({
           aria-current={id === sessionId ? "true" : undefined}
           title={id}
         >
-          {sessionLabel(id)}
+          {sessionLabel(id).replace(/^s/, "S")}
         </button>
       ))}
       <button

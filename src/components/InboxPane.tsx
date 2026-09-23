@@ -200,7 +200,7 @@ function Row({
         <button className="inbox-main" onClick={onToggle} title={deskTitle}>
           <span className="inbox-line">
             <span className={`inbox-kind ${item.kind}`}>
-              {item.kind === "pr" ? "PR" : "issue"}
+              {item.kind === "pr" ? "PR" : "Issue"}
             </span>
             <span className="inbox-number">#{item.number}</span>
             <span className="inbox-title">{item.title}</span>
@@ -417,7 +417,7 @@ Typed into ${item.repoName}'s shell.`;
   return (
     <section className="inbox-pane">
       <div className="pane-tab-bar">
-        <span>inbox</span>
+        <span>Inbox</span>
         {inbox && !inbox.error && (
           <span className="inbox-when">
             read {relativeTime(inbox.fetchedAt)}

@@ -377,7 +377,7 @@ export default function ChangesPane({
     return (
       <aside className="changes-pane">
         <div className="pane-tab-bar">
-          <span>changes</span>
+          <span>Changes</span>
         </div>
         <p className="empty">Pick a repository to see its working tree.</p>
       </aside>
@@ -438,7 +438,7 @@ export default function ChangesPane({
   return (
     <aside className="changes-pane" data-tour="changes">
       <div className="pane-tab-bar">
-        <span>changes</span>
+        <span>Changes</span>
         {changes.length > 0 && (
           <span style={{ color: "var(--line-strong)" }}>·</span>
         )}

@@ -508,7 +508,7 @@ export default function HistoryPane({
   return (
     <section className="history-pane">
       <div className="pane-tab-bar">
-        <span>history</span>
+        <span>History</span>
         <span className="tab-path" title={repoPath}>
           {repoName}
           {head && ` · ${head}`}
