@@ -2860,6 +2860,20 @@ button.branch-name.has-other .branch-count {
   border-radius: var(--radius);
 }
 
+/* Issues a pull request closes, under it. The rail starts at the pull
+   request's chevron column and the rows start past it, so the issue reads as
+   belonging to the row above rather than as the next row in the list. No rule
+   between the pull request and its first issue, for the same reason. */
+.inbox-nested {
+  margin: 0 0 4px 20px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line-strong);
+}
+
+.inbox-nested > .inbox-row:first-child {
+  border-top: none;
+}
+
 /* The row's first line: chevron, title, and the actions that hang off its
    right edge. The desk sits under it, outside the head, so the actions never
    float into the checks and hovering the desk summons nothing. */

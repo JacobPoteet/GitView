@@ -1,10 +1,27 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { Desk, CheckMark } from "./inbox/Desk";
 import { IssueDesk } from "./inbox/IssueDesk";
 import { NewIssue } from "./inbox/NewIssue";
 import { NewPullRequest } from "./inbox/NewPullRequest";
-import { byNeed, byRepo, closedBy, itemKey, refLabel, type Group, type Mode } from "../lib/inbox";
+import {
+  byNeed,
+  byRepo,
+  closedBy,
+  groupSize,
+  itemKey,
+  nestClosed,
+  refLabel,
+  type Group,
+  type Mode,
+} from "../lib/inbox";
 import { settings, updateSettings } from "../lib/settings";
 import type { ShellKind } from "../lib/shell";
 import {
@@ -320,8 +337,7 @@ Typed into ${item.repoName}'s shell.`;
 
   const groups = useMemo<Group[]>(() => {
     const items = inbox?.items ?? [];
-    if (mode === "repo") return byRepo(items);
-    return byNeed(items);
+    return nestClosed(mode === "repo" ? byRepo(items) : byNeed(items));
   }, [inbox, mode]);
 
   const missing = !gh?.version || !gh.loggedIn;
@@ -338,7 +354,11 @@ Typed into ${item.repoName}'s shell.`;
   const list = useRef<HTMLDivElement>(null);
   const [revealing, setRevealing] = useState<string | null>(null);
   const reveal = (key: string) => {
-    const group = groups.find((g) => g.items.some((entry) => itemKey(entry) === key));
+    const group = groups.find(
+      (g) =>
+        g.items.some((entry) => itemKey(entry) === key) ||
+        [...(g.nested?.values() ?? [])].some((children) => children.some((entry) => itemKey(entry) === key)),
+    );
     if (group && collapsed.has(group.key)) toggle(group.key);
     setOpen((current) => (current.has(key) ? current : new Set(current).add(key)));
     setRevealing(key);
@@ -365,6 +385,34 @@ Typed into ${item.repoName}'s shell.`;
       else next.add(key);
       return next;
     });
+
+  const renderRow = (item: InboxItem, showNeed: boolean) => {
+    const key = itemKey(item);
+    return (
+      <Row
+        item={item}
+        showNeed={showNeed}
+        open={open.has(key)}
+        shell={shell}
+        waiting={waiting}
+        onToggle={() =>
+          setOpen((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+          })
+        }
+        onCommand={onCommand}
+        onMerge={onMerge}
+        onError={onError}
+        onMenu={menu.open}
+        closers={closers.get(key) ?? []}
+        known={known}
+        onReveal={reveal}
+      />
+    );
+  };
 
   return (
     <section className="inbox-pane">
@@ -494,36 +542,27 @@ Typed into ${item.repoName}'s shell.`;
                 <span className="chevron" aria-hidden>
                   {shut ? "▸" : "▾"}
                 </span>
-                {group.label} <span className="count">{group.items.length}</span>
+                {group.label} <span className="count">{groupSize(group)}</span>
                 {group.hint && <span className="group-hint">{group.hint}</span>}
               </button>
               {!shut &&
                 group.items.map((item) => {
-                  const key = itemKey(item);
+                  const children = group.nested?.get(itemKey(item)) ?? [];
                   return (
-                    <Row
-                      key={key}
-                      item={item}
-                      showNeed={mode === "repo"}
-                      open={open.has(key)}
-                      shell={shell}
-                      waiting={waiting}
-                      onToggle={() =>
-                        setOpen((current) => {
-                          const next = new Set(current);
-                          if (next.has(key)) next.delete(key);
-                          else next.add(key);
-                          return next;
-                        })
-                      }
-                      onCommand={onCommand}
-                      onMerge={onMerge}
-                      onError={onError}
-                      onMenu={menu.open}
-                      closers={closers.get(key) ?? []}
-                      known={known}
-                      onReveal={reveal}
-                    />
+                    <Fragment key={itemKey(item)}>
+                      {renderRow(item, mode === "repo")}
+                      {/* An issue this pull request closes rides under it,
+                          indented behind a rail, since until the merge the
+                          two are one piece of work. It has left its own group,
+                          so it always says what it wants from you. */}
+                      {children.length > 0 && (
+                        <div className="inbox-nested" role="group" aria-label={`Closed when #${item.number} merges`}>
+                          {children.map((child) => (
+                            <Fragment key={itemKey(child)}>{renderRow(child, true)}</Fragment>
+                          ))}
+                        </div>
+                      )}
+                    </Fragment>
                   );
                 })}
             </div>

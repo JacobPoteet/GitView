@@ -2020,13 +2020,13 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         // The issues go in the dialog because this is the click that closes
         // them, and a merge the dialog did not warn about closing #130 is a
         // reopen later.
-        const names = item.closes.map((ref) => `${refLabel(ref, item.ownerRepo)} ${ref.title}`);
         const closing =
-          names.length === 0
+          item.closes.length === 0
             ? ""
             : `
 
-GitHub closes ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`} when it lands.`;
+When it lands, GitHub closes:
+${item.closes.map((ref) => `${refLabel(ref, item.ownerRepo)}  ${ref.title}`).join("\n")}`;
         setConfirmation({
           title: `Merge #${item.number} into ${base}`,
           body: `${item.title}

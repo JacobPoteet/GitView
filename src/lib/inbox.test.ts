@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { byNeed, byRepo, checkTone, closedBy, itemKey, mergeBlock, refKey, refLabel } from "./inbox";
+import {
+  byNeed,
+  byRepo,
+  checkTone,
+  closedBy,
+  groupSize,
+  itemKey,
+  mergeBlock,
+  nestClosed,
+  refKey,
+  refLabel,
+} from "./inbox";
 import type { InboxItem } from "./types";
 
 function item(over: Partial<InboxItem>): InboxItem {
@@ -124,5 +135,34 @@ describe("closing references", () => {
     expect(map.get(refKey(ref(130)))?.map((pr) => pr.number)).toEqual([131, 132]);
     expect(map.get(refKey(ref(9, "someone/other")))).toEqual([a]);
     expect(map.has(itemKey(a))).toBe(false);
+  });
+
+  it("draws an issue under the pull request that closes it, once", () => {
+    const pr = item({ number: 131, closes: [ref(130)] });
+    const issue = item({ kind: "issue", number: 130, mine: true });
+    const other = item({ kind: "issue", number: 12, mine: true });
+    const groups = nestClosed(byNeed([pr, issue, other]));
+    // The issue leaves "Issues you opened" and rides with the pull request.
+    expect(groups.map((g) => g.items.map(itemKey))).toEqual([[itemKey(pr)], [itemKey(other)]]);
+    expect(groups[0].nested?.get(itemKey(pr))).toEqual([issue]);
+    expect(groups.map(groupSize)).toEqual([2, 1]);
+  });
+
+  it("drops a group the nesting empties, and leaves another repository's issue where it was", () => {
+    const pr = item({ number: 131, closes: [ref(130), ref(9, "someone/other")] });
+    const issue = item({ kind: "issue", number: 130, mine: true });
+    const elsewhere = item({ kind: "issue", number: 9, ownerRepo: "someone/other", mine: false });
+    const groups = nestClosed(byNeed([pr, issue, elsewhere]));
+    expect(groups.map((g) => g.key)).toEqual(["need:mine", "need:others"]);
+    expect(groups[1].items).toEqual([elsewhere]);
+  });
+
+  it("gives an issue two pull requests close to the one that moved last", () => {
+    const older = item({ number: 131, updatedAt: "2026-09-20T00:00:00Z", closes: [ref(130)] });
+    const newer = item({ number: 132, updatedAt: "2026-09-22T00:00:00Z", closes: [ref(130)] });
+    const issue = item({ kind: "issue", number: 130 });
+    const [group] = nestClosed(byRepo([older, newer, issue]));
+    expect(group.nested?.get(itemKey(newer))).toEqual([issue]);
+    expect(group.nested?.has(itemKey(older))).toBe(false);
   });
 });

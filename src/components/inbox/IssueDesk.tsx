@@ -86,7 +86,7 @@ export function IssueDesk({
 
   return (
     <div className="inbox-desk">
-      <Links lead={closedBy.length === 1 ? "Closes when this merges" : "Closes when one of these merges"} links={links} />
+      <Links lead={closedBy.length === 1 ? "Closed when it merges" : "Closed when one of these merges"} links={links} />
       {error && <p className="inbox-when">Could not read the issue: {error}</p>}
       {!error && !detail && <p className="inbox-when">Reading…</p>}
 
