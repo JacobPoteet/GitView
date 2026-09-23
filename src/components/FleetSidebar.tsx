@@ -272,6 +272,10 @@ function Row({
   onMove: (path: string, delta: number) => void;
 }) {
   const state = repo.error ? "error" : live ? "live" : isClean(repo) ? "clean" : "attention";
+  // A repository on its default branch drops the second line. Ten rows that
+  // each said `main` hid the one that did not, so a branch under a name now
+  // means that repository is somewhere other than home.
+  const home = !repo.error && !repo.isWorktree && repo.branch != null && repo.branch === repo.defaultBranch;
   const wrap = useRef<HTMLLIElement>(null);
 
   // The row and its two controls are siblings rather than nested buttons, which
@@ -306,9 +310,10 @@ function Row({
       }
     >
       <button
-        className="repo-row"
+        className={`repo-row${home ? " home" : ""}`}
         onClick={() => onSelect(repo.path)}
-        title={repo.path}
+        title={home ? `${repo.path}
+on ${repo.branch}` : repo.path}
         onKeyDown={
           orderable
             ? (e) => {
@@ -331,13 +336,15 @@ function Row({
           <span className="repo-name">{repo.name}</span>
           <Chips repo={repo} github={github} />
         </span>
-        <span className="repo-row-bottom">
-          <span className="branch">
-            <BranchIcon />
-            <span>{repo.error ? "unreadable" : (repo.branch ?? "no commits")}</span>
+        {!home && (
+          <span className="repo-row-bottom">
+            <span className="branch">
+              <BranchIcon />
+              <span>{repo.error ? "unreadable" : (repo.branch ?? "no commits")}</span>
+            </span>
+            {repo.isWorktree && <span className="chip merged">worktree</span>}
           </span>
-          {repo.isWorktree && <span className="chip merged">worktree</span>}
-        </span>
+        )}
       </button>
 
       <span className="row-actions">

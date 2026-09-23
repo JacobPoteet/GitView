@@ -101,9 +101,9 @@ export default function CommitFilesPane({
   return (
     <aside className="changes-pane commit-files-pane">
       <div className="pane-tab-bar">
-        <span>commit</span>
+        <span>Commit</span>
         <span style={{ color: "var(--line-strong)" }}>·</span>
-        <span>{target.short}</span>
+        <span className="commit-short">{target.short}</span>
         {files.length > 0 && (
           <>
             <span style={{ color: "var(--line-strong)" }}>·</span>

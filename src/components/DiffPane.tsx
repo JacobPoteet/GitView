@@ -112,7 +112,7 @@ export default function DiffPane({
   return (
     <section className="diff-pane">
       <div className="pane-tab-bar">
-        <span>diff</span>
+        <span>Diff</span>
         <span className="tab-path" title={target.file}>
           <bdi>{target.file}</bdi>
         </span>

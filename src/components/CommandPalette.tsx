@@ -135,7 +135,7 @@ export default function CommandPalette({ items, onClose }: Props) {
                 item.run();
               }}
             >
-              <span className="kind">{item.kind}</span>
+              <span className="kind">{item.kind[0].toUpperCase() + item.kind.slice(1)}</span>
               <span className="label">{item.label}</span>
               {item.hint && <span className="hint">{item.hint}</span>}
             </button>

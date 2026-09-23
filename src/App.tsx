@@ -1589,8 +1589,10 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
     const items: PaletteItem[] = [];
 
     // In the sidebar's order, so the chord in the hint is the row's number.
+    // A repository the sidebar's filter left out follows, rather than
+    // taking the scanner's order, which sorts `dialogue-jam` after `Portfolio`.
     const numbered = new Map(drawn.map((repo, index) => [repo.path, repoChord(index)]));
-    for (const repo of repos) {
+    for (const repo of [...drawn, ...repos.filter((r) => !numbered.has(r.path))]) {
       if (prefs.get(repo.path)?.hidden) continue;
       const chord = numbered.get(repo.path);
       items.push({
@@ -2371,7 +2373,7 @@ gh pr view ${branchPr.number} --web`}
           pane ?? (
             <div className="terminal-pane">
               <div className="pane-tab-bar">
-                <span>terminal</span>
+                <span>Terminal</span>
               </div>
               {roots.length === 0 || (repos.length === 0 && !scanning) ? (
                 <Welcome
@@ -2432,7 +2434,7 @@ gh pr view ${branchPr.number} --web`}
       )}
 
       <div className="status-bar">
-        <span>{repos.length - hiddenCount} repos</span>
+        <span>{repos.length - hiddenCount} {repos.length - hiddenCount === 1 ? "repo" : "repos"}</span>
         {hiddenCount > 0 && <span>{hiddenCount} hidden</span>}
         {scanning && <span style={{ color: "var(--accent)" }}>scanning {scanned}</span>}
         {live.size > 0 && (
@@ -2442,7 +2444,7 @@ gh pr view ${branchPr.number} --web`}
             onClick={() => setPaletteOpen(true)}
             title="Every open shell, and the row that closes one"
           >
-            {live.size} shells
+            {live.size} {live.size === 1 ? "shell" : "shells"}
           </button>
         )}
         {/* A live region, always present, so a note like Copied is spoken.

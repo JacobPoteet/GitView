@@ -105,7 +105,7 @@ export default function CommitPane({
   return (
     <section className="diff-pane commit-pane">
       <div className="pane-tab-bar">
-        <span>commit</span>
+        <span>Commit</span>
         <span className="commit-short">{target.short}</span>
         <span className="tab-path" title={file ?? ""}>
           <bdi>{file ?? ""}</bdi>
