@@ -72,3 +72,27 @@ export function nextSessionId(repoPath: string, ids: Iterable<string>): string {
   const highest = sessionsOf(repoPath, ids).reduce((max, id) => Math.max(max, sessionNumber(id)), 0);
   return sessionId(repoPath, Math.max(2, highest + 1));
 }
+
+/**
+ * The shell a command aimed at a repository is typed into.
+ *
+ * Only a shell at its prompt will do. `busy` says a typed command still holds
+ * one: `claude`, any other CLI that reads its own input, a dev server. Text
+ * sent there becomes that program's input, so `git fetch` would land in a
+ * conversation. The Claude tab never qualifies, even between runs.
+ *
+ * The tab on screen wins when it is free, so a command stays where you are
+ * looking. Otherwise it is the first free shell in the folder, which is the
+ * first shell when nothing has opened it yet, and past those a new one.
+ */
+export function pickShell(
+  repoPath: string,
+  onScreen: string,
+  ids: Iterable<string>,
+  busy: (id: string) => boolean,
+): string {
+  const free = (id: string) => !isClaude(id) && !busy(id);
+  if (sessionRepo(onScreen) === repoPath && free(onScreen)) return onScreen;
+  const all = [...ids];
+  return sessionsOf(repoPath, new Set([repoPath, ...all])).find(free) ?? nextSessionId(repoPath, all);
+}

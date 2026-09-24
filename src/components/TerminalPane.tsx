@@ -1153,6 +1153,15 @@ export function sessionsFor(repoPath: string): string[] {
 }
 
 /** Puts the cursor in a shell, when it exists. */
+/**
+ * Whether a typed command still holds this shell's prompt, from the OSC 133
+ * marks: `claude`, a dev server, anything that has not handed the prompt back.
+ * A shell without the marks never reads as busy.
+ */
+export function isBusy(id: string): boolean {
+  return sessions.get(id)?.running != null;
+}
+
 export function focusSession(repoPath: string): boolean {
   const session = sessions.get(repoPath);
   if (!session) return false;

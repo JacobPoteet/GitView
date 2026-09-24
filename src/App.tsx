@@ -4,6 +4,7 @@ import TerminalPane, {
   blockOutput,
   closeSession,
   focusSession,
+  isBusy,
   sessionsFor,
   getBlocks,
   revealBlock,
@@ -49,7 +50,7 @@ import {
   useSetting,
 } from "./lib/settings";
 import { chordOf, repoChord } from "./lib/keys";
-import { isClaude, sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
+import { isClaude, pickShell, sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -273,24 +274,16 @@ export default function App() {
   activeTabsRef.current = activeTabs;
   /** The tab on screen for a repository: its active tab, else its first shell. */
   const tabOf = useCallback((path: string) => activeTabsRef.current.get(path) ?? path, []);
-  /** The shell each repository last showed, which the Claude tab hands commands back to. */
-  const lastShell = useRef<Map<string, string>>(new Map());
   /**
-   * The session a command aimed at a repository lands in: the tab on screen,
-   * unless that is the Claude tab, where a git command would be typed into a
-   * conversation. Then it is the shell that was on screen before Claude.
+   * The session a command aimed at a repository lands in: a shell at its
+   * prompt, never one where `claude` or a dev server would read the command as
+   * its own input. `pickShell` in `lib/sessions.ts` has the order.
    */
   const shellOf = useCallback(
-    (path: string) => {
-      const tab = tabOf(path);
-      if (!isClaude(tab)) return tab;
-      const last = lastShell.current.get(path);
-      return last && sessionsFor(path).includes(last) ? last : path;
-    },
+    (path: string) => pickShell(path, tabOf(path), sessionsFor(path), isBusy),
     [tabOf],
   );
   const selectTab = useCallback((id: string) => {
-    if (!isClaude(id)) lastShell.current.set(sessionRepo(id), id);
     setActiveTabs((current) => {
       const next = new Map(current);
       const path = sessionRepo(id);
@@ -319,7 +312,11 @@ export default function App() {
    */
   const [pendingCommand, setPendingCommand] = useState<{
     path: string;
-    /** The session it is for, when that is not the repository's shell: the Claude tab's `claude`. */
+    /**
+     * The session it is typed into. Chosen once, when the command is queued,
+     * so a shell opened for it is still the one it waits for once it is live.
+     * Set up front for the Claude tab's `claude`.
+     */
     to?: string;
     command: string;
     /** Shift was held, so it is left at the prompt rather than run. */
@@ -980,18 +977,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Aimed at a repository, landing in whichever of its shells is on screen.
-    // With the Claude tab on screen that is the shell before it, brought back
-    // so the command is typed where it can be seen.
+    // Aimed at a repository, landing in a shell at its prompt: the one on
+    // screen if it is free, else the first free one, else a new one, brought
+    // on screen so the command is typed where it can be seen. GitView's own
+    // shell has one pane and no tabs, so it takes the command as it is.
     if (!pendingCommand) return;
-    const id = pendingCommand.to ?? shellOf(pendingCommand.path);
-    if (tabOf(pendingCommand.path) !== id) selectTab(id);
+    const { path } = pendingCommand;
+    if (!pendingCommand.to) {
+      setPendingCommand({ ...pendingCommand, to: path === info?.dataDir ? path : shellOf(path) });
+      return;
+    }
+    const id = pendingCommand.to;
+    if (tabOf(path) !== id) selectTab(id);
+    if (closedShell === id) setClosedShell(null);
     if (!live.has(id)) return;
     const { command, typeOnly } = pendingCommand;
     const sent = typeOnly ? api.ptyWrite(id, command) : sendCommand(id, command);
     sent.catch((err) => setNote(String(err)));
     setPendingCommand(null);
-  }, [pendingCommand, live, setNote, tabOf, shellOf, selectTab]);
+  }, [pendingCommand, live, setNote, tabOf, shellOf, selectTab, closedShell, info?.dataDir]);
 
   const noteTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -1287,15 +1291,18 @@ export default function App() {
   const emit = useCallback(
     async (command: string, typeOnly = false) => {
       if (!sessionId) return;
-      // Never into Claude's prompt: back to the shell, once it is live.
-      if (isClaude(sessionId)) {
-        setPendingCommand({ path: sessionRepo(sessionId), command, typeOnly });
+      // Straight in when the shell on screen is at its prompt. Otherwise, with
+      // `claude` or a dev server holding it, the command goes to a free shell
+      // once that one is live.
+      const path = sessionRepo(sessionId);
+      if (shellOf(path) !== sessionId) {
+        setPendingCommand({ path, command, typeOnly });
         return;
       }
       if (typeOnly) await api.ptyWrite(sessionId, command);
       else await sendCommand(sessionId, command);
     },
-    [sessionId],
+    [sessionId, shellOf],
   );
 
   /**
