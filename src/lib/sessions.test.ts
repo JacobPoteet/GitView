@@ -3,6 +3,7 @@ import {
   claudeId,
   isClaude,
   nextSessionId,
+  pickShell,
   sessionId,
   sessionLabel,
   sessionNumber,
@@ -48,5 +49,40 @@ describe("session ids", () => {
     expect(sessionLabel(claude)).toBe("Claude");
     expect(sessionsOf(repo, [`${repo}#2`, claude, repo])).toEqual([repo, claude, `${repo}#2`]);
     expect(nextSessionId(repo, [repo, claude])).toBe(`${repo}#2`);
+  });
+
+});
+
+describe("the shell a command lands in", () => {
+  const two = `${repo}#2`;
+  const three = `${repo}#3`;
+  const claude = claudeId(repo);
+  const idle = () => false;
+  const holding = (...ids: string[]) => (id: string) => ids.includes(id);
+
+  it("stays on the tab on screen while it is at its prompt", () => {
+    expect(pickShell(repo, two, [repo, two], idle)).toBe(two);
+  });
+
+  it("skips a shell running claude, or anything else, for the first free one", () => {
+    expect(pickShell(repo, repo, [repo, two, three], holding(repo))).toBe(two);
+    expect(pickShell(repo, three, [repo, two, three], holding(three))).toBe(repo);
+  });
+
+  it("never picks the Claude tab, running or not", () => {
+    expect(pickShell(repo, claude, [repo, claude], idle)).toBe(repo);
+    expect(pickShell(repo, claude, [claude], idle)).toBe(repo);
+  });
+
+  it("opens a new shell when every one is busy", () => {
+    expect(pickShell(repo, repo, [repo, claude, two], holding(repo, two))).toBe(three);
+  });
+
+  it("reopens the first shell before numbering a new one", () => {
+    expect(pickShell(repo, two, [two], holding(two))).toBe(repo);
+  });
+
+  it("ignores another repository's shell on screen", () => {
+    expect(pickShell(repo, "F:\\GitHub\\other", [repo], idle)).toBe(repo);
   });
 });
