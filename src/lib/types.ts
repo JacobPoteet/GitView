@@ -548,6 +548,8 @@ export interface AppInfo {
   shell: string;
   /** Whether this shell emits OSC 133 marks, so blocks are possible at all. */
   shellIntegration: boolean;
+  /** Where `claude` is on PATH, or null. */
+  claude: string | null;
   dataDir: string;
   roots: string[];
 }

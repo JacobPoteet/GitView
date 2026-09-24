@@ -12,7 +12,7 @@ import { api } from "../lib/api";
 import type { CommandBlock, StoredBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
 import { isClaimed } from "../lib/keys";
-import { nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
+import { claudeId, isClaude, nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
 
 /**
  * Sessions live in this module rather than in component state, so switching to
@@ -515,7 +515,19 @@ function getSession(id: string): Session {
   // hears it on the host and opens the field, and the shell never sees ^F.
   // Every other chord in `lib/keys.ts` goes the same way, so Ctrl+H reaches
   // the history rather than the shell's backspace.
-  term.attachCustomKeyEventHandler((event) => !(event.type === "keydown" && isClaimed(event)));
+  //
+  // In the Claude tab Shift+Enter is a newline in the message rather than a
+  // send. xterm sends a bare \r for both, so the tab sends ESC \r instead,
+  // which Claude Code reads as Alt+Enter: the newline its own /terminal-setup
+  // binds for editors whose terminal cannot tell the two apart.
+  const claude = isClaude(id);
+  term.attachCustomKeyEventHandler((event) => {
+    if (claude && event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey) {
+      if (event.type === "keydown") api.ptyWrite(id, "\x1b\r").catch(() => undefined);
+      return false;
+    }
+    return !(event.type === "keydown" && isClaimed(event));
+  });
 
   const host = document.createElement("div");
   host.style.height = "100%";
@@ -583,8 +595,17 @@ const SAVE_EVERY = 15_000;
  * thousand lines each time. Only a session with a shell behind it: a closed
  * one has had its file removed on purpose.
  */
+/**
+ * Whether a session's buffer is written out and read back. Not the Claude
+ * tab's: Claude Code redraws its screen in place, so a replayed buffer is
+ * mostly repaint, and the conversation is in Claude's own history anyway.
+ */
+function keepsScrollback(session: Session): boolean {
+  return settings().terminal.restoreScrollback && !isClaude(session.id);
+}
+
 function scheduleSave(session: Session, delay = 2000) {
-  if (!settings().terminal.restoreScrollback || !session.attached) return;
+  if (!keepsScrollback(session) || !session.attached) return;
   window.clearTimeout(session.saveTimer);
   session.saveTimer = window.setTimeout(() => saveSession(session), delay);
 }
@@ -592,7 +613,7 @@ function scheduleSave(session: Session, delay = 2000) {
 async function saveSession(session: Session): Promise<void> {
   window.clearTimeout(session.saveTimer);
   session.saveTimer = undefined;
-  if (!settings().terminal.restoreScrollback || !session.attached) return;
+  if (!keepsScrollback(session) || !session.attached) return;
   session.savedAt = Date.now();
   // A block still running has no exit code to record, and its output is the
   // part of the buffer most likely to change before the next save, so it
@@ -648,7 +669,7 @@ listen("closing", async () => {
  * does not end with its command is a block that is not restored.
  */
 async function restoreSession(session: Session): Promise<void> {
-  if (session.restored || !settings().terminal.restoreScrollback) return;
+  if (session.restored || !keepsScrollback(session)) return;
   session.restored = true;
   let stored;
   try {
@@ -715,6 +736,8 @@ interface Props {
   sessionId: string | null;
   /** A tab was clicked, or `+` asked for one more. */
   onSelectTab: (sessionId: string) => void;
+  /** Draw the Claude tab, asleep until it is clicked. From the AI setting. */
+  claudeTab: boolean;
   /** False once the shell has been closed on purpose, until it is asked for
    *  again. Without it the pane would open a replacement on the next render and
    *  there would still be no way to end a session. */
@@ -737,6 +760,7 @@ export default function TerminalPane({
   repoPath,
   sessionId,
   onSelectTab,
+  claudeTab,
   open,
   onSettled,
   onLiveChange,
@@ -785,9 +809,18 @@ export default function TerminalPane({
   // The first tab is always drawn, so a repository whose only shell was
   // closed still shows where a new one goes; the rest are whatever sessions
   // exist plus the one being opened, which is not in the map until its effect
-  // runs.
+  // runs. The Claude tab is drawn while the setting is on, and while it runs
+  // after the setting goes off.
   const tabs = repoPath
-    ? sessionsOf(repoPath, new Set([repoPath, ...sessions.keys(), ...(sessionId ? [sessionId] : [])]))
+    ? sessionsOf(
+        repoPath,
+        new Set([
+          repoPath,
+          ...(claudeTab ? [claudeId(repoPath)] : []),
+          ...sessions.keys(),
+          ...(sessionId ? [sessionId] : []),
+        ]),
+      )
     : [];
 
   function runSearch(text: string, backwards = false, incremental = false) {
@@ -865,15 +898,20 @@ export default function TerminalPane({
         title: "Ctrl+F. Search the scrollback.",
         run: () => setSearchOpen(true),
       },
-      {
-        label: "Clear",
-        title: "clear",
-        run: (typeOnly) => {
-          if (!sessionId) return;
-          if (typeOnly) api.ptyWrite(sessionId, "clear").catch(() => undefined);
-          else sendCommand(sessionId, "clear");
-        },
-      },
+      // Typed into Claude, `clear` would be a message rather than a command.
+      ...(sessionId && isClaude(sessionId)
+        ? []
+        : [
+            {
+              label: "Clear",
+              title: "clear",
+              run: (typeOnly: boolean) => {
+                if (!sessionId) return;
+                if (typeOnly) api.ptyWrite(sessionId, "clear").catch(() => undefined);
+                else sendCommand(sessionId, "clear");
+              },
+            },
+          ]),
       {
         label: "New shell here",
         title: "Another prompt in the same folder, for when this one is holding a dev server",
@@ -966,19 +1004,23 @@ export default function TerminalPane({
   // One tab per shell in this folder. The first is "shell" and the rest count
   // up from the highest still open; the `+` opens the next. Drawn in the closed
   // state too, so a second shell stays reachable after the first is ended.
+  // The Claude tab sits after the first and is dimmed until it has a session.
   const tabBar = (
     <>
-      {tabs.map((id) => (
-        <button
-          key={id}
-          className={`terminal-tab${id === sessionId ? " on" : ""}`}
-          onClick={() => onSelectTab(id)}
-          aria-current={id === sessionId ? "true" : undefined}
-          title={id}
-        >
-          {sessionLabel(id).replace(/^s/, "S")}
-        </button>
-      ))}
+      {tabs.map((id) => {
+        const asleep = isClaude(id) && !sessions.has(id) && id !== sessionId;
+        return (
+          <button
+            key={id}
+            className={`terminal-tab${id === sessionId ? " on" : ""}${asleep ? " asleep" : ""}`}
+            onClick={() => onSelectTab(id)}
+            aria-current={id === sessionId ? "true" : undefined}
+            title={asleep ? "Opens a shell here and types claude" : id}
+          >
+            {sessionLabel(id).replace(/^s/, "S")}
+          </button>
+        );
+      })}
       <button
         className="terminal-tab add"
         onClick={() => onSelectTab(nextSessionId(repoPath, sessions.keys()))}

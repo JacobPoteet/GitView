@@ -28,6 +28,7 @@ export type SettingsSection =
   | "terminal"
   | "launch"
   | "github"
+  | "ai"
   | "keyboard"
   | "about";
 
@@ -52,6 +53,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "terminal", label: "Terminal" },
   { id: "launch", label: "Launch" },
   { id: "github", label: "GitHub" },
+  { id: "ai", label: "AI" },
   { id: "keyboard", label: "Keyboard" },
   { id: "about", label: "About" },
 ];
@@ -96,6 +98,7 @@ export default function SettingsDialog({
           {section === "terminal" && <TerminalSection />}
           {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
           {section === "github" && <GitHubSection info={info} />}
+          {section === "ai" && <AiSection claude={info?.claude ?? null} />}
           {section === "keyboard" && <Keyboard />}
           {section === "about" && (
             <About info={info} shell={shell} onCommand={onCommand} onReplayTour={onReplayTour} />
@@ -439,6 +442,37 @@ function LaunchSection({ gh }: { gh: boolean }) {
         disabled={!gh}
         onChange={(on) => updateSettings("launch", { checkUpdate: on })}
       />
+    </>
+  );
+}
+
+// --------------------------------------------------------------------- ai
+
+/**
+ * One switch: a Claude tab beside each repository's shell. It opens nothing
+ * until it is clicked, so turning it on costs no process and no window.
+ */
+function AiSection({ claude }: { claude: string | null }) {
+  const { ai } = useSettings();
+  return (
+    <>
+      <h3>AI</h3>
+      <Toggle
+        id="setting-ai-claude-tab"
+        label="Show a Claude tab"
+        hint={
+          claude
+            ? "A tab after each repository's first shell. It sleeps until you click it, then opens a shell in that folder and types claude. A restart puts it back to sleep."
+            : "claude is not on PATH, so the tab would open a shell that cannot find it. Install Claude Code first."
+        }
+        checked={ai.claudeTab}
+        onChange={(on) => updateSettings("ai", { claudeTab: on })}
+      />
+      {claude && (
+        <p>
+          Found at <code>{claude}</code>.
+        </p>
+      )}
     </>
   );
 }

@@ -286,6 +286,22 @@ pub fn default_shell() -> String {
     }
 }
 
+/// Where `claude` resolves, for the settings page to say whether the Claude
+/// tab has anything to start. The native installer puts down `claude.exe` and
+/// npm a `claude.cmd`; the shell finds either when the tab types `claude`.
+pub fn claude() -> Option<String> {
+    #[cfg(windows)]
+    {
+        ["claude.exe", "claude.cmd"]
+            .into_iter()
+            .find_map(find_on_path)
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 #[cfg(windows)]
 fn find_on_path(name: &str) -> Option<String> {
     let path = std::env::var_os("PATH")?;

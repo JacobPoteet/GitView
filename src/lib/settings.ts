@@ -72,6 +72,13 @@ export interface Settings {
      */
     mergeMethod: Record<string, MergeMethod>;
   };
+  ai: {
+    /**
+     * A Claude tab beside each repository's first shell. It stays asleep until
+     * it is clicked, then opens a shell there and types `claude`.
+     */
+    claudeTab: boolean;
+  };
   tour: {
     /** The step on screen, an index into `STEPS` in `lib/tour.ts`. */
     step: number;
@@ -87,6 +94,7 @@ export const DEFAULTS: Settings = {
   layout: { sidebar: 296, changes: 300 },
   inbox: { mode: "repo", collapsed: [] },
   github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
+  ai: { claudeTab: false },
   tour: { step: 0, done: false },
 };
 
@@ -172,6 +180,7 @@ function read(): Settings {
     layout: { ...DEFAULTS.layout, ...stored.layout },
     inbox: { ...DEFAULTS.inbox, ...stored.inbox },
     github: { ...DEFAULTS.github, ...stored.github },
+    ai: { ...DEFAULTS.ai, ...stored.ai },
     // An install that already wrote settings before the tour existed is not a
     // first run, so it starts with the tour behind it rather than over it.
     tour: stored.tour

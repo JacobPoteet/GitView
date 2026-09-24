@@ -73,6 +73,8 @@ pub struct AppInfo {
     /// Whether `gh` is on PATH and logged in, which is what the inbox needs.
     /// Reported rather than assumed, the same way shell integration is.
     gh: GhStatus,
+    /// Where `claude` is on PATH, if it is. Only the settings page reads it.
+    claude: Option<String>,
     data_dir: String,
     roots: Vec<String>,
 }
@@ -710,6 +712,7 @@ fn app_info(state: State<'_, AppState>) -> AppInfo {
     AppInfo {
         git_version: gitops::version(),
         gh: github::status(),
+        claude: pty::claude(),
         shell_integration: pty::is_powershell(&shell),
         shell,
         data_dir: cache::data_dir().to_string_lossy().to_string(),
