@@ -863,6 +863,15 @@ select:focus-visible,
   background: var(--bg-raised);
 }
 
+/* The Claude tab before it has been clicked: there, but nothing behind it. */
+.terminal-tab.asleep {
+  color: color-mix(in oklch, var(--text-faint), var(--line-strong));
+}
+
+.terminal-tab.asleep:hover {
+  color: var(--text-dim);
+}
+
 .terminal-tab.add {
   padding: 0 5px;
   font-size: 13px;

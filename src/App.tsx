@@ -49,7 +49,7 @@ import {
   useSetting,
 } from "./lib/settings";
 import { chordOf, repoChord } from "./lib/keys";
-import { sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
+import { isClaude, sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -227,6 +227,7 @@ export default function App() {
   const [commit, setCommit] = useState<CommitDiff | null>(null);
   const [commitFile, setCommitFile] = useState<string | null>(null);
   const graphCollapsed = useSetting((s) => s.graph.collapsed);
+  const claudeTab = useSetting((s) => s.ai.claudeTab);
   const [roots, setRoots] = useState<string[]>([]);
   /** The settings dialog, and the section it opens on. Null while closed. */
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
@@ -270,9 +271,26 @@ export default function App() {
   const [activeTabs, setActiveTabs] = useState<Map<string, string>>(new Map());
   const activeTabsRef = useRef(activeTabs);
   activeTabsRef.current = activeTabs;
-  /** The session a command aimed at a repository lands in: its active tab, else its first shell. */
+  /** The tab on screen for a repository: its active tab, else its first shell. */
   const tabOf = useCallback((path: string) => activeTabsRef.current.get(path) ?? path, []);
+  /** The shell each repository last showed, which the Claude tab hands commands back to. */
+  const lastShell = useRef<Map<string, string>>(new Map());
+  /**
+   * The session a command aimed at a repository lands in: the tab on screen,
+   * unless that is the Claude tab, where a git command would be typed into a
+   * conversation. Then it is the shell that was on screen before Claude.
+   */
+  const shellOf = useCallback(
+    (path: string) => {
+      const tab = tabOf(path);
+      if (!isClaude(tab)) return tab;
+      const last = lastShell.current.get(path);
+      return last && sessionsFor(path).includes(last) ? last : path;
+    },
+    [tabOf],
+  );
   const selectTab = useCallback((id: string) => {
+    if (!isClaude(id)) lastShell.current.set(sessionRepo(id), id);
     setActiveTabs((current) => {
       const next = new Map(current);
       const path = sessionRepo(id);
@@ -301,6 +319,8 @@ export default function App() {
    */
   const [pendingCommand, setPendingCommand] = useState<{
     path: string;
+    /** The session it is for, when that is not the repository's shell: the Claude tab's `claude`. */
+    to?: string;
     command: string;
     /** Shift was held, so it is left at the prompt rather than run. */
     typeOnly: boolean;
@@ -961,14 +981,17 @@ export default function App() {
 
   useEffect(() => {
     // Aimed at a repository, landing in whichever of its shells is on screen.
+    // With the Claude tab on screen that is the shell before it, brought back
+    // so the command is typed where it can be seen.
     if (!pendingCommand) return;
-    const id = tabOf(pendingCommand.path);
+    const id = pendingCommand.to ?? shellOf(pendingCommand.path);
+    if (tabOf(pendingCommand.path) !== id) selectTab(id);
     if (!live.has(id)) return;
     const { command, typeOnly } = pendingCommand;
     const sent = typeOnly ? api.ptyWrite(id, command) : sendCommand(id, command);
     sent.catch((err) => setNote(String(err)));
     setPendingCommand(null);
-  }, [pendingCommand, live, setNote, tabOf]);
+  }, [pendingCommand, live, setNote, tabOf, shellOf, selectTab]);
 
   const noteTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -1168,10 +1191,13 @@ export default function App() {
       const repo = repos.find((r) => r.path === path);
       const own = path === info?.dataDir;
       const which = sessionNumber(id) === 1 ? "the shell" : sessionLabel(id);
+      const claude = isClaude(id);
       setConfirmation({
         title: own ? "Close GitView's own shell" : `Close ${which} in ${repo?.name ?? path}`,
-        body: "Anything still running in it stops: a dev server, a watcher, a build. Sessions outlive a view change precisely so those keep going, so this is the only thing that ends one.",
-        confirmLabel: "Close the shell",
+        body: claude
+          ? "Claude stops mid-conversation, and the tab goes back to sleep. The conversation is kept: claude --continue in this folder picks it up."
+          : "Anything still running in it stops: a dev server, a watcher, a build. Sessions outlive a view change precisely so those keep going, so this is the only thing that ends one.",
+        confirmLabel: claude ? "Close Claude" : "Close the shell",
         onConfirm: () => {
           // The tab that takes its place: the one before it, read before the
           // map forgets this one.
@@ -1182,7 +1208,9 @@ export default function App() {
             next.delete(id);
             return next;
           });
-          if (sessionNumber(id) === 1) {
+          if (claude) {
+            if (tabOf(path) === id) selectTab(shellOf(path));
+          } else if (sessionNumber(id) === 1) {
             if (path === selectedPath && tabOf(path) === id) setClosedShell(id);
           } else {
             selectTab(remaining[remaining.length - 1] ?? path);
@@ -1191,7 +1219,7 @@ export default function App() {
         },
       });
     },
-    [repos, selectedPath, info?.dataDir, tabOf, selectTab],
+    [repos, selectedPath, info?.dataDir, tabOf, shellOf, selectTab],
   );
 
   /**
@@ -1259,10 +1287,31 @@ export default function App() {
   const emit = useCallback(
     async (command: string, typeOnly = false) => {
       if (!sessionId) return;
+      // Never into Claude's prompt: back to the shell, once it is live.
+      if (isClaude(sessionId)) {
+        setPendingCommand({ path: sessionRepo(sessionId), command, typeOnly });
+        return;
+      }
       if (typeOnly) await api.ptyWrite(sessionId, command);
       else await sendCommand(sessionId, command);
     },
     [sessionId],
+  );
+
+  /**
+   * A tab was clicked. The Claude tab's first click in this launch is what
+   * starts it: the pane opens a shell for it, and `claude` waits for that
+   * shell to report itself live like any other command aimed at a session.
+   */
+  const onSelectTab = useCallback(
+    (id: string) => {
+      const path = sessionRepo(id);
+      if (isClaude(id) && !sessionsFor(path).includes(id)) {
+        setPendingCommand({ path, to: id, command: "claude", typeOnly: false });
+      }
+      selectTab(id);
+    },
+    [selectTab],
   );
 
   /**
@@ -2329,7 +2378,8 @@ gh pr view ${branchPr.number} --web`}
             <TerminalPane
               repoPath={selected.path}
               sessionId={sessionId}
-              onSelectTab={selectTab}
+              onSelectTab={onSelectTab}
+              claudeTab={claudeTab}
               open={closedShell !== sessionId}
               onSettled={settled}
               onLiveChange={onLiveChange}
@@ -2358,6 +2408,7 @@ gh pr view ${branchPr.number} --web`}
               repoPath={info.dataDir}
               sessionId={info.dataDir}
               onSelectTab={noop}
+              claudeTab={false}
               open
               onSettled={ownSettled}
               onLiveChange={onLiveChange}

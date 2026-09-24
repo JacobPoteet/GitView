@@ -8,19 +8,40 @@
  * the repository a session belongs to can be read back off its id without a
  * table. Rust already takes the id and the working directory as two arguments,
  * so it needs nothing new.
+ *
+ * The Claude tab is `path#claude`: a shell like the others, which types
+ * `claude` once it is live. It is not a numbered shell, so a command aimed at
+ * the repository never lands in it. See the Terminal note in the wiki.
  */
 
-const SUFFIX = /#(\d+)$/;
+const SUFFIX = /#(\d+|claude)$/;
+const CLAUDE = "#claude";
 
 /** The repository a session belongs to. */
 export function sessionRepo(id: string): string {
   return id.replace(SUFFIX, "");
 }
 
-/** Which shell in its repository this is, counting from 1. */
+/** The Claude tab's id in a repository. */
+export function claudeId(repoPath: string): string {
+  return repoPath + CLAUDE;
+}
+
+/** Whether this session is a repository's Claude tab. */
+export function isClaude(id: string): boolean {
+  return id.endsWith(CLAUDE);
+}
+
+/** Which shell in its repository this is, counting from 1. The Claude tab is 0. */
 export function sessionNumber(id: string): number {
+  if (isClaude(id)) return 0;
   const match = SUFFIX.exec(id);
   return match ? Number(match[1]) : 1;
+}
+
+/** Where a tab sits: the first shell, then Claude, then the numbered rest. */
+function position(id: string): number {
+  return isClaude(id) ? 1.5 : sessionNumber(id);
 }
 
 /** The id of the nth shell in a repository. The first is the path itself. */
@@ -28,8 +49,9 @@ export function sessionId(repoPath: string, n: number): string {
   return n <= 1 ? repoPath : `${repoPath}#${n}`;
 }
 
-/** "shell", "shell 2": what the tab says. */
+/** "shell", "shell 2", "Claude": what the tab says. */
 export function sessionLabel(id: string): string {
+  if (isClaude(id)) return "Claude";
   const n = sessionNumber(id);
   return n === 1 ? "shell" : `shell ${n}`;
 }
@@ -38,7 +60,7 @@ export function sessionLabel(id: string): string {
 export function sessionsOf(repoPath: string, ids: Iterable<string>): string[] {
   return [...ids]
     .filter((id) => sessionRepo(id) === repoPath)
-    .sort((a, b) => sessionNumber(a) - sessionNumber(b));
+    .sort((a, b) => position(a) - position(b));
 }
 
 /**

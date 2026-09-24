@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  claudeId,
+  isClaude,
   nextSessionId,
   sessionId,
   sessionLabel,
@@ -34,5 +36,17 @@ describe("session ids", () => {
     expect(nextSessionId(repo, [])).toBe(`${repo}#2`);
     expect(nextSessionId(repo, [repo])).toBe(`${repo}#2`);
     expect(nextSessionId(repo, [repo, `${repo}#3`])).toBe(`${repo}#4`);
+  });
+
+  it("puts the Claude tab after the first shell and never numbers it", () => {
+    const claude = claudeId(repo);
+    expect(claude).toBe(`${repo}#claude`);
+    expect(isClaude(claude)).toBe(true);
+    expect(isClaude(repo)).toBe(false);
+    expect(sessionRepo(claude)).toBe(repo);
+    expect(sessionNumber(claude)).toBe(0);
+    expect(sessionLabel(claude)).toBe("Claude");
+    expect(sessionsOf(repo, [`${repo}#2`, claude, repo])).toEqual([repo, claude, `${repo}#2`]);
+    expect(nextSessionId(repo, [repo, claude])).toBe(`${repo}#2`);
   });
 });
