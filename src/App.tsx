@@ -7,6 +7,7 @@ import TerminalPane, {
   isBusy,
   sessionsFor,
   getBlocks,
+  holdFit,
   revealBlock,
   sendCommand,
   subscribeBlocks,
@@ -142,6 +143,8 @@ const SPLASH_MIN_MS = 900;
  * fleet of forty is no longer than one of sixteen.
  */
 const ARRIVE_MS = 1500;
+/** The changes column's slide, as `changes-in` and `changes-out` run it in the stylesheet. */
+const CHANGES_SLIDE_MS = 200;
 
 /**
  * A first guess at what to call a command being kept as a task.
@@ -229,6 +232,29 @@ export default function App() {
   const [commitFile, setCommitFile] = useState<string | null>(null);
   const graphCollapsed = useSetting((s) => s.graph.collapsed);
   const claudeTab = useSetting((s) => s.ai.claudeTab);
+  /**
+   * The changes column, slid away for a narrow window. The grid animates the
+   * column's track, so the main column grows as the changes column leaves,
+   * while the pane keeps its width and is pushed off the edge rather than
+   * squeezed. The terminal holds its size for the slide and refits once at
+   * the end, because ConPTY repaints on a resize and can duplicate a line.
+   */
+  const changesHidden = useSetting((s) => s.layout.changesHidden);
+  const [changesSlide, setChangesSlide] = useState<"in" | "out" | null>(null);
+  const sliding = useRef(false);
+  const setChangesShown = useCallback((shown: boolean) => {
+    if (sliding.current || settings().layout.changesHidden !== shown) return;
+    sliding.current = true;
+    holdFit(true);
+    if (shown) updateSettings("layout", { changesHidden: false });
+    setChangesSlide(shown ? "in" : "out");
+    window.setTimeout(() => {
+      if (!shown) updateSettings("layout", { changesHidden: true });
+      setChangesSlide(null);
+      sliding.current = false;
+      holdFit(false);
+    }, CHANGES_SLIDE_MS);
+  }, []);
   const [roots, setRoots] = useState<string[]>([]);
   /** The settings dialog, and the section it opens on. Null while closed. */
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
@@ -675,8 +701,11 @@ export default function App() {
     (commit: { id: string; short: string; file?: string }) => {
       if (!selectedPath) return;
       setCommitTarget({ repoPath: selectedPath, id: commit.id, short: commit.short, file: commit.file });
+      // The commit's file list is drawn in the changes column, and the pane
+      // is one file's hunks without it.
+      setChangesShown(true);
     },
-    [selectedPath],
+    [selectedPath, setChangesShown],
   );
 
   /** Which sides of the open file the working tree has, for the pane's tabs. */
@@ -850,8 +879,14 @@ export default function App() {
       } else if (chord === "Ctrl+Shift+C") {
         // The field is in the changes column, which the commit pane's file
         // list replaces while a commit is open. No field, nothing to focus.
+        // A hidden column comes back first, since the field cannot take focus
+        // until the render that shows it.
         event.preventDefault();
-        document.querySelector<HTMLInputElement>(".commit-title")?.focus();
+        setChangesShown(true);
+        window.setTimeout(() => document.querySelector<HTMLInputElement>(".commit-title")?.focus());
+      } else if (chord === "Ctrl+Alt+B") {
+        event.preventDefault();
+        setChangesShown(settings().layout.changesHidden);
       } else if (chord === "Ctrl+H") {
         event.preventDefault();
         if (historyOpen) setHistoryOpen(false);
@@ -953,6 +988,7 @@ export default function App() {
     setBatchOpen,
     setInboxOpen,
     setUpdateOpen,
+    setChangesShown,
   ]);
 
   // The webview's own right-click menu is Back, Reload, Print and Share, none
@@ -1250,7 +1286,10 @@ export default function App() {
 
   // The tour waits for a repository to point at, and for the splash to lift.
   // Without gh there is no inbox button, so its step is left out of the count.
-  const tourSkip = useMemo(() => (info?.gh.version ? [] : ["inbox"]), [info?.gh.version]);
+  const tourSkip = useMemo(
+    () => [...(info?.gh.version ? [] : ["inbox"]), ...(changesHidden ? ["changes"] : [])],
+    [info?.gh.version, changesHidden],
+  );
   const tour = useTour(booted && roots.length > 0 && repos.length > 0, tourSkip);
   const { fire: fireTour } = tour;
   const { close: closeTour } = tour;
@@ -2163,7 +2202,9 @@ ${landing} ${cleanup}${warning}${closing}`,
   return (
     <div
       ref={appRef}
-      className={`app${arriving ? " arriving" : ""}`}
+      className={`app${arriving ? " arriving" : ""}${changesHidden ? " changes-hidden" : ""}${
+        changesSlide ? ` changes-${changesSlide}` : ""
+      }`}
       style={
         {
           "--sidebar-w": `${layout.sidebar}px`,
@@ -2174,7 +2215,7 @@ ${landing} ${cleanup}${warning}${closing}`,
       <Splitter
         side="sidebar"
         width={layout.sidebar}
-        other={layout.changes}
+        other={changesHidden ? 0 : layout.changes}
         min={SIDEBAR_MIN}
         max={SIDEBAR_MAX}
         mainMin={mainMin}
@@ -2348,6 +2389,21 @@ gh pr view ${branchPr.number} --web`}
                   onClick={() => setPaletteOpen(true)}
                 >
                   Ctrl+K
+                </button>
+                {/* The top-right corner, over the column it moves, which is
+                    where a panel toggle sits in every editor that has one. */}
+                <button
+                  className={`btn changes-toggle${changesHidden ? "" : " on"}`}
+                  onClick={() => setChangesShown(changesHidden)}
+                  aria-label={changesHidden ? "Show the changes column" : "Hide the changes column"}
+                  aria-pressed={!changesHidden}
+                  title={`${changesHidden ? "Show" : "Hide"} the changes column (Ctrl+Alt+B)`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+                    <path className="changes-toggle-fill" d="M10 3.1h3.4a.6.6 0 0 1 .6.6v8.6a.6.6 0 0 1-.6.6H10z" />
+                    <path d="M10 2.5v11" stroke="currentColor" strokeWidth="1.2" />
+                  </svg>
                 </button>
               </div>
             </header>

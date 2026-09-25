@@ -27,6 +27,7 @@ export const SHORTCUTS: Shortcut[] = [
   { chord: "Ctrl+H", does: "Open or close the history" },
   { chord: "Ctrl+I", does: "Open or close the inbox" },
   { chord: "Ctrl+,", does: "Open or close the settings" },
+  { chord: "Ctrl+Alt+B", does: "Hide or show the changes column" },
   { chord: "Ctrl+F", does: "Search, in whichever surface has focus: the scrollback, the history, or the repositories" },
   { chord: "Ctrl+Enter", does: "Commit, from the subject or the description" },
   { chord: "Escape", does: "Close what is on top, or leave the field" },
@@ -49,6 +50,7 @@ const CLAIMED = new Set([
   "Ctrl+H",
   "Ctrl+I",
   "Ctrl+,",
+  "Ctrl+Alt+B",
   "Ctrl+F",
 ]);
 
@@ -64,15 +66,23 @@ export interface KeyLike {
 
 /**
  * The chord a key event spells, or null when it is not one: no Ctrl, or Alt
- * held, which is AltGr on a keyboard that types `@` with it.
+ * held over anything but a plain letter.
  *
  * Read from `code` for a digit and the backquote, because `Shift+1` reports
  * `!` as its key and a layout can put `` ` `` anywhere; from `key` for a
  * letter, upper-cased so caps lock changes nothing. Meta counts as Ctrl so
  * the same table holds on a Mac keyboard.
+ *
+ * Ctrl+Alt is also AltGr, which types `@` or `{` on a German keyboard. Those
+ * arrive with the character as their key, so a letter in `key` is a Ctrl+Alt
+ * chord and anything else is typing.
  */
 export function chordOf(event: KeyLike): string | null {
-  if (!(event.ctrlKey || event.metaKey) || event.altKey) return null;
+  if (!(event.ctrlKey || event.metaKey)) return null;
+  if (event.altKey) {
+    if (!/^[a-z]$/i.test(event.key)) return null;
+    return `Ctrl+Alt+${event.shiftKey ? "Shift+" : ""}${event.key.toUpperCase()}`;
+  }
   let key: string;
   const digit = /^Digit([1-9])$/.exec(event.code ?? "");
   if (digit) key = digit[1];

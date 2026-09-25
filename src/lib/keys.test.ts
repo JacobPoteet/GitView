@@ -23,11 +23,17 @@ describe("chordOf", () => {
     expect(chordOf(press({ key: "0", code: "Digit0" }))).toBeNull();
   });
 
-  it("names shift, treats meta as ctrl, and gives up on alt", () => {
+  it("names shift, treats meta as ctrl, and needs ctrl", () => {
     expect(chordOf(press({ key: "C", code: "KeyC", shiftKey: true }))).toBe("Ctrl+Shift+C");
     expect(chordOf(press({ key: "k", code: "KeyK", ctrlKey: false, metaKey: true }))).toBe("Ctrl+K");
-    expect(chordOf(press({ key: "k", code: "KeyK", altKey: true }))).toBeNull();
     expect(chordOf(press({ key: "k", code: "KeyK", ctrlKey: false }))).toBeNull();
+  });
+
+  it("names alt over a letter, and leaves AltGr's characters to the shell", () => {
+    expect(chordOf(press({ key: "b", code: "KeyB", altKey: true }))).toBe("Ctrl+Alt+B");
+    // AltGr+Q on a German keyboard, and AltGr+7.
+    expect(chordOf(press({ key: "@", code: "KeyQ", altKey: true }))).toBeNull();
+    expect(chordOf(press({ key: "{", code: "Digit7", altKey: true }))).toBeNull();
   });
 
   it("is null for a key the table has no spelling for", () => {
@@ -45,6 +51,9 @@ describe("isClaimed", () => {
     expect(isClaimed(press({ key: "c", code: "KeyC" }))).toBe(false);
     expect(isClaimed(press({ key: "l", code: "KeyL" }))).toBe(false);
     expect(isClaimed(press({ key: "C", code: "KeyC", shiftKey: true }))).toBe(true);
+    expect(isClaimed(press({ key: "b", code: "KeyB", altKey: true }))).toBe(true);
+    // Ctrl+B is Claude Code's background key, so the chord needs the Alt.
+    expect(isClaimed(press({ key: "b", code: "KeyB" }))).toBe(false);
   });
 });
 
@@ -59,7 +68,7 @@ describe("repoChord", () => {
 describe("SHORTCUTS", () => {
   it("lists every claimed chord, so the dialog and the handler agree", () => {
     const listed = SHORTCUTS.map((s) => s.chord).join(" ");
-    for (const chord of ["Ctrl+K", "Ctrl+`", "Ctrl+Shift+C", "Ctrl+H", "Ctrl+I", "Ctrl+,", "Ctrl+F"]) {
+    for (const chord of ["Ctrl+K", "Ctrl+`", "Ctrl+Shift+C", "Ctrl+H", "Ctrl+I", "Ctrl+,", "Ctrl+Alt+B", "Ctrl+F"]) {
       expect(listed).toContain(chord);
     }
   });
