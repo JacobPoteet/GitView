@@ -80,23 +80,33 @@ export default function BranchMenu({
   // The row's click, the name, and the one thing the row has no button for.
   function rowMenu(branch: BranchSummary): MenuEntry[] {
     const switchTo = `git switch ${quote(branch.name, shell)}`;
+    const held = branch.worktree;
     return [
       {
         label: "Switch to it",
-        title: branch.isHead ? "You are here." : switchTo,
-        disabled: branch.isHead,
+        title: branch.isHead
+          ? "You are here."
+          : held
+            ? `Checked out in the worktree at ${held}, and git will not put two checkouts on one branch.`
+            : switchTo,
+        disabled: branch.isHead || held !== null,
         run: (typeOnly) => {
           onCommand(switchTo, typeOnly);
           if (!typeOnly) setOpen(false);
         },
       },
       { label: "Copy branch name", run: () => onCopy(branch.name, "the branch name") },
+      ...(held ? [{ label: "Copy worktree path", run: () => onCopy(held, "the worktree path") }] : []),
       "-",
       {
         label: "Delete branch",
         danger: true,
         disabled: branch.isHead,
-        title: branch.isHead ? "You are on it. Switch away first." : "Asks first, and names the command.",
+        title: branch.isHead
+          ? "You are on it. Switch away first."
+          : held
+            ? `Checked out in the worktree at ${held}. Asks first, and names both commands: the worktree goes, then the branch.`
+            : "Asks first, and names the command.",
         run: () => {
           setOpen(false);
           onDeleteBranch(branch.name);
@@ -168,16 +178,23 @@ function BranchRow({
   onMenu: (event: ReactMouseEvent, branch: BranchSummary) => void;
 }) {
   const command = `git switch ${quote(branch.name, shell)}`;
+  // git refuses to switch to a branch another checkout has, so the click does
+  // nothing and the title says where it is. The right-click menu still opens.
+  const held = branch.worktree;
   return (
     <button
       className={`branch-pop-row${branch.isHead ? " current" : ""}`}
       disabled={branch.isHead}
-      onClick={(event) => onCommand(command, event.shiftKey)}
+      onClick={(event) => {
+        if (!held) onCommand(command, event.shiftKey);
+      }}
       onContextMenu={(event) => onMenu(event, branch)}
       title={
         branch.isHead
           ? "You are here."
-          : `${command}\n\nShift-click to type it without running it.`
+          : held
+            ? `Checked out in the worktree at ${held}.\n\nRight-click to remove that worktree and delete the branch.`
+            : `${command}\n\nShift-click to type it without running it.`
       }
     >
       <span className="branch-pop-name">{branch.name}</span>
@@ -194,6 +211,11 @@ function BranchRow({
         {!branch.upstream && !branch.merged && (
           <span className="chip unpushed" title="No upstream. Nothing on this branch has been pushed.">
             local
+          </span>
+        )}
+        {held && (
+          <span className="chip merged" title={held}>
+            worktree
           </span>
         )}
         {branch.merged && (

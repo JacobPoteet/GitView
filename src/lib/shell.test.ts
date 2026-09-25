@@ -5,11 +5,14 @@ import {
   clonePath,
   commitCommand,
   discardCommands,
+  isClaudeWorktree,
   quote,
+  releaseCommand,
   shellKind,
   tagCommand,
   validRefName,
 } from "./shell";
+import type { WorktreeSummary } from "./types";
 
 describe("quote", () => {
   it("doubles an apostrophe for PowerShell and closes around it for POSIX", () => {
@@ -161,5 +164,35 @@ describe("clone", () => {
     expect(cloneCommand(" https://h/o/r.git ", "C:\\My Code\\r", "powershell")).toBe(
       "git clone 'https://h/o/r.git' 'C:\\My Code\\r'",
     );
+  });
+});
+
+describe("releaseCommand", () => {
+  const worktree = (over: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
+    path: "F:\\GitHub\\app\\.claude\\worktrees\\issue 9",
+    branch: "issue-9",
+    main: false,
+    prunable: false,
+    locked: false,
+    ...over,
+  });
+
+  it("removes a live worktree, quoting its path", () => {
+    expect(releaseCommand(worktree(), "powershell")).toBe(
+      "git worktree remove 'F:\\GitHub\\app\\.claude\\worktrees\\issue 9'",
+    );
+  });
+
+  it("prunes a record whose folder is gone, and offers nothing for main or a lock", () => {
+    expect(releaseCommand(worktree({ prunable: true }), "powershell")).toBe("git worktree prune");
+    expect(releaseCommand(worktree({ main: true }), "powershell")).toBeNull();
+    expect(releaseCommand(worktree({ locked: true }), "powershell")).toBeNull();
+    expect(releaseCommand(worktree({ locked: true, prunable: true }), "powershell")).toBeNull();
+  });
+
+  it("knows a Claude Code worktree by its folder", () => {
+    expect(isClaudeWorktree(worktree().path)).toBe(true);
+    expect(isClaudeWorktree("F:/GitHub/app/.claude/worktrees/x")).toBe(true);
+    expect(isClaudeWorktree("F:\\GitHub\\app.worktrees\\x")).toBe(false);
   });
 });

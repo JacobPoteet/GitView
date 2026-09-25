@@ -81,24 +81,65 @@ export function pullPlan(repo: RepoState): Plan {
 export interface PruneSplit {
   merged: string[];
   squashed: string[];
+  /**
+   * Finished, but checked out in another worktree, so git would refuse either
+   * flag. Listed apart with where they are held, and left out of the command.
+   */
+  held: { branch: string; path: string }[];
+  /**
+   * Worktrees whose folder is already gone. Their branches are in the lists
+   * above, and `git worktree prune` runs first to drop the record that would
+   * otherwise make git refuse them.
+   */
+  stale: string[];
 }
 
 export function pruneSplit(repo: RepoState, squashed: Squashed[]): PruneSplit {
-  const contained = new Set(repo.mergedBranches);
+  const holder = new Map(repo.worktrees.map((w) => [w.path, w]));
+  const held: PruneSplit["held"] = [];
+  const stale = new Set<string>();
+  // True when the branch can go, once any stale record is pruned.
+  const free = (name: string) => {
+    const path = repo.branches.find((b) => b.name === name)?.worktree;
+    if (!path) return true;
+    const worktree = holder.get(path);
+    if (worktree?.prunable && !worktree.locked) {
+      stale.add(path);
+      return true;
+    }
+    held.push({ branch: name, path });
+    return false;
+  };
+
+  // The scanner leaves every held branch out of `mergedBranches`. They come
+  // back here, and `free` keeps the ones only a stale record holds.
+  const merged = [...repo.mergedBranches, ...heldBranches(repo).map((h) => h.branch)];
+  const contained = new Set(merged);
   return {
-    merged: repo.mergedBranches,
+    merged: merged.filter(free),
     squashed: squashed
       // A remote-tracking ref is drawn in the history and is not a branch
       // `git branch -D` can touch; `git push origin --delete` is a different
       // action against somebody else's copy and is not one to fold in here.
       .filter((s) => !s.protected && !s.remote && !contained.has(s.branch))
-      .map((s) => s.branch),
+      .map((s) => s.branch)
+      .filter(free),
+    held,
+    stale: [...stale],
   };
+}
+
+/** Contained in the trunk but checked out in another worktree, for the fleet-wide prune to list. */
+export function heldBranches(repo: RepoState): { branch: string; path: string }[] {
+  return repo.branches
+    .filter((b) => b.merged && b.worktree)
+    .map((b) => ({ branch: b.name, path: b.worktree as string }));
 }
 
 /** The commands that prune leaves in the shell, in the order they run. */
 export function pruneCommands(split: PruneSplit): string[] {
   const out: string[] = [];
+  if (split.stale.length > 0) out.push("git worktree prune");
   if (split.merged.length > 0) out.push(`git branch -d ${split.merged.join(" ")}`);
   if (split.squashed.length > 0) out.push(`git branch -D ${split.squashed.join(" ")}`);
   return out;
@@ -116,7 +157,11 @@ export function pruneCommands(split: PruneSplit): string[] {
  */
 export function prunePlan(repo: RepoState): Plan {
   if (repo.error) return { skip: "unreadable" };
-  if (repo.mergedBranches.length === 0) return { skip: "nothing merged to delete" };
+  if (repo.mergedBranches.length === 0) {
+    return heldBranches(repo).length > 0
+      ? { skip: "every merged branch is checked out in a worktree" }
+      : { skip: "nothing merged to delete" };
+  }
   return run(["branch", "-d", ...repo.mergedBranches]);
 }
 

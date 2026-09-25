@@ -362,7 +362,14 @@ on ${repo.branch}` : repo.path}
               <BranchIcon />
               <span>{repo.error ? "unreadable" : (repo.branch ?? "no commits")}</span>
             </span>
-            {repo.isWorktree && <span className="chip merged">worktree</span>}
+            {repo.isWorktree && (
+              <span
+                className="chip merged"
+                title={repo.mainPath ? `A worktree of ${repo.mainPath}` : "A linked worktree"}
+              >
+                worktree
+              </span>
+            )}
           </span>
         )}
       </button>

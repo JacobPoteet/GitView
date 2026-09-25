@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   fetchPlan,
+  heldBranches,
   isSkip,
   previewOf,
   prunePlan,
@@ -184,6 +185,12 @@ export default function BatchDialog({
                     git branch -d {repo.mergedBranches.join(" ")}
                   </code>
                 )}
+                {kind === "prune" &&
+                  heldBranches(repo).map((h) => (
+                    <span key={h.branch} className="batch-pick-held">
+                      Left out: <code>{h.branch}</code> is checked out at <code>{h.path}</code>
+                    </span>
+                  ))}
               </label>
             );
           })}

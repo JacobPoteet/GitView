@@ -12,6 +12,25 @@ export interface BranchSummary {
   upstream: string | null;
   /** Commits the upstream does not have. Zero without one; see `ahead` for that case. */
   aheadOfUpstream: number;
+  /**
+   * Another checkout that has it checked out, by path. git refuses to delete
+   * or switch to it until that checkout lets go, so it is never in
+   * `mergedBranches` even when `merged` is true.
+   */
+  worktree: string | null;
+}
+
+/** Another checkout of the same repository. See `read_worktrees` in fleet.rs. */
+export interface WorktreeSummary {
+  path: string;
+  /** The branch it holds. Null when its HEAD is detached. */
+  branch: string | null;
+  /** The main checkout, which cannot be removed, only switched off the branch. */
+  main: boolean;
+  /** Its folder is gone but git still records it, and still counts its branch as held. */
+  prunable: boolean;
+  /** `git worktree lock`ed: remove and prune both leave it alone. */
+  locked: boolean;
 }
 
 /** One tag, and the commit it marks. Part of `refSignature`, like a branch tip. */
@@ -98,6 +117,10 @@ export interface RepoState {
   lastCommitAt: number | null;
   lastCommitSummary: string | null;
   isWorktree: boolean;
+  /** For a linked worktree, the main checkout it belongs to. */
+  mainPath: string | null;
+  /** Every other checkout of this repository, never this one. */
+  worktrees: WorktreeSummary[];
   /** A rebase, merge, cherry-pick, revert, bisect or am git is paused in. Null nearly always. */
   operation: Operation | null;
   /** Every stash, newest first. */
