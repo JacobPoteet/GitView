@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import {
   attentionScore,
@@ -11,6 +11,7 @@ import {
   type RepoState,
 } from "../lib/types";
 import { agentLabel, type AgentState } from "../lib/agent";
+import ChipIcon from "./ChipIcon";
 
 /** What the inbox knows about one repository, merged in the way prefs are. */
 export interface RepoGithub {
@@ -68,45 +69,6 @@ function BranchIcon() {
   );
 }
 
-function PinIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M9.6 1.9 14.1 6.4M10.4 2.7 8.6 6l-3.9 1.3a.9.9 0 0 0-.4 1.5l3 3 3 3a.9.9 0 0 0 1.5-.4L13 10.5l3.3-1.8"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        transform="translate(-1.2 0.6) rotate(-8 8 8)"
-      />
-      <path d="M5.6 10.4 2 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function HideIcon({ hidden }: { hidden: boolean }) {
-  return hidden ? (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"
-        stroke="currentColor"
-        strokeWidth="1.3"
-      />
-      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" />
-    </svg>
-  ) : (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M2.5 5.4C1.9 6.2 1.5 8 1.5 8S4 12.5 8 12.5c1 0 1.9-.3 2.7-.7M6.2 4c.6-.3 1.2-.5 1.8-.5 4 0 6.5 4.5 6.5 4.5s-.6 1.1-1.7 2.2"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-      />
-      <path d="M2 2l12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /**
  * Claude in this repository: a ring that turns while it works, then a word
  * once it wants you. The ring asks nothing, so it carries no word; a question
@@ -139,12 +101,12 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
       )}
       {repo.behind > 0 && (
         <span className="chip behind" title="commits behind upstream">
-          ↓{repo.behind}
+          <ChipIcon kind="behind" />{repo.behind}
         </span>
       )}
       {repo.ahead > 0 && (
         <span className="chip ahead" title="commits ahead of upstream">
-          ↑{repo.ahead}
+          <ChipIcon kind="ahead" />{repo.ahead}
         </span>
       )}
       {/* Commits on this disk and nowhere else, on any local branch: a branch
@@ -157,29 +119,25 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
             unpushedBranches(repo).join("\n") || `ahead of ${base} with no upstream`
           }`}
         >
-          ⇡{local}
+          <ChipIcon kind="unpushed" />{local}
         </span>
       )}
       {dirty > 0 && (
         <span className="chip dirty" title="staged and modified files">
-          ●{dirty}
+          <ChipIcon kind="dirty" />{dirty}
         </span>
       )}
       {repo.mergedBranches.length > 0 && (
         <span className="chip merged" title="branches merged into the default branch">
-          ⌫{repo.mergedBranches.length}
+          <ChipIcon kind="merged" />{repo.mergedBranches.length}
         </span>
       )}
-      {repo.localBranchCount > 1 && (
-        <span className="chip branches" title={`${repo.localBranchCount} local branches`}>
-          ⑂{repo.localBranchCount}
-        </span>
-      )}
-      {/* Bare like the branch count: a stash is work set aside on purpose,
-          and a row should not shout about it. The title lists them. */}
+      {/* No branch count: it asks nothing of the fleet, and the header beside
+          the branch name has it once the repository is open. A stash stays,
+          bare, since it is work set aside on purpose. The title lists them. */}
       {repo.stashes.length > 0 && (
         <span className="chip branches" title={stashTitle(repo.stashes)}>
-          ⧉{repo.stashes.length}
+          <ChipIcon kind="stash" />{repo.stashes.length}
         </span>
       )}
       {/* GitHub state, which the scan cannot see. Absent until the inbox has
@@ -193,24 +151,11 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
               : `${github.open} open pull requests`
           }
         >
-          ⇅{github.open}
+          <ChipIcon kind="pr" />{github.open}
           {github.failing && "!"}
         </span>
       )}
     </span>
-  );
-}
-
-function GripIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <circle cx="6" cy="4" r="1.15" />
-      <circle cx="10" cy="4" r="1.15" />
-      <circle cx="6" cy="8" r="1.15" />
-      <circle cx="10" cy="8" r="1.15" />
-      <circle cx="6" cy="12" r="1.15" />
-      <circle cx="10" cy="12" r="1.15" />
-    </svg>
   );
 }
 
@@ -229,14 +174,6 @@ function moveTo(order: string[], path: string, target: number): string[] {
   return next;
 }
 
-function CloseIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /** How a row is taking part in a drag, which is what draws the insertion line. */
 type DragRole = "none" | "source" | "before" | "after";
 
@@ -250,16 +187,12 @@ function Row({
   selected,
   live,
   agent,
-  pinned,
   hidden,
   github,
   orderable,
   slot,
   drag,
   onSelect,
-  onPin,
-  onHide,
-  onCloseShell,
   onMenu,
   onDragStart,
   onDragOver,
@@ -271,7 +204,6 @@ function Row({
   selected: boolean;
   live: boolean;
   agent: AgentState | null;
-  pinned: boolean;
   hidden: boolean;
   github?: RepoGithub;
   /** False on every row outside the pinned group, which has no order to set. */
@@ -280,9 +212,6 @@ function Row({
   slot: number;
   drag: DragRole;
   onSelect: (path: string) => void;
-  onPin: (path: string, pinned: boolean) => void;
-  onHide: (path: string, hidden: boolean) => void;
-  onCloseShell: (path: string) => void;
   onMenu: (event: ReactMouseEvent, repo: RepoState) => void;
   onDragStart: (path: string) => void;
   onDragOver: (path: string) => void;
@@ -295,13 +224,11 @@ function Row({
   // each said `main` hid the one that did not, so a branch under a name now
   // means that repository is somewhere other than home.
   const home = !repo.error && !repo.isWorktree && repo.branch != null && repo.branch === repo.defaultBranch;
-  const wrap = useRef<HTMLLIElement>(null);
-
-  // The row and its two controls are siblings rather than nested buttons, which
-  // the browser refuses to nest and the keyboard cannot reach.
+  // Pin, hide and close the shell are on the right-click menu, not on hover.
+  // Controls that appeared under the pointer covered the chips, so running the
+  // cursor down the rail hid the counts it was reading.
   return (
     <li
-      ref={wrap}
       style={{ "--slot": slot } as CSSProperties}
       className={
         `repo-row-wrap${selected ? " selected" : ""}${hidden ? " muted" : ""}` +
@@ -331,6 +258,22 @@ function Row({
       <button
         className={`repo-row${home ? " home" : ""}`}
         onClick={() => onSelect(repo.path)}
+        // The row carries `draggable` itself. Chromium will not start a
+        // parent's drag from inside a button, which is why this used to need a
+        // grip, but the button's own drag starts anywhere on it. A press that
+        // never moves is still a click.
+        draggable={orderable || undefined}
+        onDragStart={
+          orderable
+            ? (e) => {
+                e.dataTransfer.effectAllowed = "move";
+                // Firefox and WebView2 both want the drag to carry something.
+                e.dataTransfer.setData("text/plain", repo.path);
+                onDragStart(repo.path);
+              }
+            : undefined
+        }
+        onDragEnd={orderable ? onDragEnd : undefined}
         title={home ? `${repo.path}
 on ${repo.branch}` : repo.path}
         onKeyDown={
@@ -373,56 +316,6 @@ on ${repo.branch}` : repo.path}
           </span>
         )}
       </button>
-
-      <span className="row-actions">
-        {orderable && (
-          // The handle is what carries `draggable`, not the row: Chromium will
-          // not start a parent's drag from inside a button, so a draggable
-          // wrapper is only draggable by its padding.
-          <span
-            className="row-action grip"
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = "move";
-              // Firefox and WebView2 both want the drag to carry something.
-              e.dataTransfer.setData("text/plain", repo.path);
-              if (wrap.current) e.dataTransfer.setDragImage(wrap.current, 12, 18);
-              onDragStart(repo.path);
-            }}
-            onDragEnd={onDragEnd}
-            title="Drag to reorder, or Alt+Up and Alt+Down on the row"
-          >
-            <GripIcon />
-          </span>
-        )}
-        {live && (
-          <button
-            className="row-action live"
-            onClick={() => onCloseShell(repo.path)}
-            title="Close this repository's shell"
-            aria-label={`Close ${repo.name}'s shell`}
-          >
-            <CloseIcon />
-          </button>
-        )}
-        <button
-          className={`row-action${pinned ? " on" : ""}`}
-          onClick={() => onPin(repo.path, !pinned)}
-          title={pinned ? "Unpin" : "Pin to the top of the list"}
-          aria-label={pinned ? `Unpin ${repo.name}` : `Pin ${repo.name}`}
-          aria-pressed={pinned}
-        >
-          <PinIcon />
-        </button>
-        <button
-          className="row-action"
-          onClick={() => onHide(repo.path, !hidden)}
-          title={hidden ? "Show in the list again" : "Hide, and drop it from the palette"}
-          aria-label={hidden ? `Show ${repo.name}` : `Hide ${repo.name}`}
-        >
-          <HideIcon hidden={hidden} />
-        </button>
-      </span>
     </li>
   );
 }
@@ -551,15 +444,11 @@ export default function FleetSidebar({
       selected={repo.path === selectedPath}
       live={liveSessions.has(repo.path)}
       agent={agents.get(repo.path) ?? null}
-      pinned={prefs.get(repo.path)?.pinnedAt != null}
       hidden={prefs.get(repo.path)?.hidden === true}
       github={github.get(repo.path)}
       orderable={inPinnedGroup && orderable}
       drag={inPinnedGroup ? roleFor(repo.path) : "none"}
       onSelect={onSelect}
-      onPin={onPin}
-      onHide={onHide}
-      onCloseShell={onCloseShell}
       onMenu={menu.open}
       onDragStart={setDragging}
       onDragOver={setOver}
@@ -576,8 +465,8 @@ export default function FleetSidebar({
   // in as the second parameter and make every row after the first orderable.
   const render = (repo: RepoState) => renderRow(repo, false);
 
-  // The row's two hover controls and the one it shows when a shell is up, plus
-  // the path, which is otherwise only readable from the tooltip.
+  // The only home for pin, hide and closing the shell since the row lost its
+  // hover controls, plus the path, which is otherwise only in the tooltip.
   function rowMenu(repo: RepoState): MenuEntry[] {
     const pinned = prefs.get(repo.path)?.pinnedAt != null;
     const hidden = prefs.get(repo.path)?.hidden === true;
