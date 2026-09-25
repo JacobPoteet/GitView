@@ -13,7 +13,7 @@
  * text a person can read before it runs.
  */
 
-import type { MergeMethod, Operation } from "./types";
+import type { MergeMethod, Operation, WorktreeSummary } from "./types";
 
 export type ShellKind = "powershell" | "posix";
 
@@ -359,4 +359,22 @@ export function clonePath(parent: string, name: string): string {
  */
 export function cloneCommand(url: string, destination: string, kind: ShellKind): string {
   return `git clone ${quote(url.trim(), kind)} ${quote(destination, kind)}`;
+}
+
+/**
+ * What frees a branch another worktree holds, typed before the branch's own
+ * delete. A live worktree is removed, a record whose folder is already gone is
+ * pruned, and the main checkout or a locked worktree gets nothing: the first
+ * can only be switched off the branch in its own shell, and the second was
+ * locked by somebody on purpose. Null means there is no command to offer.
+ */
+export function releaseCommand(worktree: WorktreeSummary, kind: ShellKind): string | null {
+  if (worktree.main || worktree.locked) return null;
+  if (worktree.prunable) return "git worktree prune";
+  return `git worktree remove ${quote(worktree.path, kind)}`;
+}
+
+/** Claude Code keeps its worktrees here, and an open session holds the folder. */
+export function isClaudeWorktree(path: string): boolean {
+  return /[\\/]\.claude[\\/]worktrees[\\/]/.test(path);
 }

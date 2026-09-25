@@ -66,9 +66,11 @@ import { isClaude, pickShell, sessionLabel, sessionNumber, sessionRepo } from ".
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
+  isClaudeWorktree,
   openUrlCommand,
   pushCommand,
   quote,
+  releaseCommand,
   shellKind,
   tagCommand,
   validRefName,
@@ -90,6 +92,7 @@ import {
   type RepoState,
   type Squashed,
   type Task,
+  type WorktreeSummary,
 } from "./lib/types";
 
 interface Confirmation {
@@ -401,7 +404,7 @@ export default function App() {
    * was zero on every repository that squash-merges its pull requests.
    */
   const prunable = useMemo(
-    () => (selected ? pruneSplit(selected, squashed) : { merged: [], squashed: [] }),
+    () => (selected ? pruneSplit(selected, squashed) : { merged: [], squashed: [], held: [], stale: [] }),
     [selected, squashed],
   );
   const prunableCount = prunable.merged.length + prunable.squashed.length;
@@ -1583,10 +1586,20 @@ export default function App() {
       split.squashed.length === 0
         ? `Every branch listed is already contained in ${trunk}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`
         : `${split.merged.length > 0 ? `${split.merged.length} of these are contained in ${trunk}, and go through git branch -d, which refuses anything unmerged. ` : ""}${split.squashed.length} were squash-merged: ${split.squashed.join(", ")}. A squash rebuilds the work as a new commit with no link back, so git considers them unmerged and -d will not take them. GitView matched each one's patch to a commit on ${trunk}. -D deletes them on that evidence rather than on git's. The output prints each commit, so a wrong answer is recoverable.`;
+    // A worktree whose folder is gone still holds its branch until git's
+    // record of it goes, and one still in use holds it outright.
+    const stale =
+      split.stale.length === 0
+        ? ""
+        : ` git worktree prune runs first: ${split.stale.length === 1 ? "a worktree's folder is" : `${split.stale.length} worktrees' folders are`} already gone, and git keeps refusing the ${split.stale.length === 1 ? "branch it held" : "branches they held"} until the record goes.`;
+    const held =
+      split.held.length === 0
+        ? ""
+        : ` Left out, because a worktree has ${split.held.length === 1 ? "it" : "them"} checked out: ${split.held.map((h) => `${h.branch} at ${h.path}`).join(", ")}. Right-click one in the branch list to remove its worktree first.`;
 
     return {
       title: `Delete ${total} merged ${total === 1 ? "branch" : "branches"}`,
-      body,
+      body: `${body}${stale}${held}`,
       command: commands.join("\n"),
       confirmLabel: "Delete branches",
       onConfirm: () => commands.forEach((command) => emit(command)),
@@ -1620,6 +1633,12 @@ export default function App() {
       body = `${name} is not contained in ${trunk}${ahead > 0 ? `: it is ${ahead} ${ahead === 1 ? "commit" : "commits"} ahead of it` : ""}. -d would refuse, so this is -D, which deletes the branch whether or not anything else holds those commits. The output prints the commit it was at, and git reflog keeps it reachable for a while, but nothing here has checked that the work is anywhere else.`;
     }
 
+    const holder = branch?.worktree
+      ? repo.worktrees.find((w) => w.path === branch.worktree)
+      : undefined;
+    const release = holder ? releaseCommand(holder, shell) : null;
+    if (holder && release) return releaseConfirmation(name, holder, release, command, body);
+
     return {
       title: `Delete ${name}`,
       body,
@@ -1629,12 +1648,86 @@ export default function App() {
     };
   }
 
+  /**
+   * A branch another worktree has checked out, which git will not delete
+   * until that worktree lets go. Both commands are named, per the discard
+   * rule, and GitView's own shells in the worktree close first: Windows will
+   * not delete a folder a process is standing in.
+   *
+   * Measured on 24 Sep 2026: when something else holds the folder, Git for
+   * Windows asks "Should I try again? (y/n)" and waits, with the branch delete
+   * queued behind it at the prompt. A y after the holder lets go removes the
+   * worktree; an n prints Permission denied but has already dropped git's
+   * record, so the delete still goes through and only an empty folder stays.
+   */
+  function releaseConfirmation(
+    name: string,
+    holder: WorktreeSummary,
+    release: string,
+    command: string,
+    reason: string,
+  ): Confirmation {
+    const row = repos.find((r) => r.path.toLowerCase() === holder.path.toLowerCase());
+    const own = row ? sessionsFor(row.path) : [];
+    const busy = own.some((id) => isBusy(id) || isClaude(id));
+
+    const why = holder.prunable
+      ? `${name} is held by a worktree whose folder is already gone, at ${holder.path}. git still keeps a record of it and refuses the delete until git worktree prune clears that record.`
+      : `${name} is checked out in the worktree at ${holder.path}, and git refuses to delete a branch another checkout is on. git worktree remove takes the worktree away first. It refuses if the worktree has changes nobody committed, and then the delete refuses too.`;
+    const shells =
+      own.length === 0
+        ? ""
+        : busy
+          ? ` GitView has ${own.length === 1 ? "a shell" : `${own.length} shells`} open there with something still running in ${own.length === 1 ? "it" : "them"}, and ${own.length === 1 ? "it closes" : "they close"} first: whatever is running stops.`
+          : ` GitView's ${own.length === 1 ? "shell" : "shells"} there ${own.length === 1 ? "closes" : "close"} first, since Windows will not delete a folder a shell is standing in.`;
+    const outside = holder.prunable
+      ? ""
+      : isClaudeWorktree(holder.path)
+        ? " It is a Claude Code worktree. If that session is still open, git asks whether to try again: exit the session and answer y. An n drops the worktree anyway and leaves its empty folder behind."
+        : " If another program has a shell open in that folder, git asks whether to try again: close it and answer y. An n drops the worktree anyway and leaves its empty folder behind.";
+
+    return {
+      title: `Delete ${name}`,
+      body: `${why}${shells}${outside} ${reason}`,
+      command: `${release}\n${command}`,
+      confirmLabel: holder.prunable ? "Prune and delete" : "Remove worktree and delete",
+      onConfirm: async () => {
+        for (const id of own) {
+          await closeSession(id);
+          setLive((current) => {
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+        }
+        await emit(release, false);
+        await emit(command, false);
+      },
+    };
+  }
+
   const askDeleteBranch = useCallback(
     (name: string) => {
-      if (selected) setConfirmation(deleteBranchConfirmation(selected, name, squashed));
+      if (!selected) return;
+      // The main checkout, or a worktree somebody locked, has no command to
+      // offer: the one is switched off the branch in its own shell, the other
+      // was locked on purpose. Say where it is held rather than type a delete
+      // git will refuse.
+      const holder = selected.worktrees.find(
+        (w) => w.path === selected.branches.find((b) => b.name === name)?.worktree,
+      );
+      if (holder && !releaseCommand(holder, shell)) {
+        setNote(
+          holder.main
+            ? `${name} is checked out in the main checkout at ${holder.path}. Switch that checkout to another branch, then delete it.`
+            : `${name} is checked out in a locked worktree at ${holder.path}. git worktree unlock it first if it is finished with.`,
+        );
+        return;
+      }
+      setConfirmation(deleteBranchConfirmation(selected, name, squashed));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, squashed, shell],
+    [selected, squashed, shell, repos],
   );
 
   /**

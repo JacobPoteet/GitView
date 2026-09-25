@@ -31,6 +31,8 @@ export function repo(over: Partial<RepoState> = {}): RepoState {
     lastCommitAt: null,
     lastCommitSummary: null,
     isWorktree: false,
+    mainPath: null,
+    worktrees: [],
     operation: null,
     stashes: [],
     error: null,

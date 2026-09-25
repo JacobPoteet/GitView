@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fetchPlan, prunePlan, pruneSplit, pruneCommands, pullPlan } from "./batch";
 import { repo } from "./fixtures";
+import type { WorktreeSummary } from "./types";
 
 describe("pullPlan", () => {
   it("pulls a branch that is only behind", () => {
@@ -80,7 +81,63 @@ describe("pruneSplit", () => {
       squashed("main", { protected: true }),
       squashed("origin/old", { remote: true }),
     ]);
-    expect(split).toEqual({ merged: ["merged"], squashed: ["squashed"] });
+    expect(split).toEqual({ merged: ["merged"], squashed: ["squashed"], held: [], stale: [] });
     expect(pruneCommands(split)).toEqual(["git branch -d merged", "git branch -D squashed"]);
+  });
+
+  it("lists a branch a worktree holds apart, and prunes a gone worktree's record first", () => {
+    const worktree = (path: string, over: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
+      path,
+      branch: null,
+      main: false,
+      prunable: false,
+      locked: false,
+      ...over,
+    });
+    const branch = (name: string, merged: boolean, worktree: string | null) => ({
+      name,
+      ahead: 0,
+      behind: 0,
+      isHead: false,
+      merged,
+      lastCommitAt: null,
+      tip: null,
+      upstream: null,
+      aheadOfUpstream: 0,
+      worktree,
+    });
+    const state = repo({
+      mergedBranches: ["free"],
+      branches: [
+        branch("free", true, null),
+        branch("live", true, "F:\\wt\\live"),
+        branch("gone", true, "F:\\wt\\gone"),
+        branch("pinned", true, "F:\\wt\\pinned"),
+        branch("squash-live", false, "F:\\wt\\live2"),
+      ],
+      worktrees: [
+        worktree("F:\\wt\\live", { branch: "live" }),
+        worktree("F:\\wt\\gone", { branch: "gone", prunable: true }),
+        worktree("F:\\wt\\pinned", { branch: "pinned", prunable: true, locked: true }),
+        worktree("F:\\wt\\live2", { branch: "squash-live" }),
+      ],
+    });
+    const split = pruneSplit(state, [squashed("squash-live")]);
+    expect(split).toEqual({
+      merged: ["free", "gone"],
+      squashed: [],
+      held: [
+        { branch: "live", path: "F:\\wt\\live" },
+        { branch: "pinned", path: "F:\\wt\\pinned" },
+        { branch: "squash-live", path: "F:\\wt\\live2" },
+      ],
+      stale: ["F:\\wt\\gone"],
+    });
+    expect(pruneCommands(split)).toEqual(["git worktree prune", "git branch -d free gone"]);
+    // The fleet-wide prune never prunes a worktree record out of sight.
+    expect(prunePlan(state)).toEqual({
+      args: ["branch", "-d", "free"],
+      command: "git branch -d free",
+    });
   });
 });

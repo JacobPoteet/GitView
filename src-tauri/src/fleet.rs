@@ -44,6 +44,35 @@ pub struct BranchSummary {
     /// measure for that case is `ahead`, against the default branch.
     #[serde(default)]
     pub ahead_of_upstream: usize,
+    /// Another checkout of this repository that has the branch checked out,
+    /// by its path. git refuses to delete or switch to a branch while one
+    /// does, so the scanner leaves it out of `merged_branches` and the menu
+    /// names the checkout rather than typing a command git will refuse.
+    #[serde(default)]
+    pub worktree: Option<String>,
+}
+
+/// Another checkout of the same repository: a linked worktree, or, read from
+/// a linked worktree's row, the main one.
+///
+/// Claude Code puts its worktrees under `.claude/worktrees/`, three folders
+/// below a watched folder, so they never become rows of their own. This list is
+/// how the repository they came from knows they exist at all.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeSummary {
+    /// Where it is checked out, with the platform's separators.
+    pub path: String,
+    /// The branch it holds. None when its HEAD is detached.
+    pub branch: Option<String>,
+    /// The main checkout rather than a linked worktree. It cannot be removed,
+    /// only switched to another branch.
+    pub main: bool,
+    /// git still records it but the folder is gone. `git worktree prune`
+    /// clears the record, and until then git still counts the branch as held.
+    pub prunable: bool,
+    /// `git worktree lock`ed: remove and prune both leave it alone.
+    pub locked: bool,
 }
 
 /// One tag, and the commit it marks.
@@ -131,6 +160,12 @@ pub struct RepoState {
     pub last_commit_at: Option<i64>,
     pub last_commit_summary: Option<String>,
     pub is_worktree: bool,
+    /// For a linked worktree, the main checkout it belongs to.
+    #[serde(default)]
+    pub main_path: Option<String>,
+    /// Every other checkout of this repository, never this one.
+    #[serde(default)]
+    pub worktrees: Vec<WorktreeSummary>,
     /// A rebase, merge, cherry-pick, revert, bisect or am that git is paused
     /// in. None when it is not, which is nearly always.
     #[serde(default)]
@@ -172,6 +207,8 @@ impl RepoState {
             last_commit_at: None,
             last_commit_summary: None,
             is_worktree: false,
+            main_path: None,
+            worktrees: Vec::new(),
             operation: None,
             stashes: Vec::new(),
             error: None,
@@ -239,6 +276,7 @@ pub fn read_repo(path: &Path) -> RepoState {
     read_status(&repo, &mut state);
     read_remote(&repo, &mut state);
     state.default_branch = default_branch(&repo);
+    read_worktrees(&repo, &mut state);
     read_branches(&repo, &mut state);
     read_tags(&repo, &mut state);
     state.operation = read_operation(&repo);
@@ -516,6 +554,102 @@ fn default_branch(repo: &Repository) -> Option<String> {
     None
 }
 
+/// Every other checkout of this repository, and the branch each one holds.
+///
+/// Each HEAD is read as a file from the common git dir rather than by opening
+/// the checkout: a worktree whose folder was deleted still has its HEAD there,
+/// and git still refuses to delete the branch it names, so that is the case
+/// that most needs reading and the one opening the folder would miss.
+fn read_worktrees(repo: &Repository, state: &mut RepoState) {
+    // git2 0.19 has no `commondir()`. A linked worktree's git dir is always
+    // `<common>/worktrees/<id>/`, and the main checkout's is the common one.
+    let common = if repo.is_worktree() {
+        match repo.path().parent().and_then(Path::parent) {
+            Some(common) => common.to_path_buf(),
+            None => return,
+        }
+    } else {
+        repo.path().to_path_buf()
+    };
+    let here = Path::new(&state.path);
+
+    // From a linked worktree, `worktrees()` lists its siblings and leaves the
+    // main checkout out. A bare repository has no main checkout to list.
+    if repo.is_worktree() && common.file_name().is_some_and(|n| n == ".git") {
+        if let Some(main) = common.parent() {
+            let path = native(main);
+            state.main_path = Some(path.clone());
+            state.worktrees.push(WorktreeSummary {
+                path,
+                branch: head_branch(&common.join("HEAD")),
+                main: true,
+                prunable: false,
+                locked: false,
+            });
+        }
+    }
+
+    let Ok(names) = repo.worktrees() else {
+        return;
+    };
+    for name in names.iter().flatten() {
+        let Ok(worktree) = repo.find_worktree(name) else {
+            continue;
+        };
+        if same_path(worktree.path(), here) {
+            continue;
+        }
+        state.worktrees.push(WorktreeSummary {
+            path: native(worktree.path()),
+            branch: head_branch(&common.join("worktrees").join(name).join("HEAD")),
+            main: false,
+            prunable: worktree.validate().is_err(),
+            locked: matches!(
+                worktree.is_locked(),
+                Ok(git2::WorktreeLockStatus::Locked(_))
+            ),
+        });
+    }
+}
+
+/// The branch a HEAD file points at, or None when it is detached.
+fn head_branch(head: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(head).ok()?;
+    text.trim()
+        .strip_prefix("ref: refs/heads/")
+        .map(str::to_string)
+}
+
+/// A path as the rest of the app spells it. git records worktree paths with
+/// forward slashes on Windows, and the sidebar's rows, the sessions keyed on
+/// them and the command typed at a prompt all use the platform's own.
+fn native(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    let text = text.trim_end_matches(['/', '\\']);
+    if cfg!(windows) {
+        text.replace('/', "\\")
+    } else {
+        text.to_string()
+    }
+}
+
+/// Whether two paths name one folder. git records a worktree's long path,
+/// and the row may have been reached through an 8.3 short name, a junction or
+/// a `subst` drive: CI's temp folder is `RUNNER~1`, and a plain comparison
+/// there listed a worktree as its own sibling. A folder that is gone cannot
+/// be resolved, so it falls back to comparing the text.
+fn same_path(a: &Path, b: &Path) -> bool {
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        return a == b;
+    }
+    let (a, b) = (native(a), native(b));
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(&b)
+    } else {
+        a == b
+    }
+}
+
 fn short_ref(reference: &str) -> &str {
     reference.rsplit('/').next().unwrap_or(reference)
 }
@@ -597,7 +731,14 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
         // Never propose deleting the branch you are standing on or the default.
         let protected = Some(&name) == state.default_branch.as_ref() || is_head;
         let merged = !protected && default_tip.is_some() && tip.is_some() && ahead == 0;
-        if merged {
+        // Another checkout holding it makes `git branch -d` refuse it, and one
+        // refusal fails a whole prune. `merged` still says it is contained.
+        let worktree = state
+            .worktrees
+            .iter()
+            .find(|w| w.branch.as_ref() == Some(&name))
+            .map(|w| w.path.clone());
+        if merged && worktree.is_none() {
             state.merged_branches.push(name.clone());
         }
 
@@ -616,6 +757,7 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
             tip: tip.map(|oid| oid.to_string()),
             upstream: upstream_name,
             ahead_of_upstream,
+            worktree,
         });
     }
 
@@ -906,6 +1048,72 @@ mod tests {
         assert_eq!(by_name("tracked").ahead_of_upstream, 1);
         assert_eq!(by_name("local").upstream, None);
         assert_eq!(by_name("local").ahead, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_branch_another_worktree_holds_is_never_offered_for_deletion() {
+        let dir = std::env::temp_dir().join(format!("gitview-wt-{}", std::process::id()));
+        let work = dir.join("work");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&work).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .expect("git.exe");
+        };
+        git(&work, &["init", "-q", "-b", "main"]);
+        git(&work, &["config", "user.email", "t@t"]);
+        git(&work, &["config", "user.name", "t"]);
+        git(&work, &["config", "commit.gpgsign", "false"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "base"]);
+        // Three branches the trunk contains: one free, one a live worktree
+        // holds, and one held by a worktree whose folder has since gone.
+        git(&work, &["branch", "done"]);
+        git(&work, &["worktree", "add", "-q", "../held", "-b", "held"]);
+        git(&work, &["worktree", "add", "-q", "../gone", "-b", "gone"]);
+        std::fs::remove_dir_all(dir.join("gone")).unwrap();
+
+        let state = read_repo(&work);
+        assert_eq!(state.merged_branches, vec!["done".to_string()]);
+        assert_eq!(state.main_path, None);
+        let by_name = |n: &str| state.branches.iter().find(|b| b.name == n).unwrap();
+        assert!(by_name("held").merged);
+        assert!(by_name("held")
+            .worktree
+            .as_deref()
+            .unwrap()
+            .ends_with("held"));
+        let held = state
+            .worktrees
+            .iter()
+            .find(|w| w.branch.as_deref() == Some("held"))
+            .unwrap();
+        assert!(!held.prunable && !held.main);
+        let gone = state
+            .worktrees
+            .iter()
+            .find(|w| w.branch.as_deref() == Some("gone"))
+            .unwrap();
+        assert!(gone.prunable);
+        assert_eq!(
+            by_name("gone").worktree.as_deref(),
+            Some(gone.path.as_str())
+        );
+
+        // From the linked worktree's own row: the main checkout is listed and
+        // named, and the worktree does not list itself.
+        let linked = read_repo(&dir.join("held"));
+        assert!(linked.is_worktree);
+        assert!(linked.main_path.as_deref().unwrap().ends_with("work"));
+        let main = linked.worktrees.iter().find(|w| w.main).unwrap();
+        assert_eq!(main.branch.as_deref(), Some("main"));
+        assert!(!linked
+            .worktrees
+            .iter()
+            .any(|w| w.branch.as_deref() == Some("held")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

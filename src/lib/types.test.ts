@@ -42,6 +42,7 @@ describe("unpushed", () => {
     tip: null,
     upstream: null,
     aheadOfUpstream: 0,
+    worktree: null,
     ...over,
   });
 
