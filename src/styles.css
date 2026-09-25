@@ -762,6 +762,14 @@ select:focus-visible,
   height: auto;
 }
 
+/* The inbox is the other way up: the shell keeps most of the column. The inbox
+   is a list you scan and act on, and what it types lands in the shell, so the
+   old two thirds for eight rows pushed the output of every merge into a strip
+   at the bottom (#145). The list scrolls in what is left. */
+.main.split.inbox > .terminal-pane:not(.closed) {
+  height: clamp(132px, 60%, 100%);
+}
+
 .repo-head {
   display: flex;
   align-items: center;

@@ -2388,7 +2388,7 @@ ${landing} ${cleanup}${warning}${closing}`,
         />
       </div>
 
-      <main className={`main${pane ? " split" : ""}`}>
+      <main className={`main${pane ? " split" : ""}${inboxOpen ? " inbox" : ""}`}>
         {selected ? (
           <>
             <header className="repo-head">
