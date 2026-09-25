@@ -741,6 +741,14 @@ pub fn run() {
                 cache: Arc::new(cache),
                 pty: Arc::new(PtyManager::default()),
             });
+            // The installed app is open whenever a dev build is, and both were
+            // called GitView in the title bar and the taskbar. The same switch
+            // that lets a dev build honour `GITVIEW_DATA_DIR` names it here.
+            if cfg!(debug_assertions) {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_title("GitView (Dev)")?;
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

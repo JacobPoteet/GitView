@@ -10,6 +10,7 @@ import {
   type RepoPref,
   type RepoState,
 } from "../lib/types";
+import { agentLabel, type AgentState } from "../lib/agent";
 
 /** What the inbox knows about one repository, merged in the way prefs are. */
 export interface RepoGithub {
@@ -28,6 +29,8 @@ interface Props {
   onOpenInbox: (() => void) | null;
   selectedPath: string | null;
   liveSessions: Set<string>;
+  /** What Claude is doing in a repository's shells, when it is doing anything. */
+  agents: Map<string, AgentState>;
   query: string;
   scanning: boolean;
   /** A refresh is in flight: the sweep, the inbox read, or both. */
@@ -101,6 +104,20 @@ function HideIcon({ hidden }: { hidden: boolean }) {
       />
       <path d="M2 2l12 12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
+  );
+}
+
+/**
+ * Claude in this repository: a ring that turns while it works, then a word
+ * once it wants you. The ring asks nothing, so it carries no word; a question
+ * and a finished turn both do, since either is a reason to open the tab.
+ */
+function Agent({ state }: { state: AgentState }) {
+  const label = agentLabel(state);
+  return (
+    <span className={`agent ${state}`} title={label} role="img" aria-label={label}>
+      {state === "waiting" ? "input" : state === "done" ? "done" : null}
+    </span>
   );
 }
 
@@ -232,6 +249,7 @@ function Row({
   repo,
   selected,
   live,
+  agent,
   pinned,
   hidden,
   github,
@@ -252,6 +270,7 @@ function Row({
   repo: RepoState;
   selected: boolean;
   live: boolean;
+  agent: AgentState | null;
   pinned: boolean;
   hidden: boolean;
   github?: RepoGithub;
@@ -334,6 +353,7 @@ on ${repo.branch}` : repo.path}
         <span className="repo-row-top">
           <span className={`dot ${state}`} />
           <span className="repo-name">{repo.name}</span>
+          {agent && <Agent state={agent} />}
           <Chips repo={repo} github={github} />
         </span>
         {!home && (
@@ -456,6 +476,7 @@ export default function FleetSidebar({
   prefs,
   selectedPath,
   liveSessions,
+  agents,
   query,
   scanning,
   refreshing,
@@ -522,6 +543,7 @@ export default function FleetSidebar({
       repo={repo}
       selected={repo.path === selectedPath}
       live={liveSessions.has(repo.path)}
+      agent={agents.get(repo.path) ?? null}
       pinned={prefs.get(repo.path)?.pinnedAt != null}
       hidden={prefs.get(repo.path)?.hidden === true}
       github={github.get(repo.path)}

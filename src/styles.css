@@ -664,6 +664,39 @@ select:focus-visible,
   color: var(--text-faint);
 }
 
+/* Claude in a repository's shells, beside its name. Work is a turning ring in
+   the accent, since it asks nothing; a question is amber, which already means
+   a repository wants you; a finished turn is green until its tab is opened.
+   A word rather than a mono count: nothing here is typed at a prompt. */
+.agent {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-micro);
+  line-height: 1;
+}
+.agent.running {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent-line);
+  border-top-color: var(--accent);
+  border-radius: 99px;
+  animation: spin 0.9s linear infinite;
+}
+.agent.waiting,
+.agent.done {
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.agent.waiting {
+  color: var(--amber);
+  background: color-mix(in oklch, var(--amber) 14%, transparent);
+}
+.agent.done {
+  color: var(--green);
+  background: color-mix(in oklch, var(--green) 14%, transparent);
+}
+
 .dot {
   width: 6px;
   height: 6px;
@@ -4350,6 +4383,10 @@ button.inbox-check-name.link:hover {
   }
   /* The refresh button stops turning; its accent colour still says busy. */
   .icon-btn.busy svg {
+    animation: none;
+  }
+  /* So does Claude's ring; the accent arc on it still says working. */
+  .agent.running {
     animation: none;
   }
   /* The merge button stops pulsing; "Merging…" and the fill still say busy. */

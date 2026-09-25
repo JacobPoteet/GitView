@@ -13,6 +13,7 @@ import type { CommandBlock, StoredBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
 import { isClaimed } from "../lib/keys";
 import { claudeId, isClaude, nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
+import { asksForInput, settle, titleActivity, type AgentState } from "../lib/agent";
 
 /**
  * Sessions live in this module rather than in component state, so switching to
@@ -59,6 +60,12 @@ interface Session {
 
   onSettled: ((repoPath: string) => void) | null;
   settleTimer: number | undefined;
+
+  /** The window title the shell or the program in it last set, through OSC 0 or 2. */
+  title: string;
+  /** What an agent in this shell is doing, from `title` and the screen. See `lib/agent.ts`. */
+  agent: AgentState | null;
+  agentTimer: number | undefined;
 }
 
 const sessions = new Map<string, Session>();
@@ -350,6 +357,9 @@ function beginBlock(session: Session) {
 function endBlock(session: Session, payload: string) {
   const block = session.running;
   session.running = null;
+  // The prompt is back, so whatever set the title has exited, even one that
+  // left its last title behind.
+  setAgent(session, null);
   if (!block) return;
   const code = Number.parseInt(payload, 10);
   block.exitCode = Number.isNaN(code) ? 0 : code;
@@ -555,6 +565,9 @@ function getSession(id: string): Session {
     snapshot: [],
     onSettled: null,
     settleTimer: undefined,
+    title: "",
+    agent: null,
+    agentTimer: undefined,
   };
 
   // Registering the handler on the parser rather than scanning the raw chunk
@@ -563,6 +576,11 @@ function getSession(id: string): Session {
   term.parser.registerOscHandler(133, (data) => {
     handleMark(session, data);
     return true;
+  });
+
+  term.onTitleChange((title) => {
+    session.title = title;
+    readAgent(session);
   });
 
   sessions.set(id, session);
@@ -577,6 +595,9 @@ function receive(session: Session, chunk: string) {
   window.clearTimeout(session.settleTimer);
   session.settleTimer = window.setTimeout(() => {
     session.onSettled?.(session.id);
+    // A question drawn after the title settled, or one answered without the
+    // title moving, only shows up on the screen.
+    if (session.agent) readAgent(session);
     // A dev server announces its port on the way up and then goes quiet, so the
     // moment the output settles is the moment the port is worth reading.
     if (session.running) notify(session);
@@ -983,7 +1004,11 @@ export default function TerminalPane({
     });
     observer.observe(container);
 
+    onScreen = sessionId;
+    seen(sessionId);
+
     return () => {
+      if (onScreen === sessionId) onScreen = null;
       onData.dispose();
       observer.disconnect();
       heldFits.delete(refit);
@@ -1185,6 +1210,87 @@ export function isBusy(id: string): boolean {
   return sessions.get(id)?.running != null;
 }
 
+// ------------------------------------------------------------ agents
+
+/**
+ * The session on screen, while the window has focus. A turn that finishes in
+ * front of you is not news, so it never reads as done.
+ */
+let onScreen: string | null = null;
+
+function viewed(id: string): boolean {
+  return onScreen === id && document.hasFocus();
+}
+
+/** Every session's agent state, rebuilt on a change so React compares by reference. */
+let agentSnapshot = new Map<string, AgentState>();
+const agentListeners = new Set<() => void>();
+
+function publishAgents() {
+  const next = new Map<string, AgentState>();
+  for (const [id, session] of sessions) if (session.agent) next.set(id, session.agent);
+  agentSnapshot = next;
+  for (const listener of agentListeners) listener();
+}
+
+function setAgent(session: Session, state: AgentState | null) {
+  const next = state === "done" && viewed(session.id) ? null : state;
+  if (next === session.agent) return;
+  session.agent = next;
+  publishAgents();
+}
+
+/** The bottom of the screen, where Claude draws a question's footer. */
+function screenRows(session: Session): string[] {
+  const buffer = session.term.buffer.active;
+  const rows: string[] = [];
+  for (let y = 0; y < session.term.rows; y += 1) {
+    rows.push(buffer.getLine(buffer.baseY + y)?.translateToString(true) ?? "");
+  }
+  while (rows.length > 0 && rows[rows.length - 1].trim() === "") rows.pop();
+  return rows;
+}
+
+/**
+ * Reads the title into a state. Work shows at once. Idle waits a moment, so
+ * the screen has been drawn before it is asked whether a question is on it.
+ */
+function readAgent(session: Session) {
+  window.clearTimeout(session.agentTimer);
+  const activity = titleActivity(session.title);
+  if (activity !== "idle") {
+    setAgent(session, settle(session.agent, activity, false));
+    return;
+  }
+  session.agentTimer = window.setTimeout(() => {
+    if (titleActivity(session.title) !== "idle") return;
+    setAgent(session, settle(session.agent, "idle", asksForInput(screenRows(session))));
+  }, 200);
+}
+
+/** Marks a session as looked at, which is what clears a finished turn. */
+function seen(id: string | null) {
+  const session = id ? sessions.get(id) : undefined;
+  if (session?.agent === "done" && document.hasFocus()) {
+    session.agent = null;
+    publishAgents();
+  }
+}
+
+window.addEventListener("focus", () => seen(onScreen));
+
+/** What each session's agent is doing, keyed by session id. Only sessions with one. */
+export function agentStates(): Map<string, AgentState> {
+  return agentSnapshot;
+}
+
+export function subscribeAgents(listener: () => void): () => void {
+  agentListeners.add(listener);
+  return () => {
+    agentListeners.delete(listener);
+  };
+}
+
 export function focusSession(repoPath: string): boolean {
   const session = sessions.get(repoPath);
   if (!session) return false;
@@ -1220,7 +1326,9 @@ export async function closeSession(repoPath: string) {
   session.running = null;
   session.snapshot = [];
   for (const listener of session.listeners) listener(session.snapshot);
+  window.clearTimeout(session.agentTimer);
   session.term.dispose();
   session.host.remove();
   sessions.delete(repoPath);
+  if (session.agent) publishAgents();
 }
