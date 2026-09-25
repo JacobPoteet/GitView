@@ -186,6 +186,39 @@ select:focus-visible,
   right: calc(var(--changes-w) - 3px);
 }
 
+/* The changes column put away for a narrow window, and its slide. The slide
+   is a transform over a grid that has not changed yet, so the terminal sees
+   one resize when the column has gone rather than one per frame; `--changes-w`
+   is left alone, so it comes back at the width it went. The pane stays
+   mounted through `display: none`, which keeps a half-written commit
+   message. CHANGES_SLIDE_MS in App.tsx has to match the 200 ms. */
+.app.changes-hidden {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0;
+}
+.app.changes-hidden > .changes-pane,
+.app.changes-hidden > .splitter.changes {
+  display: none;
+}
+.app.changes-out > .changes-pane {
+  animation: changes-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.app.changes-in > .changes-pane {
+  animation: changes-in 200ms var(--ease);
+}
+.app:is(.changes-out, .changes-in) > .splitter.changes {
+  display: none;
+}
+@keyframes changes-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes changes-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
 .status-bar {
   grid-area: status;
   display: flex;
@@ -4371,6 +4404,32 @@ button.inbox-check-name.link:hover {
 
 .status-bar .sync-all:disabled {
   color: var(--text-faint);
+}
+
+.status-bar .changes-toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-faint);
+}
+
+.status-bar .changes-toggle:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.changes-toggle .changes-toggle-fill {
+  fill: none;
+}
+
+.changes-toggle.on .changes-toggle-fill {
+  fill: currentColor;
 }
 
 .status-bar .sync-all.busy {

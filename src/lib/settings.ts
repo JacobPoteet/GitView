@@ -48,6 +48,8 @@ export interface Settings {
     sidebar: number;
     /** The changes column's width in pixels. */
     changes: number;
+    /** The changes column slid away, for a narrow window. Its width is kept for when it returns. */
+    changesHidden: boolean;
   };
   inbox: {
     /** Rows grouped by repository, or by what each one needs. */
@@ -91,7 +93,7 @@ export const DEFAULTS: Settings = {
   terminal: { fontSize: 12.5, screenReader: false, restoreScrollback: true },
   launch: { fetch: true, checkUpdate: true },
   graph: { collapsed: false },
-  layout: { sidebar: 296, changes: 300 },
+  layout: { sidebar: 296, changes: 300, changesHidden: false },
   inbox: { mode: "repo", collapsed: [] },
   github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
   ai: { claudeTab: false },
@@ -228,6 +230,7 @@ function read(): Settings {
   const layout = settings.layout;
   layout.sidebar = pixels(layout.sidebar, SIDEBAR_MIN, SIDEBAR_MAX, DEFAULTS.layout.sidebar);
   layout.changes = pixels(layout.changes, CHANGES_MIN, CHANGES_MAX, DEFAULTS.layout.changes);
+  layout.changesHidden = layout.changesHidden === true;
   const gh = settings.github;
   gh.busyMinutes = minutes(gh.busyMinutes, DEFAULTS.github.busyMinutes);
   gh.idleMinutes = minutes(gh.idleMinutes, DEFAULTS.github.idleMinutes);
