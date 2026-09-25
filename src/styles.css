@@ -186,37 +186,31 @@ select:focus-visible,
   right: calc(var(--changes-w) - 3px);
 }
 
-/* The changes column put away for a narrow window, and its slide. The slide
-   is a transform over a grid that has not changed yet, so the terminal sees
-   one resize when the column has gone rather than one per frame; `--changes-w`
-   is left alone, so it comes back at the width it went. The pane stays
-   mounted through `display: none`, which keeps a half-written commit
-   message. CHANGES_SLIDE_MS in App.tsx has to match the 200 ms. */
-.app.changes-hidden {
+/* The changes column put away for a narrow window, and its slide. The track
+   animates, so the main column grows into the room as the column leaves; the
+   pane keeps its own width and the shrinking track pushes it off the edge
+   rather than squeezing it. The terminal holds its size for the slide, see
+   `holdFit`, and its host clips it while it is wider than the host. Only the
+   slide carries the transition: a splitter drag writes `--changes-w` on every
+   move and has to land at once. `--changes-w` is left alone, so the column
+   comes back at the width it went. The pane stays mounted through
+   `display: none`, which keeps a half-written commit message.
+   CHANGES_SLIDE_MS in App.tsx has to match the 200 ms. */
+.app:is(.changes-hidden, .changes-out) {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0;
 }
+.app:is(.changes-out, .changes-in) {
+  transition: grid-template-columns 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app:is(.changes-out, .changes-in) > .changes-pane {
+  width: var(--changes-w);
+}
+.app:is(.changes-out, .changes-in) .terminal-host {
+  overflow: hidden;
+}
 .app.changes-hidden > .changes-pane,
-.app.changes-hidden > .splitter.changes {
+.app:is(.changes-hidden, .changes-out, .changes-in) > .splitter.changes {
   display: none;
-}
-.app.changes-out > .changes-pane {
-  animation: changes-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-.app.changes-in > .changes-pane {
-  animation: changes-in 200ms var(--ease);
-}
-.app:is(.changes-out, .changes-in) > .splitter.changes {
-  display: none;
-}
-@keyframes changes-out {
-  to {
-    transform: translateX(100%);
-  }
-}
-@keyframes changes-in {
-  from {
-    transform: translateX(100%);
-  }
 }
 
 .status-bar {

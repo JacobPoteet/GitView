@@ -969,19 +969,24 @@ export default function TerminalPane({
       api.ptyWrite(sessionId, data).catch(() => undefined);
     });
 
-    const observer = new ResizeObserver(() => {
+    const refit = () => {
       try {
         session.fit.fit();
         api.ptyResize(sessionId, session.term.cols, session.term.rows).catch(() => undefined);
       } catch {
         // The pane can be measured mid-transition, where fit throws. Harmless.
       }
+    };
+    const observer = new ResizeObserver(() => {
+      if (fitHeld) heldFits.add(refit);
+      else refit();
     });
     observer.observe(container);
 
     return () => {
       onData.dispose();
       observer.disconnect();
+      heldFits.delete(refit);
       // The session stays open on purpose, and so does its output channel:
       // closing here would kill the dev server every time the user looked at
       // another project, and detaching the channel would lose what it printed
@@ -1145,6 +1150,24 @@ export function widthForColumns(cols: number): number | null {
     }
   }
   return null;
+}
+
+/**
+ * Refits held back while a column slides. The grid animates the main column's
+ * width, and refitting on every frame of that would resize the PTY a dozen
+ * times, each of which ConPTY answers with a repaint that can duplicate a
+ * line. Held, the terminal keeps its size while its host grows or clips it,
+ * and each shell is refitted once when the slide ends.
+ */
+let fitHeld = false;
+const heldFits = new Set<() => void>();
+
+export function holdFit(held: boolean) {
+  fitHeld = held;
+  if (held) return;
+  const fits = [...heldFits];
+  heldFits.clear();
+  for (const fit of fits) fit();
 }
 
 /** Every session id a repository has, first to last. */

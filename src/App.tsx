@@ -7,6 +7,7 @@ import TerminalPane, {
   isBusy,
   sessionsFor,
   getBlocks,
+  holdFit,
   revealBlock,
   sendCommand,
   subscribeBlocks,
@@ -232,11 +233,11 @@ export default function App() {
   const graphCollapsed = useSetting((s) => s.graph.collapsed);
   const claudeTab = useSetting((s) => s.ai.claudeTab);
   /**
-   * The changes column, slid away for a narrow window. It slides over its own
-   * edge first and the grid hands its width to the main column once it has
-   * gone; on the way back the grid makes room first and the column slides into
-   * it. Either way the terminal is resized once, not on every frame, because
-   * ConPTY repaints on a resize and can duplicate a line doing it.
+   * The changes column, slid away for a narrow window. The grid animates the
+   * column's track, so the main column grows as the changes column leaves,
+   * while the pane keeps its width and is pushed off the edge rather than
+   * squeezed. The terminal holds its size for the slide and refits once at
+   * the end, because ConPTY repaints on a resize and can duplicate a line.
    */
   const changesHidden = useSetting((s) => s.layout.changesHidden);
   const [changesSlide, setChangesSlide] = useState<"in" | "out" | null>(null);
@@ -244,12 +245,14 @@ export default function App() {
   const setChangesShown = useCallback((shown: boolean) => {
     if (sliding.current || settings().layout.changesHidden !== shown) return;
     sliding.current = true;
+    holdFit(true);
     if (shown) updateSettings("layout", { changesHidden: false });
     setChangesSlide(shown ? "in" : "out");
     window.setTimeout(() => {
       if (!shown) updateSettings("layout", { changesHidden: true });
       setChangesSlide(null);
       sliding.current = false;
+      holdFit(false);
     }, CHANGES_SLIDE_MS);
   }, []);
   const [roots, setRoots] = useState<string[]>([]);
