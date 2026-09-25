@@ -436,27 +436,9 @@ select:focus-visible,
   padding: 7px 8px;
 }
 
-.row-actions {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  display: none;
-  gap: 2px;
-  padding-left: 14px;
-  /* The controls land on top of the chips, so the fade keeps the row from
-     looking like two things stacked. */
-  background: linear-gradient(90deg, transparent, var(--bg-hover) 40%);
-}
-
-.repo-row-wrap:hover .row-actions,
-.repo-row-wrap:focus-within .row-actions {
-  display: flex;
-}
-
-.repo-row-wrap.selected .row-actions {
-  background: linear-gradient(90deg, transparent, var(--bg-active) 40%);
-}
-
+/* A task row's and a watched folder's hover control. The repository rows had
+   four of these until they covered the chips; theirs are on the right-click
+   menu now. */
 .row-action {
   display: grid;
   place-items: center;
@@ -470,24 +452,6 @@ select:focus-visible,
 .row-action:hover {
   color: var(--text);
   background: var(--bg-active);
-}
-
-.row-action.live:hover {
-  color: var(--red);
-}
-
-.row-action.on {
-  color: var(--accent);
-}
-
-/* The grip carries the drag, because Chromium will not start a parent's drag
-   from inside a button. Only pinned rows have one. */
-.row-action.grip {
-  cursor: grab;
-}
-
-.row-action.grip:active {
-  cursor: grabbing;
 }
 
 .repo-row-wrap.dragging {
@@ -587,18 +551,26 @@ select:focus-visible,
 .chips {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
   flex: none;
 }
 
+/* A drawn glyph, then the count one size up and one weight heavier. At 11 px
+   regular the digits were as thin as the arrows in front of them (#146). */
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   font-family: var(--font-mono);
-  font-size: var(--fs-meta);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+
+.chip-icon {
+  flex: none;
 }
 
 /* A chip that asks for something carries a tint of its own colour. Bare 10.5 px
@@ -760,6 +732,14 @@ select:focus-visible,
    button that reopens it and the pane above takes the rest. */
 .main.split > .terminal-pane.closed {
   height: auto;
+}
+
+/* The inbox is the other way up: the shell keeps most of the column. The inbox
+   is a list you scan and act on, and what it types lands in the shell, so the
+   old two thirds for eight rows pushed the output of every merge into a strip
+   at the bottom (#145). The list scrolls in what is left. */
+.main.split.inbox > .terminal-pane:not(.closed) {
+  height: clamp(132px, 60%, 100%);
 }
 
 .repo-head {

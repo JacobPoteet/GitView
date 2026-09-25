@@ -40,6 +40,7 @@ import ContextMenu, { isEditable, type MenuAt, type MenuEntry } from "./componen
 import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
+import ChipIcon from "./components/ChipIcon";
 import { itemKey, refKey, refLabel } from "./lib/inbox";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
@@ -2388,7 +2389,7 @@ ${landing} ${cleanup}${warning}${closing}`,
         />
       </div>
 
-      <main className={`main${pane ? " split" : ""}`}>
+      <main className={`main${pane ? " split" : ""}${inboxOpen ? " inbox" : ""}`}>
         {selected ? (
           <>
             <header className="repo-head">
@@ -2445,12 +2446,12 @@ gh pr view ${branchPr.number} --web`}
                 <span className="path head-stats">
                   {selected.ahead > 0 && (
                     <span className="chip ahead" title="commits ahead of upstream">
-                      ↑{selected.ahead}
+                      <ChipIcon kind="ahead" />{selected.ahead}
                     </span>
                   )}
                   {selected.behind > 0 && (
                     <span className="chip behind" title="commits behind upstream">
-                      ↓{selected.behind}
+                      <ChipIcon kind="behind" />{selected.behind}
                     </span>
                   )}
                   {dirty > 0 && (
@@ -2472,7 +2473,7 @@ gh pr view ${branchPr.number} --web`}
                         setStashMenu({ x: e.clientX, y: e.clientY });
                       }}
                     >
-                      ⧉{selected.stashes.length} {selected.stashes.length === 1 ? "stash" : "stashes"}
+                      <ChipIcon kind="stash" />{selected.stashes.length} {selected.stashes.length === 1 ? "stash" : "stashes"}
                     </button>
                   )}
                   {selected.lastCommitAt && <span>{relativeTime(selected.lastCommitAt)}</span>}
