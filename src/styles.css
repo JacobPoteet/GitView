@@ -4406,22 +4406,10 @@ button.inbox-check-name.link:hover {
   color: var(--text-faint);
 }
 
-.status-bar .changes-toggle {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 20px;
-  margin-right: -6px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-faint);
-}
-
-.status-bar .changes-toggle:hover {
-  background: var(--bg-raised);
-  color: var(--text);
+/* Square, and as tall as the header's text buttons beside it. */
+.btn.changes-toggle {
+  padding-inline: 6px;
+  align-self: stretch;
 }
 
 .changes-toggle .changes-toggle-fill {

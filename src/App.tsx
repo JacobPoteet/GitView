@@ -2387,6 +2387,21 @@ gh pr view ${branchPr.number} --web`}
                 >
                   Ctrl+K
                 </button>
+                {/* The top-right corner, over the column it moves, which is
+                    where a panel toggle sits in every editor that has one. */}
+                <button
+                  className={`btn changes-toggle${changesHidden ? "" : " on"}`}
+                  onClick={() => setChangesShown(changesHidden)}
+                  aria-label={changesHidden ? "Show the changes column" : "Hide the changes column"}
+                  aria-pressed={!changesHidden}
+                  title={`${changesHidden ? "Show" : "Hide"} the changes column (Ctrl+Alt+B)`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+                    <path className="changes-toggle-fill" d="M10 3.1h3.4a.6.6 0 0 1 .6.6v8.6a.6.6 0 0 1-.6.6H10z" />
+                    <path d="M10 2.5v11" stroke="currentColor" strokeWidth="1.2" />
+                  </svg>
+                </button>
               </div>
             </header>
 
@@ -2625,21 +2640,6 @@ gh pr view ${branchPr.number} --web`}
             Sync all
           </button>
         )}
-        {/* The corner a layout toggle sits in everywhere else, and the one
-            place that stays on screen whichever way the column is. */}
-        <button
-          className={`changes-toggle${changesHidden ? "" : " on"}`}
-          onClick={() => setChangesShown(changesHidden)}
-          aria-label={changesHidden ? "Show the changes column" : "Hide the changes column"}
-          aria-pressed={!changesHidden}
-          title={`${changesHidden ? "Show" : "Hide"} the changes column (Ctrl+Alt+B)`}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-            <path className="changes-toggle-fill" d="M10 3.1h3.4a.6.6 0 0 1 .6.6v8.6a.6.6 0 0 1-.6.6H10z" />
-            <path d="M10 2.5v11" stroke="currentColor" strokeWidth="1.2" />
-          </svg>
-        </button>
       </div>
 
       {paletteOpen && (
