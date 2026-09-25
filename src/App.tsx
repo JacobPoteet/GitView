@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
 import FleetSidebar, { drawnOrder, groupRepos } from "./components/FleetSidebar";
 import TerminalPane, {
   blockOutput,
@@ -12,7 +20,10 @@ import TerminalPane, {
   sendCommand,
   subscribeBlocks,
   widthForColumns,
+  agentStates,
+  subscribeAgents,
 } from "./components/TerminalPane";
+import { strongest, type AgentState } from "./lib/agent";
 import BlockBar from "./components/BlockBar";
 import Dialog from "./components/Dialog";
 import Splitter from "./components/Splitter";
@@ -290,6 +301,16 @@ export default function App() {
   const [live, setLive] = useState<Set<string>>(new Set());
   /** The repositories with any shell live, which is what the sidebar's dot means. */
   const livePaths = useMemo(() => new Set([...live].map(sessionRepo)), [live]);
+  /** What an agent is doing in each repository, the one that most wants you when there are several. */
+  const agentBySession = useSyncExternalStore(subscribeAgents, agentStates);
+  const agents = useMemo(() => {
+    const byRepo = new Map<string, AgentState>();
+    for (const [id, state] of agentBySession) {
+      const repo = sessionRepo(id);
+      byRepo.set(repo, strongest([byRepo.get(repo), state]) ?? state);
+    }
+    return byRepo;
+  }, [agentBySession]);
   /**
    * The tab on screen per repository, when it is not the first. A second
    * shell is opened for the command the first cannot take, so the choice has
@@ -2247,6 +2268,7 @@ ${landing} ${cleanup}${warning}${closing}`,
           onOpenInbox={info?.gh.version ? () => setInboxOpen(true) : null}
           selectedPath={selectedPath}
           liveSessions={livePaths}
+          agents={agents}
           query={query}
           scanning={scanning}
           refreshing={refreshing}
