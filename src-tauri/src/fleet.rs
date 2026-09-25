@@ -633,7 +633,15 @@ fn native(path: &Path) -> String {
     }
 }
 
+/// Whether two paths name one folder. git records a worktree's long path,
+/// and the row may have been reached through an 8.3 short name, a junction or
+/// a `subst` drive: CI's temp folder is `RUNNER~1`, and a plain comparison
+/// there listed a worktree as its own sibling. A folder that is gone cannot
+/// be resolved, so it falls back to comparing the text.
 fn same_path(a: &Path, b: &Path) -> bool {
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        return a == b;
+    }
     let (a, b) = (native(a), native(b));
     if cfg!(windows) {
         a.eq_ignore_ascii_case(&b)
