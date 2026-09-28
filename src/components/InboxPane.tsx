@@ -23,7 +23,7 @@ import {
   type Mode,
 } from "../lib/inbox";
 import { settings, updateSettings } from "../lib/settings";
-import type { ShellKind } from "../lib/shell";
+import { fixIssueCommand, type ShellKind } from "../lib/shell";
 import {
   relativeTime,
   type GhStatus,
@@ -235,6 +235,23 @@ function Row({
               onClick={() => onCommand(item.repoPath, checkout)}
             >
               Check out
+            </button>
+          )}
+          {!pr && (
+            <button
+              className="btn tiny"
+              aria-label={`Start an agent on #${item.number} in ${item.repoName}`}
+              title={`${fixIssueCommand(item.number, item.title, shell)}\n\nTyped into ${item.repoName}'s Claude tab, or a free shell there if that tab is off. Shift-click to type it without running it.`}
+              onClick={(event) =>
+                onCommand(
+                  item.repoPath,
+                  fixIssueCommand(item.number, item.title, shell),
+                  event.shiftKey,
+                  true,
+                )
+              }
+            >
+              Start Agent
             </button>
           )}
           <button

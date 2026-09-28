@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "../../lib/api";
-import { fixIssueCommand, issueCommentCommand, type ShellKind } from "../../lib/shell";
+import { issueCommentCommand, type ShellKind } from "../../lib/shell";
 import { itemKey } from "../../lib/inbox";
 import { relativeTime, type InboxItem, type IssueDetail } from "../../lib/types";
 import { Links } from "./Links";
@@ -154,20 +154,6 @@ export function IssueDesk({
         <span className="inbox-when">
           Ctrl+Enter comments. Hold shift to type it without running it.
         </span>
-        <button
-          className="btn tiny"
-          title={`${fixIssueCommand(item.number, item.title, shell)}\n\nTyped into ${item.repoName}'s Claude tab, or a free shell there if that tab is off. Shift-click to type it without running it.`}
-          onClick={(event) =>
-            onCommand(
-              item.repoPath,
-              fixIssueCommand(item.number, item.title, shell),
-              event.shiftKey,
-              true,
-            )
-          }
-        >
-          Fix with Claude
-        </button>
         <button
           className="btn tiny"
           title={`gh issue close ${item.number}\n\nTyped into ${item.repoName}'s shell.`}
