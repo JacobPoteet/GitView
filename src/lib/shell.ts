@@ -23,9 +23,19 @@ export function shellKind(shellPath: string | undefined): ShellKind {
   return name.startsWith("pwsh") || name.startsWith("powershell") ? "powershell" : "posix";
 }
 
-/** One argument, quoted so the shell hands git exactly the text given. */
+/**
+ * One argument, quoted so the shell hands git exactly the text given.
+ *
+ * PowerShell drops a zero-length argument on its way to a native command
+ * rather than passing it through, so `gh issue create --body ''` reaches gh as
+ * `--body` with nothing after it and gh refuses to run: `flag needs an
+ * argument: --body`. `'""'` survives, because the string PowerShell sees is
+ * two characters long, and Windows' own argv parsing collapses an
+ * unaccompanied `""` back to empty before gh reads it.
+ */
 export function quote(value: string, kind: ShellKind): string {
   if (kind === "powershell") {
+    if (value === "") return '\'""\'';
     // A single-quoted PowerShell string expands nothing at all. The only
     // character with meaning inside one is the quote itself, which doubles.
     return `'${value.replace(/'/g, "''")}'`;

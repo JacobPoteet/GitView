@@ -27,8 +27,11 @@ describe("quote", () => {
   });
 
   it("gives an empty string two quotes rather than nothing", () => {
-    expect(quote("", "powershell")).toBe("''");
     expect(quote("", "posix")).toBe("''");
+  });
+
+  it("gives PowerShell '\"\"' for an empty string, since '' is a zero-length argument PowerShell drops before gh sees it", () => {
+    expect(quote("", "powershell")).toBe('\'""\'');
   });
 
   it("expands nothing: a dollar and a backtick come through as typed", () => {
