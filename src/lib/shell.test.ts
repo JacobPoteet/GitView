@@ -5,6 +5,7 @@ import {
   clonePath,
   commitCommand,
   discardCommands,
+  fixIssueCommand,
   isClaudeWorktree,
   quote,
   releaseCommand,
@@ -101,6 +102,20 @@ describe("tagCommand", () => {
   it("gives each paragraph its own -m", () => {
     expect(tagCommand("v1.0.0", "First\nrelease\n\nWith notes", "abc1234", "posix")).toBe(
       "git tag -a -m 'First release' -m 'With notes' 'v1.0.0' abc1234",
+    );
+  });
+});
+
+describe("fixIssueCommand", () => {
+  it("names the issue and points at gh issue view for the body, quoted as one argument", () => {
+    expect(fixIssueCommand(42, "Crash on launch", "powershell")).toBe(
+      "claude 'Fix issue #42: Crash on launch. Read it with gh issue view 42 for the full description and comments.'",
+    );
+  });
+
+  it("quotes a title with an apostrophe for the shell it is typed into", () => {
+    expect(fixIssueCommand(7, "Doesn't build", "posix")).toBe(
+      "claude 'Fix issue #7: Doesn'\\''t build. Read it with gh issue view 7 for the full description and comments.'",
     );
   });
 });

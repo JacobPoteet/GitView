@@ -52,8 +52,13 @@ interface Props {
   onClose: () => void;
   /** Selects the repository an item belongs to and closes the pane. */
   onSelect: (path: string) => void;
-  /** Types a command into that repository's shell, the way every action does. */
-  onCommand: (path: string, command: string, typeOnly?: boolean) => void;
+  /**
+   * Types a command into that repository's shell, the way every action does.
+   * `toClaude` asks for its Claude tab rather than the usual free shell, for
+   * the one button that starts Claude rather than typing a plain `gh` line;
+   * with the Claude tab setting off it falls back to the normal free shell.
+   */
+  onCommand: (path: string, command: string, typeOnly?: boolean, toClaude?: boolean) => void;
   /**
    * Merging asks first, the way discarding does: it is remote, and it deletes
    * a branch. The pane hands the dialog its title, what it is about to do and
@@ -161,7 +166,7 @@ function Row({
   shell: ShellKind;
   waiting: Props["waiting"];
   onToggle: () => void;
-  onCommand: (path: string, command: string, typeOnly?: boolean) => void;
+  onCommand: (path: string, command: string, typeOnly?: boolean, toClaude?: boolean) => void;
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
   onError: (message: string) => void;
   onMenu: (event: ReactMouseEvent, item: InboxItem) => void;
