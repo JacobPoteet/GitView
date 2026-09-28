@@ -792,6 +792,11 @@ export default function TerminalPane({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const menu = useContextMenu<null>();
+  // xterm handles mousedown ahead of React and clears the selection on a right
+  // click before the contextmenu event this menu builds from ever runs. A
+  // capture-phase listener on the button reads the selection first, so Copy
+  // still has something to act on.
+  const rightClickSelection = useRef("");
 
   /**
    * Search over the scrollback, in the tab bar. Opened by Ctrl+F with the
@@ -885,7 +890,7 @@ export default function TerminalPane({
    */
   function shellMenu(): MenuEntry[] {
     const session = sessionId ? sessions.get(sessionId) : undefined;
-    const selection = session?.term.getSelection() ?? "";
+    const selection = session?.term.getSelection() || rightClickSelection.current;
     return [
       {
         label: "Copy",
@@ -1144,6 +1149,10 @@ export default function TerminalPane({
       <div
         className="terminal-host"
         ref={containerRef}
+        onMouseDownCapture={(event) => {
+          if (event.button !== 2) return;
+          rightClickSelection.current = session?.term.getSelection() ?? "";
+        }}
         onContextMenu={(event) => menu.open(event, null)}
       />
       {menu.menu && (
