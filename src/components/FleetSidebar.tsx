@@ -242,6 +242,10 @@ function Row({
           ? (e) => {
               // Without this the drop is refused and the row springs back.
               e.preventDefault();
+              // Chromium falls back to the no-drop cursor for the whole drag
+              // unless dropEffect is set on every dragover, not just
+              // effectAllowed on dragstart.
+              e.dataTransfer.dropEffect = "move";
               onDragOver(repo.path);
             }
           : undefined
