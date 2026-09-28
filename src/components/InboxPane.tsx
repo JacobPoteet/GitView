@@ -240,7 +240,7 @@ function Row({
           {!pr && (
             <button
               className="btn tiny"
-              aria-label={`Fix #${item.number} with Claude in ${item.repoName}`}
+              aria-label={`Start an agent on #${item.number} in ${item.repoName}`}
               title={`${fixIssueCommand(item.number, item.title, shell)}\n\nTyped into ${item.repoName}'s Claude tab, or a free shell there if that tab is off. Shift-click to type it without running it.`}
               onClick={(event) =>
                 onCommand(
@@ -251,7 +251,7 @@ function Row({
                 )
               }
             >
-              Fix with Claude
+              Start Agent
             </button>
           )}
           <button
