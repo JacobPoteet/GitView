@@ -2112,6 +2112,11 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
   }, [inbox, selected]);
 
   const dirty = selected ? selected.staged + selected.modified : 0;
+  // Whether the changes column, hidden or not, has something in it. The toggle
+  // button uses this to mark itself when the panel it opens is out of sight.
+  const hasChanges = selected
+    ? selected.staged + selected.modified + selected.untracked + selected.conflicted > 0
+    : false;
   const hiddenCount = useMemo(
     () => repos.filter((r) => prefs.get(r.path)?.hidden).length,
     [repos, prefs],
@@ -2528,6 +2533,9 @@ gh pr view ${branchPr.number} --web`}
                     <path className="changes-toggle-fill" d="M10 3.1h3.4a.6.6 0 0 1 .6.6v8.6a.6.6 0 0 1-.6.6H10z" />
                     <path d="M10 2.5v11" stroke="currentColor" strokeWidth="1.2" />
                   </svg>
+                  {changesHidden && hasChanges && (
+                    <span className="changes-toggle-dot" aria-hidden />
+                  )}
                 </button>
               </div>
             </header>

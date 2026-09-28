@@ -4432,6 +4432,7 @@ button.inbox-check-name.link:hover {
 
 /* Square, and as tall as the header's text buttons beside it. */
 .btn.changes-toggle {
+  position: relative;
   padding-inline: 6px;
   align-self: stretch;
 }
@@ -4442,6 +4443,19 @@ button.inbox-check-name.link:hover {
 
 .changes-toggle.on .changes-toggle-fill {
   fill: currentColor;
+}
+
+/* The column is hidden and has something in it: the same amber a row uses to
+   ask for attention, on the corner of the button that would show it. */
+.changes-toggle-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--amber);
+  box-shadow: 0 0 0 2px var(--bg-raised);
 }
 
 .status-bar .sync-all.busy {
