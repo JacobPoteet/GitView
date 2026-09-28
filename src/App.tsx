@@ -63,7 +63,7 @@ import {
   useSetting,
 } from "./lib/settings";
 import { chordOf, repoChord } from "./lib/keys";
-import { isClaude, pickShell, sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
+import { claudeId, isClaude, pickShell, sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
@@ -2197,14 +2197,22 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         setInboxOpen(false);
         setInboxFocus(null);
       }}
-      onCommand={(path, command, typeOnly = false) => {
+      onCommand={(path, command, typeOnly = false, toClaude = false) => {
         // The command lands in that repository's shell, which means selecting
         // it first: a session belongs to a repository. The command waits for
         // that shell rather than for a timer. The pane stays up: the shell is
         // the third of the column under it, so the output is in view, and a
         // merge that closed the inbox left you reopening it to see the row go.
         setSelectedPath(path);
-        setPendingCommand({ path, command, typeOnly });
+        // "Fix with Claude" wants that repository's Claude tab, the same `to`
+        // a click on the tab itself sets. With the tab off there is none to
+        // send it to, so it falls back to the usual free-shell choice.
+        setPendingCommand({
+          path,
+          to: toClaude && claudeTab ? claudeId(path) : undefined,
+          command,
+          typeOnly,
+        });
         // Anything `gh` writes changes the next read. A line left at the
         // prompt has not been run, so it arms nothing.
         if (!typeOnly && command.startsWith("gh ")) armAfter(path, command);

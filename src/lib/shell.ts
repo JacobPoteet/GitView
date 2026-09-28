@@ -273,6 +273,21 @@ export function rerunCommand(runId: number): string {
 }
 
 /**
+ * Starting Claude on an issue, as one line.
+ *
+ * The prompt names the issue and its title and points at `gh issue view` for
+ * the rest, the same reason `issueCreateCommand` leans on a file rather than
+ * the prompt for a body: a body has paragraphs, and a newline typed at a
+ * prompt submits the line. Claude can read the body and the thread itself
+ * once it is running, so the line stays one `gh` call shorter than typing the
+ * whole issue out.
+ */
+export function fixIssueCommand(number: number, title: string, kind: ShellKind): string {
+  const prompt = `Fix issue #${number}: ${title}. Read it with gh issue view ${number} for the full description and comments.`;
+  return `claude ${quote(prompt, kind)}`;
+}
+
+/**
  * Opening a URL the shell just announced.
  *
  * A dev server prints its address and GitView notices; the browser still gets
