@@ -960,35 +960,40 @@ export default function App() {
         // A right-click menu closes itself on Escape too, and the pane it was
         // opened over stays. Read from the DOM for the same reason.
         if (document.querySelector(".row-menu")) return;
-        // The commit pane sits over the history it was opened from, so Escape
-        // peels it and leaves the history where it was. A second Escape closes
-        // everything, as before. Only when it is the thing on screen, though:
-        // the inbox and every dialog draw over it, and Escape there has to
-        // close what the eye is on rather than a pane it cannot see.
-        const covered =
-          inboxOpen ||
+        // Escape peels one layer, the one the eye is on, in the order they
+        // draw: a dialog, then the inbox, then a commit, then the history, then
+        // a diff. It used to close everything under a dialog or the inbox in
+        // the same press, so opening the inbox over a history and closing it
+        // took the history with it.
+        if (
           confirmation !== null ||
           settingsOpen !== null ||
           pendingTask !== null ||
           pendingTag !== null ||
           batchOpen ||
-          updateOpen ||
-          paletteOpen;
-        if (commitTarget && !covered) {
-          setCommitTarget(null);
+          updateOpen
+        ) {
+          setConfirmation(null);
+          setSettingsOpen(null);
+          setPendingTask(null);
+          setPendingTag(null);
+          // A batch that is still running keeps its dialog: closing it would hide
+          // the only place the commands it is about to run are reported.
+          setBatchOpen((open) => (open && batch?.running === true ? open : false));
+          setUpdateOpen(false);
           return;
         }
-        setConfirmation(null);
-        setSettingsOpen(null);
-        setPendingTask(null);
-        setPendingTag(null);
-        // A batch that is still running keeps its dialog: closing it would hide
-        // the only place the commands it is about to run are reported.
-        setBatchOpen((open) => (open && batch?.running === true ? open : false));
-        setInboxOpen(false);
-        setUpdateOpen(false);
-        setDiffTarget(null);
-        setHistoryOpen(false);
+        if (inboxOpen) {
+          setInboxOpen(false);
+          setInboxFocus(null);
+        } else if (commitTarget) {
+          setCommitTarget(null);
+        } else if (historyOpen) {
+          setHistoryOpen(false);
+          setHistorySeed(null);
+        } else {
+          setDiffTarget(null);
+        }
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -1014,6 +1019,7 @@ export default function App() {
     info?.gh.version,
     setBatchOpen,
     setInboxOpen,
+    setInboxFocus,
     setUpdateOpen,
     setChangesShown,
   ]);

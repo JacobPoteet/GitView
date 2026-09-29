@@ -30,7 +30,7 @@ export const SHORTCUTS: Shortcut[] = [
   { chord: "Ctrl+Alt+B", does: "Hide or show the changes column" },
   { chord: "Ctrl+F", does: "Search, in whichever surface has focus: the scrollback, the history, or the repositories" },
   { chord: "Ctrl+Enter", does: "Commit, from the subject or the description" },
-  { chord: "Escape", does: "Close what is on top, or leave the field" },
+  { chord: "Escape", does: "Close the layer on top, one per press, or leave the field" },
 ];
 
 /** The chords `App` acts on, as `chordOf` spells them. `Ctrl+Enter` belongs to the commit box. */
