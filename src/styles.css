@@ -846,9 +846,23 @@ select:focus-visible,
   border-color: var(--line-strong);
 }
 
-.btn:disabled {
-  opacity: 0.4;
+/* Disabled is a colour, not an opacity: 0.4 over a raised surface put the label
+   under 3:1, and dimming the whole button dimmed its border with it. The label
+   drops to the faint text and the accent gives way, so a disabled Push and a
+   disabled Sync read the same. */
+.btn:disabled,
+.btn.accent:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--text-faint);
   cursor: default;
+}
+
+/* A toggle that is on. Blame in the commit pane is the one so far. */
+.btn[aria-pressed="true"]:not(.changes-toggle) {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
 }
 
 .btn.accent {
@@ -959,16 +973,20 @@ select:focus-visible,
   flex: none;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  /* 24 in a 30px bar: a dismiss is the most-used target on a pane, and 20 was
+     small for one. The bar is unchanged. */
+  width: 24px;
+  height: 24px;
   border-radius: 5px;
   color: var(--text-faint);
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 
+/* Neutral, not red: red here means a failed command, and closing a pane is
+   not one. */
 .pane-close:hover {
   background: var(--bg-hover);
-  color: var(--red);
+  color: var(--text);
 }
 
 .terminal-host {
@@ -1444,7 +1462,7 @@ select:focus-visible,
 /* After the summary rather than before it, so the sentence starts where the
    `history` and `inbox` labels start. */
 .graph-chevron {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--text-faint);
   width: 10px;
 }
@@ -3367,7 +3385,6 @@ button.inbox-check-name.link:hover {
 }
 
 .btn.tiny.accent:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -3377,6 +3394,8 @@ button.inbox-check-name.link:hover {
 .btn.tiny.accent.busy:disabled {
   opacity: 1;
   cursor: progress;
+  color: var(--accent);
+  border-color: var(--accent-line);
   background: var(--accent-soft);
   animation: merge-pulse 1.2s ease-in-out infinite;
 }
@@ -3656,14 +3675,14 @@ button.inbox-check-name.link:hover {
   position: absolute;
   top: -3px;
   right: -4px;
-  min-width: 13px;
+  min-width: 14px;
   padding: 0 3px;
   border-radius: 999px;
   background: var(--accent);
   color: var(--bg);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
-  line-height: 13px;
+  line-height: 14px;
   text-align: center;
 }
 
@@ -3745,23 +3764,6 @@ button.inbox-check-name.link:hover {
 
 .diff-tally .del {
   color: var(--red);
-}
-
-.diff-stage {
-  flex: none;
-  padding: 1px 7px;
-  border-radius: 4px;
-  color: var(--accent);
-  transition: background 0.12s var(--ease);
-}
-
-.diff-stage:hover:not(:disabled) {
-  background: var(--accent-soft);
-}
-
-.diff-stage:disabled {
-  color: var(--text-faint);
-  cursor: default;
 }
 
 /* One scroller for both axes. A long line scrolls the whole file sideways

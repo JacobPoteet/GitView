@@ -1,4 +1,5 @@
 import type { FormEvent, ReactNode } from "react";
+import CloseButton from "./CloseButton";
 
 interface Props {
   /** What assistive tech calls it, and the heading unless `title` says otherwise. */
@@ -43,15 +44,7 @@ export default function Dialog({
       <h2>
         {title ?? label}
         {closable && (
-          <button
-            type="button"
-            className="pane-close"
-            onClick={onClose}
-            title="Close (Escape)"
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          <CloseButton onClick={onClose} />
         )}
       </h2>
       {children}

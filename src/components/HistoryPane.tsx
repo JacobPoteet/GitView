@@ -11,6 +11,7 @@ import { commitMenu, type ResetMode } from "./BranchGraph";
 import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
 import PaneNote from "./PaneNote";
+import CloseButton from "./CloseButton";
 import {
   parseHistoryFilter,
   relativeTime,
@@ -558,9 +559,7 @@ export default function HistoryPane({
           Prune merged
           {prunable > 0 && ` (${prunable})`}
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-          ✕
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div

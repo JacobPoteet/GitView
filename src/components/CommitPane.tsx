@@ -4,6 +4,7 @@ import type { Blame, BlameHunk, CommitDiff, CommitTarget, FileDiff } from "../li
 import { quote, type ShellKind } from "../lib/shell";
 import DiffHunks from "./DiffHunks";
 import PaneNote from "./PaneNote";
+import CloseButton from "./CloseButton";
 
 interface Props {
   target: CommitTarget;
@@ -122,7 +123,7 @@ export default function CommitPane({
 
         {file && (
           <button
-            className={`diff-stage${blameOn ? " on" : ""}`}
+            className="btn tiny"
             onClick={() => setBlameOn((on) => !on)}
             title={
               blameOn
@@ -135,7 +136,7 @@ export default function CommitPane({
           </button>
         )}
         <button
-          className="diff-stage"
+          className="btn tiny accent"
           disabled={disabled}
           onClick={(event) => onCommand(show, event.shiftKey)}
           title={
@@ -146,9 +147,7 @@ export default function CommitPane({
         >
           show
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-          ✕
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       {commit?.error && <PaneNote kind="error">{commit.error}</PaneNote>}

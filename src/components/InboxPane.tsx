@@ -9,6 +9,7 @@ import {
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { Desk, CheckMark } from "./inbox/Desk";
 import { IssueDesk } from "./inbox/IssueDesk";
+import CloseButton from "./CloseButton";
 import { NewIssue } from "./inbox/NewIssue";
 import { NewPullRequest } from "./inbox/NewPullRequest";
 import {
@@ -485,9 +486,7 @@ Typed into ${item.repoName}'s shell.`;
         >
           New issue
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-          ✕
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div className="inbox-list" ref={list}>

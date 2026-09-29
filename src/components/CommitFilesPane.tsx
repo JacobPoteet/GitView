@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
 import PaneNote from "./PaneNote";
+import CloseButton from "./CloseButton";
 import { openFileCommand, quote, type ShellKind } from "../lib/shell";
 import type { CommitDiff, CommitFile, CommitTarget, FileChange } from "../lib/types";
 
@@ -113,14 +114,7 @@ export default function CommitFilesPane({
             </span>
           </>
         )}
-        <button
-          className="pane-close"
-          onClick={onClose}
-          title="Back to the working tree (Escape)"
-          aria-label="Back to the working tree"
-        >
-          ✕
-        </button>
+        <CloseButton onClick={onClose} label="Back to the working tree" />
       </div>
 
       <div className="change-list">

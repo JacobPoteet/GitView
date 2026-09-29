@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import DiffHunks from "./DiffHunks";
 import PaneNote from "./PaneNote";
+import CloseButton from "./CloseButton";
 import type { DiffTarget, FileDiff } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 
@@ -149,7 +150,7 @@ export default function DiffPane({
         )}
 
         <button
-          className="diff-stage"
+          className="btn tiny accent"
           disabled={disabled}
           onClick={(event) => onCommand(command, event.shiftKey)}
           title={
@@ -167,9 +168,7 @@ export default function DiffPane({
         >
           History
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-          ✕
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div className="diff-body">

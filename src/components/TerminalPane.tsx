@@ -9,6 +9,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../lib/api";
+import CloseButton from "./CloseButton";
 import type { CommandBlock, StoredBlock } from "../lib/types";
 import { settings, subscribeSettings } from "../lib/settings";
 import { isClaimed } from "../lib/keys";
@@ -1130,20 +1131,7 @@ export default function TerminalPane({
             </button>
           </span>
         )}
-        <button
-          className="pane-close"
-          onClick={() => onRequestClose(sessionId)}
-          title={`Close ${sessionLabel(sessionId)}`}
-        >
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+        <CloseButton onClick={() => onRequestClose(sessionId)} label={`Close ${sessionLabel(sessionId)}`} escape={false} />
       </div>
       {children}
       <div
