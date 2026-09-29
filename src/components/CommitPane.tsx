@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import type { Blame, BlameHunk, CommitDiff, CommitTarget, FileDiff } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 import DiffHunks from "./DiffHunks";
+import PaneNote from "./PaneNote";
 
 interface Props {
   target: CommitTarget;
@@ -45,6 +46,7 @@ export default function CommitPane({
 }: Props) {
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   /**
    * The blame gutter: off until asked, and asked once per file. The choice
    * outlives the file so a reader walking a commit's files keeps it. No blame
@@ -96,7 +98,7 @@ export default function CommitPane({
     return () => {
       cancelled = true;
     };
-  }, [target.repoPath, target.id, file]);
+  }, [target.repoPath, target.id, file, attempt]);
 
   const show = file
     ? `git --no-pager show ${target.short} -- ${quote(file, shell)}`
@@ -149,7 +151,7 @@ export default function CommitPane({
         </button>
       </div>
 
-      {commit?.error && <p className="empty">{commit.error}</p>}
+      {commit?.error && <PaneNote kind="error">{commit.error}</PaneNote>}
 
       {commit && !commit.error && (
         <div className="commit-head">
@@ -180,12 +182,16 @@ export default function CommitPane({
       )}
 
       <div className="diff-body">
-        {!commit && <p className="empty">Reading…</p>}
+        {!commit && <PaneNote kind="loading">Reading…</PaneNote>}
         {commit && !commit.error && !file && commit.files.length === 0 && (
           <p className="empty">This commit changed no files.</p>
         )}
-        {file && !diff && !failure && <p className="empty">Reading…</p>}
-        {failure && <p className="empty">{failure}</p>}
+        {file && !diff && !failure && <PaneNote kind="loading">Reading…</PaneNote>}
+        {failure && (
+          <PaneNote kind="error" onRetry={() => setAttempt((n) => n + 1)}>
+            {failure}
+          </PaneNote>
+        )}
         {blame?.error && <p className="diff-note">Blame failed: {blame.error}</p>}
         {blame?.truncated && (
           <p className="diff-note">

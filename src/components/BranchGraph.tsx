@@ -7,6 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
+import PaneNote from "./PaneNote";
 import { quote, type ShellKind } from "../lib/shell";
 import type { BranchGraph as Graph, BranchSummary, GraphCommit, Squashed } from "../lib/types";
 import { relativeTime, signedTitle } from "../lib/types";
@@ -281,7 +282,7 @@ export default function BranchGraph({
 
       {!collapsed &&
         (graph.error ? (
-          <p className="empty">{graph.error}</p>
+          <PaneNote kind="error">{graph.error}</PaneNote>
         ) : model.nodes.length === 0 ? (
           <p className="empty">No commits here yet.</p>
         ) : (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import DiffHunks from "./DiffHunks";
+import PaneNote from "./PaneNote";
 import type { DiffTarget, FileDiff } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 
@@ -54,6 +55,8 @@ export default function DiffPane({
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [reading, setReading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
+  // Try again bumps this, the one input the read has that nothing else changes.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +79,7 @@ export default function DiffPane({
     return () => {
       cancelled = true;
     };
-  }, [target.repoPath, target.file, target.staged, reloadKey]);
+  }, [target.repoPath, target.file, target.staged, reloadKey, attempt]);
 
   const arg = quote(target.file, shell);
   const command = target.staged
@@ -170,8 +173,12 @@ export default function DiffPane({
       </div>
 
       <div className="diff-body">
-        {reading && !diff && <p className="empty">Reading…</p>}
-        {failure && <p className="empty">{failure}</p>}
+        {reading && !diff && !failure && <PaneNote kind="loading">Reading…</PaneNote>}
+        {failure && (
+          <PaneNote kind="error" onRetry={() => setAttempt((n) => n + 1)}>
+            {failure}
+          </PaneNote>
+        )}
 
         {diff && (
           <DiffHunks
