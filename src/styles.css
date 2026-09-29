@@ -3138,6 +3138,24 @@ button.branch-name.has-other .branch-count {
   color: var(--text-faint);
 }
 
+/* The header's single pull request badge draws from these: a failure is the
+   red that already means a failed command, waiting is the amber that means
+   attention, and a pass is the same green as an approval. */
+.inbox-badge.bad {
+  color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+
+.inbox-badge.pending {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
+}
+
+.inbox-badge.ok {
+  color: var(--green);
+  border-color: color-mix(in oklch, var(--green) 45%, transparent);
+}
+
 /* The link to the other end, a pull request or the issue it closes. The one
    badge in the row that is neither a state nor a request of you, so it takes
    the monospace of the number it names rather than a colour. */

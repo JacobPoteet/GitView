@@ -3,6 +3,7 @@ import {
   byNeed,
   byRepo,
   checkTone,
+  headStatus,
   closedBy,
   groupSize,
   itemKey,
@@ -86,6 +87,29 @@ describe("byRepo", () => {
     const groups = byRepo([oldRepo, newIssue, newPr]);
     expect(groups.map((g) => g.label)).toEqual(["new", "old"]);
     expect(groups[0].items.map((i) => i.number)).toEqual([3, 2]);
+  });
+});
+
+describe("headStatus", () => {
+  const base = { draft: false, reviewDecision: null, checks: null } as const;
+
+  it("says nothing for a pull request with nothing to report", () => {
+    expect(headStatus(base)).toBeNull();
+  });
+
+  it("puts a failure ahead of a draft, and a requested change ahead of both", () => {
+    expect(headStatus({ ...base, draft: true, checks: "FAILURE" })?.tone).toBe("bad");
+    expect(
+      headStatus({ draft: true, reviewDecision: "CHANGES_REQUESTED", checks: "FAILURE" })?.tone,
+    ).toBe("changes");
+  });
+
+  it("does not call a running check approved", () => {
+    expect(
+      headStatus({ draft: false, reviewDecision: "APPROVED", checks: "PENDING" })?.tone,
+    ).toBe("pending");
+    expect(headStatus({ ...base, reviewDecision: "APPROVED" })?.tone).toBe("approved");
+    expect(headStatus({ ...base, checks: "SUCCESS" })?.text).toBe("checks passing");
   });
 });
 

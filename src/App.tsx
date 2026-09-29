@@ -41,7 +41,7 @@ import SettingsDialog, { type SettingsSection } from "./components/SettingsDialo
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
 import ChipIcon from "./components/ChipIcon";
-import { itemKey, refKey, refLabel } from "./lib/inbox";
+import { headFacts, headStatus, itemKey, refKey, refLabel } from "./lib/inbox";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import Welcome from "./components/Welcome";
@@ -2112,6 +2112,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       ) ?? null
     );
   }, [inbox, selected]);
+  const headPr = branchPr ? headStatus(branchPr) : null;
 
   const dirty = selected ? selected.staged + selected.modified : 0;
   // Whether the changes column, hidden or not, has something in it. The toggle
@@ -2414,6 +2415,7 @@ ${landing} ${cleanup}${warning}${closing}`,
                   <button
                     className="head-pr"
                     title={`${branchPr.title}
+${headFacts(branchPr)}
 
 gh pr view ${branchPr.number} --web`}
                     onClick={() => {
@@ -2422,30 +2424,7 @@ gh pr view ${branchPr.number} --web`}
                     }}
                   >
                     PR #{branchPr.number}
-                    {branchPr.draft && <span className="inbox-badge draft">draft</span>}
-                    {branchPr.reviewDecision === "APPROVED" && (
-                      <span className="inbox-badge approved">approved</span>
-                    )}
-                    {branchPr.reviewDecision === "CHANGES_REQUESTED" && (
-                      <span className="inbox-badge changes">changes</span>
-                    )}
-                    {branchPr.checks && (
-                      <span
-                        className={`inbox-checks ${
-                          branchPr.checks === "SUCCESS"
-                            ? "ok"
-                            : branchPr.checks === "FAILURE" || branchPr.checks === "ERROR"
-                              ? "bad"
-                              : "pending"
-                        }`}
-                      >
-                        {branchPr.checks === "SUCCESS"
-                          ? "✓"
-                          : branchPr.checks === "FAILURE" || branchPr.checks === "ERROR"
-                            ? "✕"
-                            : "•"}
-                      </span>
-                    )}
+                    {headPr && <span className={`inbox-badge ${headPr.tone}`}>{headPr.text}</span>}
                   </button>
                 )}
                 <BranchMenu

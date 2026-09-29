@@ -196,6 +196,39 @@ export function checkTone(state: InboxItem["checks"] | CheckRun["state"]): "ok" 
 }
 
 /**
+ * The one thing the header says about the branch's pull request, beside its
+ * number. A pull request has three facts worth a badge (draft, review, checks)
+ * and the header used to draw all of them, in a row that also holds the branch
+ * menu and four chips. The most severe one wins; the rest are in the tooltip,
+ * and the inbox row has room for every badge. Null when there is nothing to say.
+ */
+export function headStatus(
+  item: Pick<InboxItem, "draft" | "reviewDecision" | "checks">,
+): { tone: "changes" | "bad" | "draft" | "pending" | "approved" | "ok"; text: string } | null {
+  const checks = item.checks ? checkTone(item.checks) : null;
+  if (item.reviewDecision === "CHANGES_REQUESTED") return { tone: "changes", text: "changes" };
+  if (checks === "bad") return { tone: "bad", text: "checks failing" };
+  if (item.draft) return { tone: "draft", text: "draft" };
+  if (checks === "pending") return { tone: "pending", text: "checks running" };
+  if (item.reviewDecision === "APPROVED") return { tone: "approved", text: "approved" };
+  if (checks === "ok") return { tone: "ok", text: "checks passing" };
+  return null;
+}
+
+/** Every fact the header badge left out, for its tooltip: `draft · approved · checks passing`. */
+export function headFacts(item: Pick<InboxItem, "draft" | "reviewDecision" | "checks">): string {
+  const tone = item.checks ? checkTone(item.checks) : null;
+  return [
+    item.draft ? "draft" : null,
+    item.reviewDecision === "APPROVED" ? "approved" : null,
+    item.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : null,
+    tone === "ok" ? "checks passing" : tone === "bad" ? "checks failing" : tone === "pending" ? "checks running" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
  * Why the Merge button is off, in the words the dialog on GitHub would use.
  * Null when it is on. `UNSTABLE` is a failing check that is not required, and
  * `UNKNOWN` is GitHub still computing the merge: both leave the button on and
