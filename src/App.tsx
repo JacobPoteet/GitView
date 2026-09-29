@@ -48,6 +48,7 @@ import Welcome from "./components/Welcome";
 import Tour from "./components/Tour";
 import { useBatch } from "./hooks/useBatch";
 import { useTour } from "./hooks/useTour";
+import { useCommandHint } from "./hooks/useCommandHint";
 import { useInbox } from "./hooks/useInbox";
 import { useUpdate } from "./hooks/useUpdate";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
@@ -438,6 +439,7 @@ export default function App() {
     [],
   );
   const { update, updateOpen, setUpdateOpen, checkUpdate } = useUpdate(info, setNote);
+  const commandHint = useCommandHint();
   const {
     inbox: inboxRead,
     setInbox,
@@ -2719,6 +2721,15 @@ gh pr view ${branchPr.number} --web`}
           >
             update {update.latest.version}
           </button>
+        )}
+        {/* The command under the pointer or the focus ring. Decorative: the same
+            text is already the button's title, and a live region here would
+            read a command aloud on every hover. */}
+        {commandHint && (
+          <span className={`command-hint${commandHint.typing ? " typing" : ""}`} aria-hidden="true">
+            <code>{commandHint.command}</code>
+            <span>{commandHint.typing ? "click types it" : "Shift-click types it"}</span>
+          </span>
         )}
         <span className="spacer" />
         {/* What the fleet needs, then the button that clears the front of the

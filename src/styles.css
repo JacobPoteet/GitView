@@ -236,6 +236,36 @@ select:focus-visible,
   margin-left: -16px;
 }
 
+/* The command under the pointer or the focus ring. Mono, since it is what the
+   prompt would accept; it shrinks and ellipsises before it pushes the fleet
+   summary off the right edge. The hint after it says what a click does now,
+   and the accent only appears while Shift is down. */
+.status-bar .command-hint {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.status-bar .command-hint code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.status-bar .command-hint span {
+  flex: none;
+}
+
+.status-bar .command-hint.typing span {
+  color: var(--accent);
+}
+
 .status-bar kbd {
   background: var(--bg-raised);
   border: 1px solid var(--line);
