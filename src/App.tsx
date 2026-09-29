@@ -41,13 +41,14 @@ import SettingsDialog, { type SettingsSection } from "./components/SettingsDialo
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
 import ChipIcon from "./components/ChipIcon";
-import { itemKey, refKey, refLabel } from "./lib/inbox";
+import { headFacts, headStatus, itemKey, refKey, refLabel } from "./lib/inbox";
 import UpdateDialog from "./components/UpdateDialog";
 import Splash from "./components/Splash";
 import Welcome from "./components/Welcome";
 import Tour from "./components/Tour";
 import { useBatch } from "./hooks/useBatch";
 import { useTour } from "./hooks/useTour";
+import { useCommandHint } from "./hooks/useCommandHint";
 import { useInbox } from "./hooks/useInbox";
 import { useUpdate } from "./hooks/useUpdate";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
@@ -438,6 +439,7 @@ export default function App() {
     [],
   );
   const { update, updateOpen, setUpdateOpen, checkUpdate } = useUpdate(info, setNote);
+  const commandHint = useCommandHint();
   const {
     inbox: inboxRead,
     setInbox,
@@ -958,35 +960,40 @@ export default function App() {
         // A right-click menu closes itself on Escape too, and the pane it was
         // opened over stays. Read from the DOM for the same reason.
         if (document.querySelector(".row-menu")) return;
-        // The commit pane sits over the history it was opened from, so Escape
-        // peels it and leaves the history where it was. A second Escape closes
-        // everything, as before. Only when it is the thing on screen, though:
-        // the inbox and every dialog draw over it, and Escape there has to
-        // close what the eye is on rather than a pane it cannot see.
-        const covered =
-          inboxOpen ||
+        // Escape peels one layer, the one the eye is on, in the order they
+        // draw: a dialog, then the inbox, then a commit, then the history, then
+        // a diff. It used to close everything under a dialog or the inbox in
+        // the same press, so opening the inbox over a history and closing it
+        // took the history with it.
+        if (
           confirmation !== null ||
           settingsOpen !== null ||
           pendingTask !== null ||
           pendingTag !== null ||
           batchOpen ||
-          updateOpen ||
-          paletteOpen;
-        if (commitTarget && !covered) {
-          setCommitTarget(null);
+          updateOpen
+        ) {
+          setConfirmation(null);
+          setSettingsOpen(null);
+          setPendingTask(null);
+          setPendingTag(null);
+          // A batch that is still running keeps its dialog: closing it would hide
+          // the only place the commands it is about to run are reported.
+          setBatchOpen((open) => (open && batch?.running === true ? open : false));
+          setUpdateOpen(false);
           return;
         }
-        setConfirmation(null);
-        setSettingsOpen(null);
-        setPendingTask(null);
-        setPendingTag(null);
-        // A batch that is still running keeps its dialog: closing it would hide
-        // the only place the commands it is about to run are reported.
-        setBatchOpen((open) => (open && batch?.running === true ? open : false));
-        setInboxOpen(false);
-        setUpdateOpen(false);
-        setDiffTarget(null);
-        setHistoryOpen(false);
+        if (inboxOpen) {
+          setInboxOpen(false);
+          setInboxFocus(null);
+        } else if (commitTarget) {
+          setCommitTarget(null);
+        } else if (historyOpen) {
+          setHistoryOpen(false);
+          setHistorySeed(null);
+        } else {
+          setDiffTarget(null);
+        }
       }
     }
     // The terminal lets Ctrl+K through to here rather than handling it itself,
@@ -1012,6 +1019,7 @@ export default function App() {
     info?.gh.version,
     setBatchOpen,
     setInboxOpen,
+    setInboxFocus,
     setUpdateOpen,
     setChangesShown,
   ]);
@@ -2110,6 +2118,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       ) ?? null
     );
   }, [inbox, selected]);
+  const headPr = branchPr ? headStatus(branchPr) : null;
 
   const dirty = selected ? selected.staged + selected.modified : 0;
   // Whether the changes column, hidden or not, has something in it. The toggle
@@ -2412,6 +2421,7 @@ ${landing} ${cleanup}${warning}${closing}`,
                   <button
                     className="head-pr"
                     title={`${branchPr.title}
+${headFacts(branchPr)}
 
 gh pr view ${branchPr.number} --web`}
                     onClick={() => {
@@ -2420,30 +2430,7 @@ gh pr view ${branchPr.number} --web`}
                     }}
                   >
                     PR #{branchPr.number}
-                    {branchPr.draft && <span className="inbox-badge draft">draft</span>}
-                    {branchPr.reviewDecision === "APPROVED" && (
-                      <span className="inbox-badge approved">approved</span>
-                    )}
-                    {branchPr.reviewDecision === "CHANGES_REQUESTED" && (
-                      <span className="inbox-badge changes">changes</span>
-                    )}
-                    {branchPr.checks && (
-                      <span
-                        className={`inbox-checks ${
-                          branchPr.checks === "SUCCESS"
-                            ? "ok"
-                            : branchPr.checks === "FAILURE" || branchPr.checks === "ERROR"
-                              ? "bad"
-                              : "pending"
-                        }`}
-                      >
-                        {branchPr.checks === "SUCCESS"
-                          ? "✓"
-                          : branchPr.checks === "FAILURE" || branchPr.checks === "ERROR"
-                            ? "✕"
-                            : "•"}
-                      </span>
-                    )}
+                    {headPr && <span className={`inbox-badge ${headPr.tone}`}>{headPr.text}</span>}
                   </button>
                 )}
                 <BranchMenu
@@ -2719,6 +2706,15 @@ gh pr view ${branchPr.number} --web`}
           >
             update {update.latest.version}
           </button>
+        )}
+        {/* The command under the pointer or the focus ring. Decorative: the same
+            text is already the button's title, and a live region here would
+            read a command aloud on every hover. */}
+        {commandHint && (
+          <span className={`command-hint${commandHint.typing ? " typing" : ""}`} aria-hidden="true">
+            <code>{commandHint.command}</code>
+            <span>{commandHint.typing ? "click types it" : "Shift-click types it"}</span>
+          </span>
         )}
         <span className="spacer" />
         {/* What the fleet needs, then the button that clears the front of the

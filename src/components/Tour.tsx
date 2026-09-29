@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { place, type Rect, type TourStep } from "../lib/tour";
+import CloseButton from "./CloseButton";
 
 interface Props {
   step: TourStep;
@@ -142,15 +143,7 @@ export default function Tour({ step, index, total, onNext, onClose }: Props) {
           <span className="tour-count">
             {index + 1} of {total}
           </span>
-          <button
-            type="button"
-            className="pane-close"
-            onClick={onClose}
-            title="End the tour (Escape)"
-            aria-label="End the tour"
-          >
-            ✕
-          </button>
+          <CloseButton onClick={onClose} label="End the tour" />
         </div>
         <h3>{step.title}</h3>
         <p>{step.body}</p>

@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
+import PaneNote from "./PaneNote";
+import CloseButton from "./CloseButton";
 import { openFileCommand, quote, type ShellKind } from "../lib/shell";
 import type { CommitDiff, CommitFile, CommitTarget, FileChange } from "../lib/types";
 
@@ -112,19 +114,12 @@ export default function CommitFilesPane({
             </span>
           </>
         )}
-        <button
-          className="pane-close"
-          onClick={onClose}
-          title="Back to the working tree (Escape)"
-          aria-label="Back to the working tree"
-        >
-          ✕
-        </button>
+        <CloseButton onClick={onClose} label="Back to the working tree" />
       </div>
 
       <div className="change-list">
-        {!commit && <p className="empty">Reading…</p>}
-        {commit?.error && <p className="empty">{commit.error}</p>}
+        {!commit && <PaneNote kind="loading">Reading…</PaneNote>}
+        {commit?.error && <PaneNote kind="error">{commit.error}</PaneNote>}
         {commit && !commit.error && files.length === 0 && (
           <p className="empty">This commit changed no files.</p>
         )}

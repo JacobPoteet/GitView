@@ -10,6 +10,8 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { commitMenu, type ResetMode } from "./BranchGraph";
 import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
+import PaneNote from "./PaneNote";
+import CloseButton from "./CloseButton";
 import {
   parseHistoryFilter,
   relativeTime,
@@ -201,6 +203,9 @@ export default function HistoryPane({
   const [head, setHead] = useState<string | null>(null);
   const [reading, setReading] = useState(true);
   const [done, setDone] = useState(false);
+  // What the last read said when it failed. Without it a history that could not be read
+  // fell through to "No commits here yet", which is a claim about the repository.
+  const [failure, setFailure] = useState<string | null>(null);
   /**
    * The filter field's text, and the filter it parses to. The field is what
    * is typed; the filter is what the read takes, and it is re-read on a
@@ -323,9 +328,11 @@ export default function HistoryPane({
         if (mine !== generation.current) return;
         if (page.error) {
           onError(page.error);
+          setFailure(page.error);
           setDone(true);
           return;
         }
+        setFailure(null);
         setTotal(page.total);
         setCapped(page.capped);
         setCrowded((was) => was || page.crowded);
@@ -339,6 +346,7 @@ export default function HistoryPane({
       } catch (err) {
         if (mine !== generation.current) return;
         onError(String(err));
+        setFailure(String(err));
         setDone(true);
       } finally {
         if (mine === generation.current) {
@@ -551,9 +559,7 @@ export default function HistoryPane({
           Prune merged
           {prunable > 0 && ` (${prunable})`}
         </button>
-        <button className="pane-close" onClick={onClose} title="Close (Escape)" aria-label="Close">
-          ✕
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
       <div
@@ -571,10 +577,23 @@ export default function HistoryPane({
             allocates a forty-thousand-row bitmap. */}
         <canvas className="history-canvas" ref={canvas} aria-hidden />
 
-        {rows.length === 0 && !reading && (
-          <p className="empty">{filtered ? "Nothing matches." : "No commits here yet."}</p>
+        {rows.length === 0 && !reading && failure && (
+          <PaneNote
+            kind="error"
+            onRetry={() => {
+              setFailure(null);
+              setDone(false);
+              setReading(true);
+              loadPage(0);
+            }}
+          >
+            {failure}
+          </PaneNote>
         )}
-        {rows.length === 0 && reading && <p className="empty">Reading the history…</p>}
+        {rows.length === 0 && !reading && !failure && (
+          <PaneNote>{filtered ? "Nothing matches." : "No commits here yet."}</PaneNote>
+        )}
+        {rows.length === 0 && reading && <PaneNote kind="loading">Reading the history…</PaneNote>}
 
         <div className="history-rows" style={{ height: rows.length * ROW }}>
           {rows.slice(first, last).map((row, offset) => (

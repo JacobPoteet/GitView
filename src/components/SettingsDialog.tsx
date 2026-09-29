@@ -641,6 +641,11 @@ function Keyboard() {
         Each chord is released by the terminal rather than sent to the shell, so it works with the
         cursor at a prompt. The palette shows the chord beside anything that has one.
       </p>
+      <p>
+        Every button that runs a git command shows it in the status bar while the pointer or the
+        keyboard focus is on it. Shift-click types the command at the prompt and leaves it there
+        instead of running it.
+      </p>
     </>
   );
 }

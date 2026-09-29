@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import PaneNote from "./PaneNote";
 import { ageBucket, relativeTime, type BlameHunk, type FileDiff } from "../lib/types";
 
 /**
@@ -64,7 +65,7 @@ export default function DiffHunks({
   let lastBlame: BlameHunk | undefined;
   return (
     <>
-      {diff.error && <p className="empty">{diff.error}</p>}
+      {diff.error && <PaneNote kind="error">{diff.error}</PaneNote>}
 
       {!diff.error && diff.binary && (
         <p className="empty">Binary. git has no text to show for this one.</p>

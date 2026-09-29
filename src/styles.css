@@ -236,6 +236,36 @@ select:focus-visible,
   margin-left: -16px;
 }
 
+/* The command under the pointer or the focus ring. Mono, since it is what the
+   prompt would accept; it shrinks and ellipsises before it pushes the fleet
+   summary off the right edge. The hint after it says what a click does now,
+   and the accent only appears while Shift is down. */
+.status-bar .command-hint {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.status-bar .command-hint code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.status-bar .command-hint span {
+  flex: none;
+}
+
+.status-bar .command-hint.typing span {
+  color: var(--accent);
+}
+
 .status-bar kbd {
   background: var(--bg-raised);
   border: 1px solid var(--line);
@@ -816,9 +846,23 @@ select:focus-visible,
   border-color: var(--line-strong);
 }
 
-.btn:disabled {
-  opacity: 0.4;
+/* Disabled is a colour, not an opacity: 0.4 over a raised surface put the label
+   under 3:1, and dimming the whole button dimmed its border with it. The label
+   drops to the faint text and the accent gives way, so a disabled Push and a
+   disabled Sync read the same. */
+.btn:disabled,
+.btn.accent:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--text-faint);
   cursor: default;
+}
+
+/* A toggle that is on. Blame in the commit pane is the one so far. */
+.btn[aria-pressed="true"]:not(.changes-toggle) {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
 }
 
 .btn.accent {
@@ -929,16 +973,20 @@ select:focus-visible,
   flex: none;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  /* 24 in a 30px bar: a dismiss is the most-used target on a pane, and 20 was
+     small for one. The bar is unchanged. */
+  width: 24px;
+  height: 24px;
   border-radius: 5px;
   color: var(--text-faint);
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 
+/* Neutral, not red: red here means a failed command, and closing a pane is
+   not one. */
 .pane-close:hover {
   background: var(--bg-hover);
-  color: var(--red);
+  color: var(--text);
 }
 
 .terminal-host {
@@ -1062,6 +1110,59 @@ select:focus-visible,
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
   color: var(--text-dim);
+}
+
+/* A read in flight is dimmer than a fact and gently alive, so a pane that is
+   still reading never passes for one that has nothing to say. Reduced motion
+   gets the dim without the pulse. */
+.empty.loading {
+  animation: note-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes note-breathe {
+  50% {
+    color: var(--text-dim);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty.loading {
+    animation: none;
+  }
+}
+
+/* A failed read. The one voice in a pane that is not quiet: red text and the
+   git or OS message as it came, in mono, since it is a string somebody may
+   paste into a search. Red means a failed command here, so this is the right
+   use of it, and there is no side stripe: the colour is on the words. */
+.pane-note {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 14px;
+  text-align: center;
+}
+
+.pane-note-title {
+  color: var(--red);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.pane-note-detail {
+  max-width: 60ch;
+  max-height: 9em;
+  overflow: auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 /* ------------------------------------------------------------------ palette */
@@ -1361,7 +1462,7 @@ select:focus-visible,
 /* After the summary rather than before it, so the sentence starts where the
    `history` and `inbox` labels start. */
 .graph-chevron {
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--text-faint);
   width: 10px;
 }
@@ -3055,6 +3156,24 @@ button.branch-name.has-other .branch-count {
   color: var(--text-faint);
 }
 
+/* The header's single pull request badge draws from these: a failure is the
+   red that already means a failed command, waiting is the amber that means
+   attention, and a pass is the same green as an approval. */
+.inbox-badge.bad {
+  color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 45%, transparent);
+}
+
+.inbox-badge.pending {
+  color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 45%, transparent);
+}
+
+.inbox-badge.ok {
+  color: var(--green);
+  border-color: color-mix(in oklch, var(--green) 45%, transparent);
+}
+
 /* The link to the other end, a pull request or the issue it closes. The one
    badge in the row that is neither a state nor a request of you, so it takes
    the monospace of the number it names rather than a colour. */
@@ -3266,7 +3385,6 @@ button.inbox-check-name.link:hover {
 }
 
 .btn.tiny.accent:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -3276,6 +3394,8 @@ button.inbox-check-name.link:hover {
 .btn.tiny.accent.busy:disabled {
   opacity: 1;
   cursor: progress;
+  color: var(--accent);
+  border-color: var(--accent-line);
   background: var(--accent-soft);
   animation: merge-pulse 1.2s ease-in-out infinite;
 }
@@ -3555,14 +3675,14 @@ button.inbox-check-name.link:hover {
   position: absolute;
   top: -3px;
   right: -4px;
-  min-width: 13px;
+  min-width: 14px;
   padding: 0 3px;
   border-radius: 999px;
   background: var(--accent);
   color: var(--bg);
-  font-size: 8.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
-  line-height: 13px;
+  line-height: 14px;
   text-align: center;
 }
 
@@ -3644,23 +3764,6 @@ button.inbox-check-name.link:hover {
 
 .diff-tally .del {
   color: var(--red);
-}
-
-.diff-stage {
-  flex: none;
-  padding: 1px 7px;
-  border-radius: 4px;
-  color: var(--accent);
-  transition: background 0.12s var(--ease);
-}
-
-.diff-stage:hover:not(:disabled) {
-  background: var(--accent-soft);
-}
-
-.diff-stage:disabled {
-  color: var(--text-faint);
-  cursor: default;
 }
 
 /* One scroller for both axes. A long line scrolls the whole file sideways
