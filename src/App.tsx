@@ -459,6 +459,29 @@ export default function App() {
     settled: inboxSettled,
   } = useInbox(info, setNote);
   /**
+   * The history is on screen only while the inbox, which outranks it, is not.
+   * `historyOpen` alone stays true underneath, which is what puts the history
+   * back when the inbox closes, so the button reads this instead.
+   */
+  const historyShown = historyOpen && !inboxOpen;
+  /**
+   * One toggle for the header button and Ctrl+H. Opening brings the history to
+   * the front past the inbox and a commit, the two panes that outrank it;
+   * closing takes a commit with it, since leaving one up would look like the
+   * click did nothing.
+   */
+  const toggleHistory = useCallback(() => {
+    if (historyShown) {
+      setHistoryOpen(false);
+      setHistorySeed(null);
+    } else {
+      setInboxOpen(false);
+      setInboxFocus(null);
+      openHistory();
+    }
+    setCommitTarget(null);
+  }, [historyShown, setInboxOpen, setInboxFocus, openHistory]);
+  /**
    * The inbox without the hidden repositories. The next read leaves them out
    * of the query, but the stored one still holds them, and hiding a repository
    * should drop its rows now rather than at the next poll.
@@ -934,8 +957,7 @@ export default function App() {
         setChangesShown(settings().layout.changesHidden);
       } else if (chord === "Ctrl+H") {
         event.preventDefault();
-        if (historyOpen) setHistoryOpen(false);
-        else if (selectedPath) openHistory();
+        if (selectedPath) toggleHistory();
       } else if (chord === "Ctrl+I") {
         event.preventDefault();
         if (info?.gh.version) setInboxOpen((open) => !open);
@@ -1033,7 +1055,7 @@ export default function App() {
     selectedPath,
     tabOf,
     historyOpen,
-    openHistory,
+    toggleHistory,
     info?.gh.version,
     setBatchOpen,
     setInboxOpen,
@@ -2544,6 +2566,14 @@ gh pr view ${branchPr.number} --web`}
                   Sync
                 </button>
                 <button
+                  className="btn"
+                  aria-pressed={historyShown}
+                  title="Every commit on every branch (Ctrl+H)"
+                  onClick={toggleHistory}
+                >
+                  History
+                </button>
+                <button
                   className="btn accent"
                   data-tour="palette"
                   onClick={() => setPaletteOpen(true)}
@@ -2586,7 +2616,6 @@ gh pr view ${branchPr.number} --web`}
               collapsed={graphCollapsed}
               squashed={headSquashed}
               onToggle={toggleGraph}
-              onHistory={openHistory}
               onCommand={emit}
               onOpen={openCommit}
               onCopy={copy}

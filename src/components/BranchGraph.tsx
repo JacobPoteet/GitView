@@ -21,7 +21,6 @@ interface Props {
    * way, so the way to the rest sits on the strip rather than among the header's
    * commands, where it was the one button that did not type anything.
    */
-  onHistory: () => void;
   /** Set when the branch you are on was squash-merged into the base. */
   squashed: Squashed | null;
   /** Types a command in the repository's shell. Shift-click leaves it unrun. */
@@ -199,7 +198,6 @@ export default function BranchGraph({
   collapsed,
   squashed,
   onToggle,
-  onHistory,
   onCommand,
   onOpen,
   onCopy,
@@ -274,9 +272,6 @@ export default function BranchGraph({
           <span className="graph-chevron">{collapsed ? "▸" : "▾"}</span>
           {graph.unrelated && <span className="graph-note">no shared history</span>}
           {graph.truncated && <span className="graph-note">first 40 each way</span>}
-        </button>
-        <button className="graph-history" onClick={onHistory} title="Every commit on every branch">
-          History
         </button>
       </div>
 

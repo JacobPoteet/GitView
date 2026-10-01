@@ -1457,9 +1457,7 @@ select:focus-visible,
   color: var(--text-faint);
 }
 
-/* The bar is two buttons: the summary, which folds the strip, and History, which
-   opens the rest of what the strip is an excerpt of. Nested buttons are not a
-   thing, so the bar is a row rather than a button of its own. */
+/* The whole bar folds the strip. History is a header button, beside Push and Sync. */
 .graph-toggle {
   display: flex;
   align-items: center;
@@ -1473,18 +1471,6 @@ select:focus-visible,
 
 .graph-toggle:hover {
   color: var(--text);
-}
-
-.graph-history {
-  flex: none;
-  padding: 0 14px;
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  color: var(--accent);
-}
-
-.graph-history:hover {
-  background: var(--accent-soft);
 }
 
 /* After the summary rather than before it, so the sentence starts where the
