@@ -752,24 +752,33 @@ select:focus-visible,
 
 .main.split > .terminal-pane {
   flex: none;
-  /* A third of the column, and never less than a prompt plus a few lines of
-     whatever the pane just printed into it. */
-  height: clamp(132px, 34%, 100%);
+  /* The share the user dragged to, the same for every pane so moving between
+     the history and the inbox does not resize either. Never less than a prompt
+     plus a few lines of whatever the pane just printed into it. */
+  height: clamp(132px, calc(var(--shell-pct, 47) * 1%), 100%);
   border-top: 1px solid var(--line);
+}
+
+/* The handle on that border. Sits at the shell's top edge, so it follows the
+   same clamp, and goes when the shell is closed to its one button. */
+.splitter.row {
+  top: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 6px;
+  bottom: calc(clamp(132px, calc(var(--shell-pct, 47) * 1%), 100%) - 3px);
+  cursor: row-resize;
+}
+.main:not(.split) > .splitter.row,
+.main.split > .terminal-pane.closed ~ .splitter.row {
+  display: none;
 }
 
 /* A closed shell has no scrollback to keep in sight, so it shrinks to the
    button that reopens it and the pane above takes the rest. */
 .main.split > .terminal-pane.closed {
   height: auto;
-}
-
-/* The inbox is the other way up: the shell keeps most of the column. The inbox
-   is a list you scan and act on, and what it types lands in the shell, so the
-   old two thirds for eight rows pushed the output of every merge into a strip
-   at the bottom (#145). The list scrolls in what is left. */
-.main.split.inbox > .terminal-pane:not(.closed) {
-  height: clamp(132px, 60%, 100%);
 }
 
 .repo-head {
@@ -1013,6 +1022,25 @@ select:focus-visible,
   flex-direction: column;
   min-height: 0;
   background: var(--bg);
+}
+
+/* Dragged to a height: a share of the rail, kept whatever the list holds. */
+.task-pane.sized {
+  height: calc(var(--tasks-pct) * 1%);
+  max-height: none;
+}
+
+/* The handle on the tasks panel's top border, hung off a zero-height row so it
+   does not need to know how tall the panel is. */
+.rail-split {
+  position: relative;
+  flex: none;
+  height: 0;
+  z-index: 5;
+}
+.rail-split > .splitter.row {
+  bottom: auto;
+  top: -3px;
 }
 
 .task-head {

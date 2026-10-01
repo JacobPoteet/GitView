@@ -3,6 +3,8 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import type { Task } from "../lib/types";
 
 interface Props {
+  /** Dragged to a height, so the panel keeps it rather than sizing to its list. */
+  sized: boolean;
   tasks: Task[];
   disabled: boolean;
   onRun: (task: Task, typeOnly?: boolean) => void;
@@ -85,6 +87,7 @@ function Row({
  * palette as well, which is where the noise actually hurt.
  */
 export default function TaskList({
+  sized,
   tasks,
   disabled,
   onRun,
@@ -138,7 +141,7 @@ export default function TaskList({
   const shown = tasks.length - hidden.length;
 
   return (
-    <div className="task-pane">
+    <div className={`task-pane${sized ? " sized" : ""}`}>
       <div className="task-head">
         <span>Tasks</span>
         <span>{hidden.length > 0 ? `${shown} of ${tasks.length}` : tasks.length}</span>
