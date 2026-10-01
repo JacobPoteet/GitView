@@ -48,6 +48,18 @@ export interface Settings {
     sidebar: number;
     /** The changes column's width in pixels. */
     changes: number;
+    /**
+     * The share of the main column the shell keeps while a pane (inbox, history,
+     * a diff) is open, in percent. One number for every pane, so going from the
+     * history to the inbox does not resize what you are looking at.
+     */
+    shell: number;
+    /**
+     * The tasks panel's share of the left rail, in percent. Null until dragged:
+     * the panel is as tall as its list, up to a third, which suits a project
+     * with three scripts and one with thirty alike.
+     */
+    tasks: number | null;
     /** The changes column slid away, for a narrow window. Its width is kept for when it returns. */
     changesHidden: boolean;
   };
@@ -93,7 +105,7 @@ export const DEFAULTS: Settings = {
   terminal: { fontSize: 12.5, screenReader: false, restoreScrollback: true },
   launch: { fetch: true, checkUpdate: true },
   graph: { collapsed: false },
-  layout: { sidebar: 296, changes: 300, changesHidden: false },
+  layout: { sidebar: 296, changes: 300, shell: 47, tasks: null, changesHidden: false },
   inbox: { mode: "repo", collapsed: [] },
   github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
   ai: { claudeTab: false },
@@ -114,6 +126,12 @@ export const SIDEBAR_MIN = 220;
 export const SIDEBAR_MAX = 480;
 export const CHANGES_MIN = 240;
 export const CHANGES_MAX = 560;
+/** The shell's share of the column beside a pane: a prompt and a few lines, up to most of it. */
+export const SHELL_MIN = 20;
+export const SHELL_MAX = 80;
+/** The tasks panel: a header and a row or two, up to most of the rail's lower half. */
+export const TASKS_MIN = 12;
+export const TASKS_MAX = 60;
 /**
  * What one read of the inbox costs against GitHub's 5000 points an hour,
  * measured over ten repositories with the check contexts in the query. The
@@ -230,6 +248,9 @@ function read(): Settings {
   const layout = settings.layout;
   layout.sidebar = pixels(layout.sidebar, SIDEBAR_MIN, SIDEBAR_MAX, DEFAULTS.layout.sidebar);
   layout.changes = pixels(layout.changes, CHANGES_MIN, CHANGES_MAX, DEFAULTS.layout.changes);
+  layout.shell = pixels(layout.shell, SHELL_MIN, SHELL_MAX, DEFAULTS.layout.shell);
+  layout.tasks =
+    layout.tasks === null ? null : pixels(layout.tasks, TASKS_MIN, TASKS_MAX, 34);
   layout.changesHidden = layout.changesHidden === true;
   const gh = settings.github;
   gh.busyMinutes = minutes(gh.busyMinutes, DEFAULTS.github.busyMinutes);

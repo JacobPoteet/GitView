@@ -27,6 +27,7 @@ import { strongest, type AgentState } from "./lib/agent";
 import BlockBar from "./components/BlockBar";
 import Dialog from "./components/Dialog";
 import Splitter from "./components/Splitter";
+import RowSplitter from "./components/RowSplitter";
 import TaskList from "./components/TaskList";
 import BranchGraph, { type ResetMode } from "./components/BranchGraph";
 import BranchMenu from "./components/BranchMenu";
@@ -55,6 +56,10 @@ import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import {
   CHANGES_MAX,
+  SHELL_MIN,
+  SHELL_MAX,
+  TASKS_MIN,
+  TASKS_MAX,
   CHANGES_MIN,
   DEFAULTS,
   settings,
@@ -886,6 +891,19 @@ export default function App() {
    * size, measured: 7 px a cell and 25 px of padding and scrollbar.
    */
   const mainMin = useCallback(() => widthForColumns(80) ?? 585, []);
+  /** Like the column widths, a drag of the pane's height is a style write and the drop is the render. */
+  const mainRef = useRef<HTMLElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const rowSplitter = (
+    <RowSplitter
+      value={layout.shell}
+      min={SHELL_MIN}
+      max={SHELL_MAX}
+      onDrag={(pct) => mainRef.current?.style.setProperty("--shell-pct", String(pct))}
+      onDrop={(shell) => updateSettings("layout", { shell })}
+      onReset={() => updateSettings("layout", { shell: DEFAULTS.layout.shell })}
+    />
+  );
 
   // The sidebar's rows in the order it draws them, for Ctrl+1 to Ctrl+9.
   const drawn = useMemo(() => drawnOrder(groupRepos(repos, prefs, query)), [repos, prefs, query]);
@@ -2374,7 +2392,11 @@ ${landing} ${cleanup}${warning}${closing}`,
       {/* The fleet and the tasks share the left rail. Tasks belong to whichever
           repository is selected, which is chosen immediately above them, and
           moving them here freed the right-hand column for the working tree. */}
-      <div className="rail">
+      <div
+        ref={railRef}
+        className="rail"
+        style={layout.tasks === null ? undefined : ({ "--tasks-pct": layout.tasks } as CSSProperties)}
+      >
         <FleetSidebar
           repos={repos}
           watching={roots.length > 0}
@@ -2399,7 +2421,25 @@ ${landing} ${cleanup}${warning}${closing}`,
           onManageRoots={() => setSettingsOpen("folders")}
           onOpenSettings={() => setSettingsOpen("terminal")}
         />
+        {/* Zero tall, so the handle can sit on the tasks panel's top border
+            whatever height its list gives it. */}
+        <div className="rail-split">
+          <RowSplitter
+            value={layout.tasks ?? 34}
+            min={TASKS_MIN}
+            max={TASKS_MAX}
+            scope=".rail"
+            label="Tasks panel height"
+            onDrag={(pct) => railRef.current?.style.setProperty("--tasks-pct", String(pct))}
+            onDrop={(tasks) => updateSettings("layout", { tasks })}
+            onReset={() => {
+              railRef.current?.style.removeProperty("--tasks-pct");
+              updateSettings("layout", { tasks: null });
+            }}
+          />
+        </div>
         <TaskList
+          sized={layout.tasks !== null}
           tasks={selected ? tasks : []}
           disabled={!shellReady}
           onRun={(task, typeOnly) => emit(task.command, typeOnly)}
@@ -2411,7 +2451,11 @@ ${landing} ${cleanup}${warning}${closing}`,
         />
       </div>
 
-      <main className={`main${pane ? " split" : ""}${inboxOpen ? " inbox" : ""}`}>
+      <main
+        ref={mainRef}
+        className={`main${pane ? " split" : ""}`}
+        style={{ "--shell-pct": layout.shell } as CSSProperties}
+      >
         {selected ? (
           <>
             <header className="repo-head">
@@ -2580,6 +2624,7 @@ gh pr view ${branchPr.number} --web`}
                 onPort={(port) => emit(openUrlCommand(`http://localhost:${port}`, shell))}
               />
             </TerminalPane>
+            {rowSplitter}
           </>
         ) : ownShell && info ? (
           /* GitView's own shell, in the place a repository's would be. No block
@@ -2598,6 +2643,7 @@ gh pr view ${branchPr.number} --web`}
               onNote={setNote}
               onReopen={noop}
             />
+            {rowSplitter}
           </>
         ) : (
           /* Nothing selected means there is no shell to keep visible, so the
