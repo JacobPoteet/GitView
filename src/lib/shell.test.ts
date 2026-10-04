@@ -34,6 +34,19 @@ describe("quote", () => {
     expect(quote("", "powershell")).toBe('\'""\'');
   });
 
+  it("doubles the typographic single quotes PowerShell reads as quotes, so none can end the string", () => {
+    // U+2018 to U+201B each close a PowerShell single-quoted string. An issue
+    // title is somebody else's text, and `claude '...'` is typed with it inside.
+    for (const mark of ["‘", "’", "‚", "‛"]) {
+      expect(quote(`x${mark}; calc; ${mark}y`, "powershell")).toBe(
+        `'x${mark}${mark}; calc; ${mark}${mark}y'`,
+      );
+    }
+    expect(quote("It’s", "powershell")).toBe("'It’’s'");
+    // POSIX shells read only the ASCII one.
+    expect(quote("It’s", "posix")).toBe("'It’s'");
+  });
+
   it("expands nothing: a dollar and a backtick come through as typed", () => {
     expect(quote("$env:TEMP `x", "powershell")).toBe("'$env:TEMP `x'");
     expect(quote("$HOME", "posix")).toBe("'$HOME'");

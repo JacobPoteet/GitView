@@ -182,6 +182,20 @@ function taskNameFor(command: string): string {
 /** Module-level so a pane effect that depends on it never re-runs for it. */
 const noop = () => undefined;
 
+/**
+ * Types lines into one session, in order, each after the last has been written.
+ * Typed without running, several lines would run together into one, so they
+ * are joined with the statement separator both shells share.
+ */
+async function typeLines(id: string, command: string | string[], typeOnly: boolean) {
+  const lines = Array.isArray(command) ? command : [command];
+  if (typeOnly) {
+    await api.ptyWrite(id, lines.join("; "));
+    return;
+  }
+  for (const line of lines) await sendCommand(id, line);
+}
+
 export default function App() {
   const [repos, setRepos] = useState<RepoState[]>([]);
   const [prefs, setPrefs] = useState<Map<string, RepoPref>>(new Map());
@@ -375,7 +389,13 @@ export default function App() {
      * Set up front for the Claude tab's `claude`.
      */
     to?: string;
-    command: string;
+    /**
+     * More than one line is a sequence that belongs together: all of it goes
+     * to the one shell, in order. A second `setPendingCommand` replaces the
+     * first, so a caller with two commands that were sent as two calls lost
+     * every one but the last whenever the shell on screen was busy.
+     */
+    command: string | string[];
     /** Shift was held, so it is left at the prompt rather than run. */
     typeOnly: boolean;
   } | null>(null);
@@ -678,15 +698,7 @@ export default function App() {
     };
   }, [selectedPath]);
 
-  /**
-   * Keep the diff pane pointed at something that still exists.
-   *
-   * Staging a file from inside the pane is the ordinary case: the row it was
-   * opened from disappears from Changed and reappears under Staged one refresh
-   * later. Closing the pane there would mean it shut itself every time it was
-   * used, so the side follows the file, and only a file that has left the
-   * working tree entirely closes it.
-   */
+  // The history belongs to the repository it was opened on.
   useEffect(() => {
     setHistoryOpen(false);
     setHistorySeed(null);
@@ -721,6 +733,15 @@ export default function App() {
     };
   }, [commitTarget, setNote]);
 
+  /**
+   * Keep the diff pane pointed at something that still exists.
+   *
+   * Staging a file from inside the pane is the ordinary case: the row it was
+   * opened from disappears from Changed and reappears under Staged one refresh
+   * later. Closing the pane there would mean it shut itself every time it was
+   * used, so the side follows the file, and only a file that has left the
+   * working tree entirely closes it.
+   */
   useEffect(() => {
     if (!diffTarget) return;
     if (diffTarget.repoPath !== selectedPath) {
@@ -1009,6 +1030,7 @@ export default function App() {
           confirmation !== null ||
           settingsOpen !== null ||
           pendingTask !== null ||
+          pendingDescription !== null ||
           pendingTag !== null ||
           batchOpen ||
           updateOpen
@@ -1016,6 +1038,7 @@ export default function App() {
           setConfirmation(null);
           setSettingsOpen(null);
           setPendingTask(null);
+          setPendingDescription(null);
           setPendingTag(null);
           // A batch that is still running keeps its dialog: closing it would hide
           // the only place the commands it is about to run are reported.
@@ -1047,6 +1070,7 @@ export default function App() {
     confirmation,
     settingsOpen,
     pendingTask,
+    pendingDescription,
     pendingTag,
     batchOpen,
     updateOpen,
@@ -1101,8 +1125,7 @@ export default function App() {
     if (closedShell === id) setClosedShell(null);
     if (!live.has(id)) return;
     const { command, typeOnly } = pendingCommand;
-    const sent = typeOnly ? api.ptyWrite(id, command) : sendCommand(id, command);
-    sent.catch((err) => setNote(String(err)));
+    typeLines(id, command, typeOnly).catch((err) => setNote(String(err)));
     setPendingCommand(null);
   }, [pendingCommand, live, setNote, tabOf, shellOf, selectTab, closedShell, info?.dataDir]);
 
@@ -1401,7 +1424,7 @@ export default function App() {
    * without running it.
    */
   const emit = useCallback(
-    async (command: string, typeOnly = false) => {
+    async (command: string | string[], typeOnly = false) => {
       if (!sessionId) return;
       // Straight in when the shell on screen is at its prompt. Otherwise, with
       // `claude` or a dev server holding it, the command goes to a free shell
@@ -1411,8 +1434,7 @@ export default function App() {
         setPendingCommand({ path, command, typeOnly });
         return;
       }
-      if (typeOnly) await api.ptyWrite(sessionId, command);
-      else await sendCommand(sessionId, command);
+      await typeLines(sessionId, command, typeOnly);
     },
     [sessionId, shellOf],
   );
@@ -1473,11 +1495,9 @@ export default function App() {
         body: `${what} None of this has been committed, so there is no reflog to find it in afterwards.`,
         command: commands.join("\n"),
         confirmLabel: all ? `Discard all ${rows.length}` : "Discard",
-        onConfirm: async () => {
-          // One at a time and in order: `git clean` has to see the working tree
-          // `git restore` left, and both belong in the scrollback anyway.
-          for (const command of commands) await emit(command, false);
-        },
+        // One at a time and in order: `git clean` has to see the working tree
+        // `git restore` left, and both belong in the scrollback anyway.
+        onConfirm: () => emit(commands),
       });
     },
     [shell, emit],
@@ -1629,7 +1649,7 @@ export default function App() {
     const split = pruneSplit(repo, found);
     const total = split.merged.length + split.squashed.length;
     const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
-    const commands = pruneCommands(split);
+    const commands = pruneCommands(split, shell);
 
     const body =
       split.squashed.length === 0
@@ -1651,7 +1671,7 @@ export default function App() {
       body: `${body}${stale}${held}`,
       command: commands.join("\n"),
       confirmLabel: "Delete branches",
-      onConfirm: () => commands.forEach((command) => emit(command)),
+      onConfirm: () => emit(commands),
     };
   }
 
@@ -1749,8 +1769,7 @@ export default function App() {
             return next;
           });
         }
-        await emit(release, false);
-        await emit(command, false);
+        await emit([release, command]);
       },
     };
   }
@@ -1775,8 +1794,13 @@ export default function App() {
       }
       setConfirmation(deleteBranchConfirmation(selected, name, squashed));
     },
+    // `deleteBranchConfirmation` is a function of this render, so the lint
+    // rule wants it as a dependency and it would change every time. What it
+    // closes over is `selected`, `squashed`, `shell`, `repos` and `emit`. Leaving
+    // `emit` out typed the delete into whichever tab was on screen when this
+    // was last rebuilt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, squashed, shell, repos],
+    [selected, squashed, shell, repos, emit],
   );
 
   /**
@@ -1836,7 +1860,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
 
   function createTag() {
     if (!pendingTag || !tagNameOk) return;
-    tagLines.forEach((line) => emit(line));
+    emit(tagLines);
     setPendingTag(null);
   }
 
@@ -1894,7 +1918,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
           id: "action:prune",
           label: `Prune ${prunableCount} merged ${prunableCount === 1 ? "branch" : "branches"}`,
           kind: "git",
-          hint: pruneCommands(prunable).join("  ·  "),
+          hint: pruneCommands(prunable, shell).join("  ·  "),
           run: () => setConfirmation(pruneConfirmation(selected, squashed)),
         });
       }
@@ -2340,7 +2364,7 @@ ${landing} ${cleanup}${warning}${closing}`,
       shell={shell}
       prunable={prunableCount}
       pruneTitle={
-        prunableCount > 0 ? pruneCommands(prunable).join("\n") : "No merged branches to delete"
+        prunableCount > 0 ? pruneCommands(prunable, shell).join("\n") : "No merged branches to delete"
       }
       onPrune={() => setConfirmation(pruneConfirmation(selected, squashed))}
       onClose={() => {
