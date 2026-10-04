@@ -498,7 +498,7 @@ fn ref_names(repo: &Repository) -> HashMap<Oid, Vec<HistoryRef>> {
 
     let _ = repo.tag_foreach(|oid, name| {
         let name = String::from_utf8_lossy(name);
-        let short = name.rsplit('/').next().unwrap_or(&name).to_string();
+        let short = crate::fleet::short_ref(&name).to_string();
         // An annotated tag resolves to the commit it wraps; a lightweight tag is
         // the commit already.
         let target = repo

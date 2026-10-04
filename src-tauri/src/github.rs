@@ -457,21 +457,12 @@ fn quote(raw: &str) -> String {
 
 // ------------------------------------------------------------------- the calls
 
-/// One `gh` invocation, with the environment a windowless process needs.
-///
-/// `update` borrows this rather than growing a second copy of the prompt
-/// disabling and the `CREATE_NO_WINDOW` flag, both of which are the difference
-/// between a failed call and a console flashing up on somebody's desktop.
-pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
+/// `gh` with the environment a windowless process needs, before its streams are
+/// chosen. `status` spawned its own and left the window flag off, so asking
+/// whether `gh` was logged in put a console on the desktop each time.
+fn gh_command(args: &[&str]) -> Command {
     let mut cmd = Command::new("gh");
     cmd.args(args)
-        .stdin(if stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         // A GUI has no console, so anything that wants to prompt has to fail
         // instead of blocking on a read nobody can answer.
         .env("GH_PROMPT_DISABLED", "1")
@@ -480,6 +471,24 @@ pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
 
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
+
+    cmd
+}
+
+/// One `gh` invocation, with the environment a windowless process needs.
+///
+/// `update` borrows this rather than growing a second copy of the prompt
+/// disabling and the `CREATE_NO_WINDOW` flag, both of which are the difference
+/// between a failed call and a console flashing up on somebody's desktop.
+pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
+    let mut cmd = gh_command(args);
+    cmd.stdin(if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
 
     let mut child = cmd
         .spawn()
@@ -524,12 +533,10 @@ pub fn status() -> GhStatus {
     // `auth status` exits non-zero when nobody is logged in, and that is the
     // one place its exit code is the answer rather than a side effect.
     let logged_in = version.is_some()
-        && Command::new("gh")
-            .args(["auth", "status"])
+        && gh_command(&["auth", "status"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
