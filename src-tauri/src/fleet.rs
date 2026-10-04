@@ -395,10 +395,11 @@ pub struct FileChange {
 /// row that says `3 changed` needs no more than that. The changes pane needs the
 /// paths, and it is opened for one repository at a time rather than eleven, so
 /// this is a separate read instead of a wider scan.
-pub fn read_changes(path: &Path) -> Vec<FileChange> {
-    let Ok(repo) = Repository::open(path) else {
-        return Vec::new();
-    };
+///
+/// A repository that cannot be opened or read is an error and not an empty
+/// list: an empty one reads in the pane as "Nothing to commit".
+pub fn read_changes(path: &Path) -> Result<Vec<FileChange>, String> {
+    let repo = Repository::open(path).map_err(|e| e.message().to_string())?;
 
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
@@ -411,9 +412,9 @@ pub fn read_changes(path: &Path) -> Vec<FileChange> {
         .renames_head_to_index(true)
         .renames_index_to_workdir(true);
 
-    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
-        return Vec::new();
-    };
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
 
     let mut out = Vec::new();
     for entry in statuses.iter() {
@@ -449,7 +450,7 @@ pub fn read_changes(path: &Path) -> Vec<FileChange> {
     }
 
     out.sort_by(|a, b| a.staged.cmp(&b.staged).then(a.path.cmp(&b.path)));
-    out
+    Ok(out)
 }
 
 fn index_state(status: Status) -> Option<String> {

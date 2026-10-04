@@ -202,6 +202,9 @@ export default function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [changes, setChanges] = useState<FileChange[]>([]);
+  /** Why the working tree could not be read. An empty list says "nothing to commit", so a failure needs its own word. */
+  const [changesError, setChangesError] = useState<string | null>(null);
+  const [changesAttempt, setChangesAttempt] = useState(0);
   const [graph, setGraph] = useState<Graph | null>(null);
   /**
    * Local branches that were squash-merged into the trunk.
@@ -680,6 +683,7 @@ export default function App() {
   // clears the closed flag and the pane opens a fresh session.
   useEffect(() => {
     setClosedShell(null);
+    setChangesError(null);
     if (!selectedPath) {
       setChanges([]);
       return;
@@ -690,13 +694,15 @@ export default function App() {
       .then((found) => {
         if (!cancelled) setChanges(found);
       })
-      .catch(() => {
-        if (!cancelled) setChanges([]);
+      .catch((err) => {
+        if (cancelled) return;
+        setChanges([]);
+        setChangesError(String(err));
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedPath]);
+  }, [selectedPath, changesAttempt]);
 
   // The history belongs to the repository it was opened on.
   useEffect(() => {
@@ -1180,7 +1186,13 @@ export default function App() {
       // A commit typed by hand empties the changes pane, and the pane is right
       // next to the prompt it was typed at.
       if (path === selectedRef.current) {
-        api.repoChanges(path).then(setChanges).catch(() => undefined);
+        api
+          .repoChanges(path)
+          .then((found) => {
+            setChanges(found);
+            setChangesError(null);
+          })
+          .catch((err) => setChangesError(String(err)));
         // A push is the one command that changes what origin holds without
         // moving anything here, so it is the one that asks `ls-remote` again.
         // The block's id is kept so a dev server settling every few seconds
@@ -2753,6 +2765,8 @@ gh pr view ${branchPr.number} --web`}
         <ChangesPane
           repo={selected}
           changes={changes}
+          error={changesError}
+          onRetry={() => setChangesAttempt((n) => n + 1)}
           disabled={!shellReady}
           shell={shell}
           open={diffTarget}

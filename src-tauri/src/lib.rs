@@ -174,7 +174,7 @@ async fn fleet_scan(
 /// every time the shell goes quiet.
 #[tauri::command]
 async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
-    blocking(move || fleet::read_changes(&PathBuf::from(&path))).await
+    blocking(move || fleet::read_changes(&PathBuf::from(&path))).await?
 }
 
 /// One file's diff, on one side of the index.
