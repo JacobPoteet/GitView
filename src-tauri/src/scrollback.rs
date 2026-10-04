@@ -53,6 +53,21 @@ fn paths(id: &str) -> Result<(PathBuf, PathBuf), String> {
     ))
 }
 
+/// Writes beside the target and renames over it, so a crash or a kill during
+/// the close hold leaves the old file whole instead of half of a new one. The
+/// text and its blocks are two files, and a torn pair puts the gutter on the
+/// wrong lines.
+fn write_atomic(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
+    let mut temp = path.clone().into_os_string();
+    temp.push(".tmp");
+    let temp = PathBuf::from(temp);
+    std::fs::write(&temp, bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        e.to_string()
+    })
+}
+
 /// Writes a session's buffer and blocks, replacing what was there.
 pub fn write(id: &str, text: &str, blocks: &[StoredBlock]) -> Result<(), String> {
     let (ansi, json) = paths(id)?;
@@ -61,9 +76,11 @@ pub fn write(id: &str, text: &str, blocks: &[StoredBlock]) -> Result<(), String>
         blocks: blocks.to_vec(),
         saved_at: crate::cache::now_secs(),
     };
-    std::fs::write(&ansi, text).map_err(|e| e.to_string())?;
     let body = serde_json::to_string(&meta).map_err(|e| e.to_string())?;
-    std::fs::write(&json, body).map_err(|e| e.to_string())
+    // The blocks first: a text with no sidecar is still the scrollback, and a
+    // sidecar newer than its text is the half that misleads.
+    write_atomic(&json, body.as_bytes())?;
+    write_atomic(&ansi, text.as_bytes())
 }
 
 /// What was saved for a session, or nothing when there is nothing.
@@ -120,4 +137,21 @@ pub fn clear() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_write_replaces_the_file_and_leaves_no_temp_behind() {
+        let dir = std::env::temp_dir().join(format!("gitview-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.ansi");
+        write_atomic(&path, b"old").unwrap();
+        write_atomic(&path, b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert!(!dir.join("a.ansi.tmp").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

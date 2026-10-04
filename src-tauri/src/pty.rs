@@ -144,9 +144,15 @@ impl PtyManager {
                 if split > 0 {
                     let chunk = String::from_utf8_lossy(&pending[..split]).to_string();
                     pending.drain(..split);
-                    if let Some(channel) = channel_slot.lock().as_ref() {
+                    let mut slot = channel_slot.lock();
+                    if let Some(channel) = slot.as_ref() {
+                        // A webview that reloaded leaves a channel that no
+                        // longer delivers. Breaking here ended the read loop
+                        // and marked a running shell dead, so `open` could not
+                        // reattach to it. Drop the channel and keep draining:
+                        // the next `open` puts a live one in its place.
                         if channel.send(chunk).is_err() {
-                            break;
+                            *slot = None;
                         }
                     }
                 }

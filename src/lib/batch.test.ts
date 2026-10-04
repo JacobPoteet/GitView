@@ -82,7 +82,19 @@ describe("pruneSplit", () => {
       squashed("origin/old", { remote: true }),
     ]);
     expect(split).toEqual({ merged: ["merged"], squashed: ["squashed"], held: [], stale: [] });
-    expect(pruneCommands(split)).toEqual(["git branch -d merged", "git branch -D squashed"]);
+    expect(pruneCommands(split, "powershell")).toEqual([
+      "git branch -d 'merged'",
+      "git branch -D 'squashed'",
+    ]);
+  });
+
+  it("quotes every branch name, since a branch can be called x;calc", () => {
+    const split = { merged: ["a;calc", "it's"], squashed: ["b&c"], held: [], stale: [] };
+    expect(pruneCommands(split, "powershell")).toEqual([
+      "git branch -d 'a;calc' 'it''s'",
+      "git branch -D 'b&c'",
+    ]);
+    expect(pruneCommands(split, "posix")[0]).toBe("git branch -d 'a;calc' 'it'\\''s'");
   });
 
   it("lists a branch a worktree holds apart, and prunes a gone worktree's record first", () => {
@@ -133,7 +145,10 @@ describe("pruneSplit", () => {
       ],
       stale: ["F:\\wt\\gone"],
     });
-    expect(pruneCommands(split)).toEqual(["git worktree prune", "git branch -d free gone"]);
+    expect(pruneCommands(split, "powershell")).toEqual([
+      "git worktree prune",
+      "git branch -d 'free' 'gone'",
+    ]);
     // The fleet-wide prune never prunes a worktree record out of sight.
     expect(prunePlan(state)).toEqual({
       args: ["branch", "-d", "free"],

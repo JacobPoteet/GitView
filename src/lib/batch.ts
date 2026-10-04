@@ -15,6 +15,7 @@
  */
 
 import { api } from "./api";
+import { quote, type ShellKind } from "./shell";
 import type { GitOutcome, RepoState, Squashed } from "./types";
 
 export type BatchKind = "fetch" | "sync" | "prune";
@@ -136,12 +137,20 @@ export function heldBranches(repo: RepoState): { branch: string; path: string }[
     .map((b) => ({ branch: b.name, path: b.worktree as string }));
 }
 
-/** The commands that prune leaves in the shell, in the order they run. */
-export function pruneCommands(split: PruneSplit): string[] {
+/**
+ * The commands that prune leaves in the shell, in the order they run.
+ *
+ * Quoted like the single-branch delete is: `;`, `&`, `(` and `$` are all legal
+ * in a branch name, and a local branch can arrive with whatever name a remote
+ * gave it. The fleet-wide prune never comes through here, since it passes
+ * its names to `git_run` as arguments and no shell reads them.
+ */
+export function pruneCommands(split: PruneSplit, kind: ShellKind): string[] {
+  const names = (branches: string[]) => branches.map((name) => quote(name, kind)).join(" ");
   const out: string[] = [];
   if (split.stale.length > 0) out.push("git worktree prune");
-  if (split.merged.length > 0) out.push(`git branch -d ${split.merged.join(" ")}`);
-  if (split.squashed.length > 0) out.push(`git branch -D ${split.squashed.join(" ")}`);
+  if (split.merged.length > 0) out.push(`git branch -d ${names(split.merged)}`);
+  if (split.squashed.length > 0) out.push(`git branch -D ${names(split.squashed)}`);
   return out;
 }
 

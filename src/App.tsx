@@ -26,6 +26,11 @@ import TerminalPane, {
 import { strongest, type AgentState } from "./lib/agent";
 import BlockBar from "./components/BlockBar";
 import Dialog from "./components/Dialog";
+import PendingDialogs, {
+  type PendingDescription,
+  type PendingTag,
+  type PendingTask,
+} from "./components/PendingDialogs";
 import Splitter from "./components/Splitter";
 import RowSplitter from "./components/RowSplitter";
 import TaskList from "./components/TaskList";
@@ -126,29 +131,6 @@ interface Note {
   onClick?: () => void;
 }
 
-/** A command on its way into the task list, waiting to be named. */
-interface PendingTask {
-  repoPath: string;
-  command: string;
-  name: string;
-}
-
-/** A task's description, being edited before it is saved. */
-interface PendingDescription {
-  repoPath: string;
-  task: Task;
-  text: string;
-}
-
-/** A commit on its way to being tagged, waiting for the name. */
-interface PendingTag {
-  repoPath: string;
-  commit: { id: string; short: string; summary: string };
-  name: string;
-  message: string;
-  push: boolean;
-}
-
 
 /**
  * How long the splash stays up at the least.
@@ -182,12 +164,29 @@ function taskNameFor(command: string): string {
 /** Module-level so a pane effect that depends on it never re-runs for it. */
 const noop = () => undefined;
 
+/**
+ * Types lines into one session, in order, each after the last has been written.
+ * Typed without running, several lines would run together into one, so they
+ * are joined with the statement separator both shells share.
+ */
+async function typeLines(id: string, command: string | string[], typeOnly: boolean) {
+  const lines = Array.isArray(command) ? command : [command];
+  if (typeOnly) {
+    await api.ptyWrite(id, lines.join("; "));
+    return;
+  }
+  for (const line of lines) await sendCommand(id, line);
+}
+
 export default function App() {
   const [repos, setRepos] = useState<RepoState[]>([]);
   const [prefs, setPrefs] = useState<Map<string, RepoPref>>(new Map());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [changes, setChanges] = useState<FileChange[]>([]);
+  /** Why the working tree could not be read. An empty list says "nothing to commit", so a failure needs its own word. */
+  const [changesError, setChangesError] = useState<string | null>(null);
+  const [changesAttempt, setChangesAttempt] = useState(0);
   const [graph, setGraph] = useState<Graph | null>(null);
   /**
    * Local branches that were squash-merged into the trunk.
@@ -375,7 +374,13 @@ export default function App() {
      * Set up front for the Claude tab's `claude`.
      */
     to?: string;
-    command: string;
+    /**
+     * More than one line is a sequence that belongs together: all of it goes
+     * to the one shell, in order. A second `setPendingCommand` replaces the
+     * first, so a caller with two commands that were sent as two calls lost
+     * every one but the last whenever the shell on screen was busy.
+     */
+    command: string | string[];
     /** Shift was held, so it is left at the prompt rather than run. */
     typeOnly: boolean;
   } | null>(null);
@@ -660,6 +665,7 @@ export default function App() {
   // clears the closed flag and the pane opens a fresh session.
   useEffect(() => {
     setClosedShell(null);
+    setChangesError(null);
     if (!selectedPath) {
       setChanges([]);
       return;
@@ -670,23 +676,17 @@ export default function App() {
       .then((found) => {
         if (!cancelled) setChanges(found);
       })
-      .catch(() => {
-        if (!cancelled) setChanges([]);
+      .catch((err) => {
+        if (cancelled) return;
+        setChanges([]);
+        setChangesError(String(err));
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedPath]);
+  }, [selectedPath, changesAttempt]);
 
-  /**
-   * Keep the diff pane pointed at something that still exists.
-   *
-   * Staging a file from inside the pane is the ordinary case: the row it was
-   * opened from disappears from Changed and reappears under Staged one refresh
-   * later. Closing the pane there would mean it shut itself every time it was
-   * used, so the side follows the file, and only a file that has left the
-   * working tree entirely closes it.
-   */
+  // The history belongs to the repository it was opened on.
   useEffect(() => {
     setHistoryOpen(false);
     setHistorySeed(null);
@@ -721,6 +721,15 @@ export default function App() {
     };
   }, [commitTarget, setNote]);
 
+  /**
+   * Keep the diff pane pointed at something that still exists.
+   *
+   * Staging a file from inside the pane is the ordinary case: the row it was
+   * opened from disappears from Changed and reappears under Staged one refresh
+   * later. Closing the pane there would mean it shut itself every time it was
+   * used, so the side follows the file, and only a file that has left the
+   * working tree entirely closes it.
+   */
   useEffect(() => {
     if (!diffTarget) return;
     if (diffTarget.repoPath !== selectedPath) {
@@ -1009,6 +1018,7 @@ export default function App() {
           confirmation !== null ||
           settingsOpen !== null ||
           pendingTask !== null ||
+          pendingDescription !== null ||
           pendingTag !== null ||
           batchOpen ||
           updateOpen
@@ -1016,6 +1026,7 @@ export default function App() {
           setConfirmation(null);
           setSettingsOpen(null);
           setPendingTask(null);
+          setPendingDescription(null);
           setPendingTag(null);
           // A batch that is still running keeps its dialog: closing it would hide
           // the only place the commands it is about to run are reported.
@@ -1047,6 +1058,7 @@ export default function App() {
     confirmation,
     settingsOpen,
     pendingTask,
+    pendingDescription,
     pendingTag,
     batchOpen,
     updateOpen,
@@ -1101,8 +1113,7 @@ export default function App() {
     if (closedShell === id) setClosedShell(null);
     if (!live.has(id)) return;
     const { command, typeOnly } = pendingCommand;
-    const sent = typeOnly ? api.ptyWrite(id, command) : sendCommand(id, command);
-    sent.catch((err) => setNote(String(err)));
+    typeLines(id, command, typeOnly).catch((err) => setNote(String(err)));
     setPendingCommand(null);
   }, [pendingCommand, live, setNote, tabOf, shellOf, selectTab, closedShell, info?.dataDir]);
 
@@ -1157,7 +1168,13 @@ export default function App() {
       // A commit typed by hand empties the changes pane, and the pane is right
       // next to the prompt it was typed at.
       if (path === selectedRef.current) {
-        api.repoChanges(path).then(setChanges).catch(() => undefined);
+        api
+          .repoChanges(path)
+          .then((found) => {
+            setChanges(found);
+            setChangesError(null);
+          })
+          .catch((err) => setChangesError(String(err)));
         // A push is the one command that changes what origin holds without
         // moving anything here, so it is the one that asks `ls-remote` again.
         // The block's id is kept so a dev server settling every few seconds
@@ -1401,7 +1418,7 @@ export default function App() {
    * without running it.
    */
   const emit = useCallback(
-    async (command: string, typeOnly = false) => {
+    async (command: string | string[], typeOnly = false) => {
       if (!sessionId) return;
       // Straight in when the shell on screen is at its prompt. Otherwise, with
       // `claude` or a dev server holding it, the command goes to a free shell
@@ -1411,8 +1428,7 @@ export default function App() {
         setPendingCommand({ path, command, typeOnly });
         return;
       }
-      if (typeOnly) await api.ptyWrite(sessionId, command);
-      else await sendCommand(sessionId, command);
+      await typeLines(sessionId, command, typeOnly);
     },
     [sessionId, shellOf],
   );
@@ -1473,11 +1489,9 @@ export default function App() {
         body: `${what} None of this has been committed, so there is no reflog to find it in afterwards.`,
         command: commands.join("\n"),
         confirmLabel: all ? `Discard all ${rows.length}` : "Discard",
-        onConfirm: async () => {
-          // One at a time and in order: `git clean` has to see the working tree
-          // `git restore` left, and both belong in the scrollback anyway.
-          for (const command of commands) await emit(command, false);
-        },
+        // One at a time and in order: `git clean` has to see the working tree
+        // `git restore` left, and both belong in the scrollback anyway.
+        onConfirm: () => emit(commands),
       });
     },
     [shell, emit],
@@ -1629,7 +1643,7 @@ export default function App() {
     const split = pruneSplit(repo, found);
     const total = split.merged.length + split.squashed.length;
     const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
-    const commands = pruneCommands(split);
+    const commands = pruneCommands(split, shell);
 
     const body =
       split.squashed.length === 0
@@ -1651,7 +1665,7 @@ export default function App() {
       body: `${body}${stale}${held}`,
       command: commands.join("\n"),
       confirmLabel: "Delete branches",
-      onConfirm: () => commands.forEach((command) => emit(command)),
+      onConfirm: () => emit(commands),
     };
   }
 
@@ -1749,8 +1763,7 @@ export default function App() {
             return next;
           });
         }
-        await emit(release, false);
-        await emit(command, false);
+        await emit([release, command]);
       },
     };
   }
@@ -1775,8 +1788,13 @@ export default function App() {
       }
       setConfirmation(deleteBranchConfirmation(selected, name, squashed));
     },
+    // `deleteBranchConfirmation` is a function of this render, so the lint
+    // rule wants it as a dependency and it would change every time. What it
+    // closes over is `selected`, `squashed`, `shell`, `repos` and `emit`. Leaving
+    // `emit` out typed the delete into whichever tab was on screen when this
+    // was last rebuilt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, squashed, shell, repos],
+    [selected, squashed, shell, repos, emit],
   );
 
   /**
@@ -1836,7 +1854,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
 
   function createTag() {
     if (!pendingTag || !tagNameOk) return;
-    tagLines.forEach((line) => emit(line));
+    emit(tagLines);
     setPendingTag(null);
   }
 
@@ -1894,7 +1912,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
           id: "action:prune",
           label: `Prune ${prunableCount} merged ${prunableCount === 1 ? "branch" : "branches"}`,
           kind: "git",
-          hint: pruneCommands(prunable).join("  ·  "),
+          hint: pruneCommands(prunable, shell).join("  ·  "),
           run: () => setConfirmation(pruneConfirmation(selected, squashed)),
         });
       }
@@ -2340,7 +2358,7 @@ ${landing} ${cleanup}${warning}${closing}`,
       shell={shell}
       prunable={prunableCount}
       pruneTitle={
-        prunableCount > 0 ? pruneCommands(prunable).join("\n") : "No merged branches to delete"
+        prunableCount > 0 ? pruneCommands(prunable, shell).join("\n") : "No merged branches to delete"
       }
       onPrune={() => setConfirmation(pruneConfirmation(selected, squashed))}
       onClose={() => {
@@ -2729,6 +2747,8 @@ gh pr view ${branchPr.number} --web`}
         <ChangesPane
           repo={selected}
           changes={changes}
+          error={changesError}
+          onRetry={() => setChangesAttempt((n) => n + 1)}
           disabled={!shellReady}
           shell={shell}
           open={diffTarget}
@@ -2895,138 +2915,22 @@ gh pr view ${branchPr.number} --web`}
         />
       )}
 
-      {pendingTask && (
-        <Dialog
-          label="Keep this command as a task"
-          onClose={() => setPendingTask(null)}
-          onSubmit={saveTask}
-          actions={
-            <>
-              <button type="button" className="btn" onClick={() => setPendingTask(null)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn accent" disabled={!pendingTask.name.trim()}>
-                Save the task
-              </button>
-            </>
-          }
-        >
-          <p>
-            It joins this repository's list above anything discovery found, and running it types
-            the same line you just typed. Nothing is written into the repository: the task lives
-            in GitView's own database, keyed on this folder.
-          </p>
-          <pre>{pendingTask.command}</pre>
-          <input
-            className="text-input"
-            autoFocus
-            value={pendingTask.name}
-            placeholder="A name for it"
-            onChange={(e) => setPendingTask({ ...pendingTask, name: e.target.value })}
-          />
-        </Dialog>
-      )}
-
-      {pendingDescription && (
-        <Dialog
-          label={`Description for ${pendingDescription.task.name}`}
-          onClose={() => setPendingDescription(null)}
-          onSubmit={saveDescription}
-          actions={
-            <>
-              <button type="button" className="btn" onClick={() => setPendingDescription(null)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn accent">
-                Save
-              </button>
-            </>
-          }
-        >
-          <p>
-            Shown as a tooltip over this task. Kept in GitView's own database, keyed to this
-            folder: nothing is written into the repository.
-          </p>
-          <input
-            className="text-input"
-            autoFocus
-            value={pendingDescription.text}
-            placeholder="What this task is for"
-            onChange={(e) =>
-              setPendingDescription({ ...pendingDescription, text: e.target.value })
-            }
-          />
-        </Dialog>
-      )}
-
-      {pendingTag && (
-        <Dialog
-          label={`Tag ${pendingTag.commit.short}`}
-          onClose={() => setPendingTag(null)}
-          onSubmit={createTag}
-          actions={
-            <>
-              <button type="button" className="btn" onClick={() => setPendingTag(null)}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn accent"
-                disabled={!tagNameOk || !shellReady}
-                title={
-                  !shellReady
-                    ? "Waiting for the shell"
-                    : tagNameTaken
-                      ? "A tag by that name already exists here."
-                      : !tagNameOk
-                        ? "Needs a name git would take."
-                        : tagLines.join("\n")
-                }
-              >
-                {pendingTag.push && hasRemote ? "Tag and push" : "Create tag"}
-              </button>
-            </>
-          }
-        >
-          <p>
-            {pendingTag.commit.summary}
-            {"\n"}A message makes it an annotated tag, the kind a release wants. Without one it is
-            a lightweight tag, a name and nothing else.
-          </p>
-          <div className="tag-fields">
-            <input
-              className="text-input"
-              autoFocus
-              spellCheck={false}
-              value={pendingTag.name}
-              placeholder="v1.2.0"
-              title={
-                tagNameTaken
-                  ? "A tag by that name already exists here."
-                  : pendingTag.name && !tagNameOk
-                    ? "git would refuse this name."
-                    : undefined
-              }
-              onChange={(e) => setPendingTag({ ...pendingTag, name: e.target.value })}
-            />
-            <textarea
-              value={pendingTag.message}
-              placeholder="Message, for an annotated tag. Leave it empty for a lightweight one."
-              onChange={(e) => setPendingTag({ ...pendingTag, message: e.target.value })}
-            />
-            <label className={hasRemote ? undefined : "off"}>
-              <input
-                type="checkbox"
-                checked={pendingTag.push && hasRemote}
-                disabled={!hasRemote}
-                onChange={(e) => setPendingTag({ ...pendingTag, push: e.target.checked })}
-              />
-              {hasRemote ? "Push it to origin too" : "No origin to push to"}
-            </label>
-          </div>
-          <pre>{tagLines.join("\n")}</pre>
-        </Dialog>
-      )}
+      <PendingDialogs
+        task={pendingTask}
+        onTask={setPendingTask}
+        onSaveTask={saveTask}
+        description={pendingDescription}
+        onDescription={setPendingDescription}
+        onSaveDescription={saveDescription}
+        tag={pendingTag}
+        onTag={setPendingTag}
+        onCreateTag={createTag}
+        tagLines={tagLines}
+        tagNameOk={tagNameOk}
+        tagNameTaken={tagNameTaken}
+        shellReady={shellReady}
+        hasRemote={hasRemote}
+      />
 
       {updateOpen && update && (
         <UpdateDialog

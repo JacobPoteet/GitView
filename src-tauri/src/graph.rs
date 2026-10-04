@@ -14,6 +14,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::fleet::{default_branch, short_ref};
+
 /// Per side. A branch that has run a long way from its base is a wide picture to
 /// draw and a wider one to read, so the walk stops and the graph says it stopped.
 const MAX_PER_SIDE: usize = 40;
@@ -205,20 +207,6 @@ fn branch_oid(repo: &Repository, name: &str, kind: BranchType) -> Option<Oid> {
     repo.find_branch(name, kind).ok()?.get().target()
 }
 
-fn default_branch(repo: &Repository) -> Option<String> {
-    if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
-        if let Some(target) = reference.symbolic_target() {
-            return Some(target.rsplit('/').next().unwrap_or(target).to_string());
-        }
-    }
-    for candidate in ["main", "master", "develop", "trunk"] {
-        if repo.find_branch(candidate, BranchType::Local).is_ok() {
-            return Some(candidate.to_string());
-        }
-    }
-    None
-}
-
 /// Commits reachable from `tip` but not from `other`, oldest first.
 ///
 /// The bool says the walk was cut short, which the view turns into a marker
@@ -337,7 +325,7 @@ fn ref_names(repo: &Repository) -> HashMap<Oid, Vec<String>> {
 
     let _ = repo.tag_foreach(|oid, name| {
         let name = String::from_utf8_lossy(name);
-        let short = name.rsplit('/').next().unwrap_or(&name).to_string();
+        let short = short_ref(&name).to_string();
         // An annotated tag resolves to the commit it wraps; a lightweight tag is
         // the commit already. Either way the peeled id is what the graph draws.
         let target = repo

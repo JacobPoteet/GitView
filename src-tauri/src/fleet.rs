@@ -395,10 +395,11 @@ pub struct FileChange {
 /// row that says `3 changed` needs no more than that. The changes pane needs the
 /// paths, and it is opened for one repository at a time rather than eleven, so
 /// this is a separate read instead of a wider scan.
-pub fn read_changes(path: &Path) -> Vec<FileChange> {
-    let Ok(repo) = Repository::open(path) else {
-        return Vec::new();
-    };
+///
+/// A repository that cannot be opened or read is an error and not an empty
+/// list: an empty one reads in the pane as "Nothing to commit".
+pub fn read_changes(path: &Path) -> Result<Vec<FileChange>, String> {
+    let repo = Repository::open(path).map_err(|e| e.message().to_string())?;
 
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
@@ -411,9 +412,9 @@ pub fn read_changes(path: &Path) -> Vec<FileChange> {
         .renames_head_to_index(true)
         .renames_index_to_workdir(true);
 
-    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
-        return Vec::new();
-    };
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
 
     let mut out = Vec::new();
     for entry in statuses.iter() {
@@ -449,7 +450,7 @@ pub fn read_changes(path: &Path) -> Vec<FileChange> {
     }
 
     out.sort_by(|a, b| a.staged.cmp(&b.staged).then(a.path.cmp(&b.path)));
-    out
+    Ok(out)
 }
 
 fn index_state(status: Status) -> Option<String> {
@@ -511,11 +512,35 @@ pub fn redact_userinfo(url: &str) -> String {
     let Some((userinfo, host)) = rest.split_once('@') else {
         return url.to_string();
     };
-    // Only the password half is a secret, and only when there is one.
+    // An `@` after the first slash is in the path (`host:8080/a@b`), and what
+    // precedes it is a host, never a login.
+    if userinfo.contains('/') {
+        return url.to_string();
+    }
+    // The password half is the secret when there is one. With no password the
+    // username is not, unless it is the token itself: `https://ghp_…@github.com`
+    // is how a personal access token gets pasted into a remote.
     match userinfo.split_once(':') {
         Some((user, _)) => format!("{scheme}://{user}:***@{host}"),
+        None if looks_like_token(userinfo) => format!("{scheme}://***@{host}"),
         None => url.to_string(),
     }
+}
+
+/// A username that is really a credential: GitHub's and GitLab's token
+/// prefixes, or the 40 hex digits of a classic token.
+fn looks_like_token(user: &str) -> bool {
+    const PREFIXES: [&str; 7] = [
+        "ghp_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "ghr_",
+        "github_pat_",
+        "glpat-",
+    ];
+    PREFIXES.iter().any(|p| user.starts_with(p))
+        || (user.len() == 40 && user.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// Pulls `owner/repo` out of an origin URL so the GitHub layer can alias the whole
@@ -539,7 +564,13 @@ pub fn parse_owner_repo(url: &str) -> Option<String> {
     Some(format!("{owner}/{repo}"))
 }
 
-fn default_branch(repo: &Repository) -> Option<String> {
+/// The branch the fleet measures everything against.
+///
+/// One copy. `graph.rs` and `squash.rs` each had their own, and they drifted:
+/// the squash one never looked for `develop` or `trunk`, so a repository
+/// whose trunk is `develop` was measured against it by the sidebar and the
+/// graph and against nothing by the squash detection.
+pub(crate) fn default_branch(repo: &Repository) -> Option<String> {
     // What origin says, when origin has been asked.
     if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
         if let Some(target) = reference.symbolic_target() {
@@ -650,8 +681,24 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn short_ref(reference: &str) -> &str {
-    reference.rsplit('/').next().unwrap_or(reference)
+/// A full reference name as people say it: `refs/heads/feat/x` is `feat/x`,
+/// `refs/tags/release/1.0` is `release/1.0`, and `refs/remotes/origin/main` is
+/// `main`, the remote's own name dropped.
+///
+/// Taking the last path segment instead turned every branch with a slash in
+/// it, which is most of them on a project that uses `feat/` and `fix/`, into
+/// its tail: a paused rebase named `x` for `feat/x`.
+pub(crate) fn short_ref(reference: &str) -> &str {
+    if let Some(rest) = reference.strip_prefix("refs/heads/") {
+        return rest;
+    }
+    if let Some(rest) = reference.strip_prefix("refs/tags/") {
+        return rest;
+    }
+    if let Some(rest) = reference.strip_prefix("refs/remotes/") {
+        return rest.split_once('/').map_or(rest, |(_, branch)| branch);
+    }
+    reference
 }
 
 /// Where the default branch actually is, preferring the remote copy.
@@ -939,6 +986,41 @@ mod tests {
             super::redact_userinfo("https://github.com/o/r.git"),
             "https://github.com/o/r.git"
         );
+    }
+
+    /// A personal access token pasted as the username has no colon in it, so the
+    /// password rule never saw it.
+    #[test]
+    fn strips_a_token_that_is_the_username() {
+        assert_eq!(
+            super::redact_userinfo("https://ghp_abcdef123456@github.com/o/r.git"),
+            "https://***@github.com/o/r.git"
+        );
+        assert_eq!(
+            super::redact_userinfo("https://github_pat_11AAAA@github.com/o/r.git"),
+            "https://***@github.com/o/r.git"
+        );
+        let classic = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            super::redact_userinfo(&format!("https://{classic}@github.com/o/r.git")),
+            "https://***@github.com/o/r.git"
+        );
+        // An `@` in the path is not userinfo.
+        assert_eq!(
+            super::redact_userinfo("https://host:8080/o/r@v1"),
+            "https://host:8080/o/r@v1"
+        );
+    }
+
+    #[test]
+    fn a_reference_keeps_the_slashes_in_its_name() {
+        use super::short_ref;
+        assert_eq!(short_ref("refs/heads/main"), "main");
+        assert_eq!(short_ref("refs/heads/feat/thing"), "feat/thing");
+        assert_eq!(short_ref("refs/tags/release/1.0"), "release/1.0");
+        assert_eq!(short_ref("refs/remotes/origin/main"), "main");
+        assert_eq!(short_ref("refs/remotes/origin/release/1.0"), "release/1.0");
+        assert_eq!(short_ref("HEAD"), "HEAD");
     }
 
     #[test]

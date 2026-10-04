@@ -45,6 +45,19 @@ pub struct AppState {
     pty: Arc<PtyManager>,
 }
 
+/// Runs blocking work off the async runtime and turns a panicked or cancelled
+/// task into the string every command returns. Every read here was this
+/// spelled out in full.
+async fn blocking<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// What one sweep did.
 ///
 /// The count was the whole return value until preferences learned to follow a
@@ -103,7 +116,7 @@ async fn fleet_scan(
     let cache = state.cache.clone();
     let roots = settings::roots(&cache);
 
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let paths = fleet::discover(&roots);
         let keep: Vec<String> = paths
             .iter()
@@ -152,7 +165,6 @@ async fn fleet_scan(
         }
     })
     .await
-    .map_err(|e| e.to_string())
 }
 
 /// The working tree of one repository, file by file.
@@ -162,9 +174,7 @@ async fn fleet_scan(
 /// every time the shell goes quiet.
 #[tauri::command]
 async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
-    tauri::async_runtime::spawn_blocking(move || fleet::read_changes(&PathBuf::from(&path)))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(move || fleet::read_changes(&PathBuf::from(&path))).await?
 }
 
 /// One file's diff, on one side of the index.
@@ -175,11 +185,7 @@ async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
 /// two diffs, and the changes column already lists it twice for that reason.
 #[tauri::command]
 async fn repo_diff(path: String, file: String, staged: bool) -> Result<FileDiff, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        diff::read_file(&PathBuf::from(&path), &file, staged)
-    })
-    .await
-    .map_err(|e| e.to_string())
+    blocking(move || diff::read_file(&PathBuf::from(&path), &file, staged)).await
 }
 
 /// One commit: its text, its parents, and every file it touched with counts.
@@ -189,40 +195,26 @@ async fn repo_diff(path: String, file: String, staged: bool) -> Result<FileDiff,
 /// than forty diffs nobody scrolled to.
 #[tauri::command]
 async fn repo_commit(path: String, sha: String) -> Result<CommitDiff, String> {
-    tauri::async_runtime::spawn_blocking(move || diff::read_commit(&PathBuf::from(&path), &sha))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(move || diff::read_commit(&PathBuf::from(&path), &sha)).await
 }
 
 /// One file out of a commit, against the commit's first parent.
 #[tauri::command]
 async fn repo_commit_file(path: String, sha: String, file: String) -> Result<FileDiff, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        diff::read_commit_file(&PathBuf::from(&path), &sha, &file)
-    })
-    .await
-    .map_err(|e| e.to_string())
+    blocking(move || diff::read_commit_file(&PathBuf::from(&path), &sha, &file)).await
 }
 
 /// Who last touched each line of a file, as of a commit. See blame.rs.
 #[tauri::command]
 async fn repo_blame(path: String, sha: String, file: String) -> Result<blame::Blame, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        blame::read_blame(&PathBuf::from(&path), &sha, &file)
-    })
-    .await
-    .map_err(|e| e.to_string())
+    blocking(move || blame::read_blame(&PathBuf::from(&path), &sha, &file)).await
 }
 
 /// Writes one file as a commit had it, under GitView's data folder, and hands
 /// back the path for the frontend to type `Invoke-Item` on. See `diff.rs`.
 #[tauri::command]
 async fn commit_file_export(path: String, sha: String, file: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        diff::export_commit_file(&PathBuf::from(&path), &sha, &file)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || diff::export_commit_file(&PathBuf::from(&path), &sha, &file)).await?
 }
 
 /// Writes one hunk out as a patch and hands back the path.
@@ -240,12 +232,11 @@ async fn diff_hunk_patch(
     hunk_index: usize,
     header: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let text = diff::hunk_patch(&PathBuf::from(&path), &file, staged, hunk_index, &header)?;
         diff::write_patch(&path, &file, staged, hunk_index, &text)
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }
 
 /// One repository, read fresh. The frontend calls this after the terminal goes
@@ -253,22 +244,19 @@ async fn diff_hunk_patch(
 #[tauri::command]
 async fn repo_refresh(state: State<'_, AppState>, path: String) -> Result<RepoState, String> {
     let cache = state.cache.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let repo_state = fleet::read_repo(&PathBuf::from(&path));
         let _ = cache.put_repo(&repo_state);
         repo_state
     })
     .await
-    .map_err(|e| e.to_string())
 }
 
 /// The shape of one repository's current branch against the branch it merges
 /// into. Small enough to read fresh every time HEAD moves, so nothing caches it.
 #[tauri::command]
 async fn repo_graph(path: String) -> Result<BranchGraph, String> {
-    tauri::async_runtime::spawn_blocking(move || graph::read(&PathBuf::from(&path)))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(move || graph::read(&PathBuf::from(&path))).await
 }
 
 /// The whole DAG, a page at a time.
@@ -284,11 +272,7 @@ async fn repo_history(
     limit: usize,
     filter: Option<history::Filter>,
 ) -> Result<History, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        history::read(&PathBuf::from(&path), offset, limit, filter.as_ref())
-    })
-    .await
-    .map_err(|e| e.to_string())
+    blocking(move || history::read(&PathBuf::from(&path), offset, limit, filter.as_ref())).await
 }
 
 /// Local branches that were squash-merged, and the commit each one became.
@@ -298,9 +282,7 @@ async fn repo_history(
 /// measured in milliseconds across the whole fleet.
 #[tauri::command]
 async fn repo_squashed(path: String) -> Result<Vec<Squashed>, String> {
-    tauri::async_runtime::spawn_blocking(move || squash::detect(&PathBuf::from(&path)))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(move || squash::detect(&PathBuf::from(&path))).await
 }
 
 // ------------------------------------------------------------ preferences
@@ -368,7 +350,7 @@ fn task_set_description(
 #[tauri::command]
 async fn repo_tasks(state: State<'_, AppState>, path: String) -> Result<Vec<Task>, String> {
     let cache = state.cache.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let mut all = tasks::discover(&PathBuf::from(&path));
         if let Ok(saved) = cache.saved_tasks(&path) {
             // Saved tasks lead, because a person chose those.
@@ -389,7 +371,6 @@ async fn repo_tasks(state: State<'_, AppState>, path: String) -> Result<Vec<Task
         all
     })
     .await
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -425,7 +406,7 @@ fn github_cached(state: State<'_, AppState>) -> Option<Inbox> {
 #[tauri::command]
 async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
     let cache = state.cache.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         // A hidden repository's issues and pull requests are as archived as the
         // repository, so they cost the query nothing.
         let hidden = cache.hidden_repos();
@@ -446,7 +427,6 @@ async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
         inbox
     })
     .await
-    .map_err(|e| e.to_string())
 }
 
 /// One issue, with its body and the tail of its comments.
@@ -456,9 +436,7 @@ async fn github_refresh(state: State<'_, AppState>) -> Result<Inbox, String> {
 /// between two openings of the same row and the read is one small request.
 #[tauri::command]
 async fn github_issue(owner_repo: String, number: i64) -> Result<IssueDetail, String> {
-    tauri::async_runtime::spawn_blocking(move || github::issue(&owner_repo, number))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || github::issue(&owner_repo, number)).await?
 }
 
 /// The settings page's connection test: one small read through the same
@@ -466,9 +444,7 @@ async fn github_issue(owner_repo: String, number: i64) -> Result<IssueDetail, St
 /// failure carries gh's own reason.
 #[tauri::command]
 async fn github_probe() -> Result<GhProbe, String> {
-    tauri::async_runtime::spawn_blocking(github::probe)
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(github::probe).await?
 }
 
 /// Writes an issue body out and hands back the path `gh issue create` will
@@ -484,11 +460,7 @@ async fn github_issue_body(
     title: String,
     body: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        github::write_issue_body(&owner_repo, &title, &body)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || github::write_issue_body(&owner_repo, &title, &body)).await?
 }
 
 /// Writes a commit message out and hands back the path `git commit -F` wants.
@@ -496,9 +468,7 @@ async fn github_issue_body(
 /// quoted inline. See scratch.rs.
 #[tauri::command]
 async fn commit_message_file(path: String, message: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || scratch::write_commit_message(&path, &message))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || scratch::write_commit_message(&path, &message)).await?
 }
 
 /// A session's scrollback and blocks, written for the next launch. See scrollback.rs.
@@ -508,37 +478,27 @@ async fn scrollback_write(
     text: String,
     blocks: Vec<scrollback::StoredBlock>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || scrollback::write(&id, &text, &blocks))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || scrollback::write(&id, &text, &blocks)).await?
 }
 
 #[tauri::command]
 async fn scrollback_read(id: String) -> Result<Option<scrollback::Stored>, String> {
-    tauri::async_runtime::spawn_blocking(move || scrollback::read(&id))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || scrollback::read(&id)).await?
 }
 
 #[tauri::command]
 async fn scrollback_remove(id: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || scrollback::remove(&id))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || scrollback::remove(&id)).await?
 }
 
 #[tauri::command]
 async fn scrollback_size() -> Result<u64, String> {
-    tauri::async_runtime::spawn_blocking(scrollback::size)
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(scrollback::size).await?
 }
 
 #[tauri::command]
 async fn scrollback_clear() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(scrollback::clear)
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(scrollback::clear).await?
 }
 
 /// Ends the process. The window's close is intercepted so the frontend can
@@ -555,18 +515,14 @@ fn app_quit(app: tauri::AppHandle) {
 /// prompt to type it at. Installing does have one, and types its command.
 #[tauri::command]
 async fn update_check() -> Result<UpdateCheck, String> {
-    tauri::async_runtime::spawn_blocking(|| update::check(cache::now_secs()))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(|| update::check(cache::now_secs())).await
 }
 
 // ---------------------------------------------------------------- git
 
 #[tauri::command]
 async fn git_run(path: String, args: Vec<String>) -> Result<GitOutcome, String> {
-    tauri::async_runtime::spawn_blocking(move || gitops::run(&PathBuf::from(&path), &args))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(move || gitops::run(&PathBuf::from(&path), &args)).await
 }
 
 // ---------------------------------------------------------------- terminal
@@ -652,9 +608,7 @@ async fn settings_suggest_roots(
     state: State<'_, AppState>,
 ) -> Result<Vec<settings::Suggestion>, String> {
     let watched = settings::roots(&state.cache);
-    tauri::async_runtime::spawn_blocking(move || settings::suggest(&watched))
-        .await
-        .map_err(|e| e.to_string())
+    blocking(move || settings::suggest(&watched)).await
 }
 
 #[tauri::command]

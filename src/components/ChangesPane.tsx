@@ -8,11 +8,15 @@ import {
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { isUntracked, type DiffTarget, type FileChange, type RepoState } from "../lib/types";
 import { api } from "../lib/api";
+import PaneNote from "./PaneNote";
 import { commitCommand, openFileCommand, quote, type ShellKind } from "../lib/shell";
 
 interface Props {
   repo: RepoState | null;
   changes: FileChange[];
+  /** Why the working tree could not be read, when it could not. */
+  error: string | null;
+  onRetry: () => void;
   /** No live shell means nothing here has anywhere to run. */
   disabled: boolean;
   shell: ShellKind;
@@ -234,6 +238,8 @@ function TrashIcon() {
 export default function ChangesPane({
   repo,
   changes,
+  error,
+  onRetry,
   disabled,
   shell,
   open,
@@ -446,7 +452,12 @@ export default function ChangesPane({
       </div>
 
       <div className="change-list">
-        {changes.length === 0 && <p className="empty">Nothing to commit.</p>}
+        {error && (
+          <PaneNote kind="error" onRetry={onRetry}>
+            {error}
+          </PaneNote>
+        )}
+        {!error && changes.length === 0 && <p className="empty">Nothing to commit.</p>}
 
         <Section
           label="Conflicted"

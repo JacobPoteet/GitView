@@ -15,7 +15,6 @@
 //! its command survives contact with GitHub.
 
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::process::{Command, Stdio};
 
 #[cfg(windows)]
@@ -457,21 +456,15 @@ fn quote(raw: &str) -> String {
 
 // ------------------------------------------------------------------- the calls
 
-/// One `gh` invocation, with the environment a windowless process needs.
-///
-/// `update` borrows this rather than growing a second copy of the prompt
-/// disabling and the `CREATE_NO_WINDOW` flag, both of which are the difference
-/// between a failed call and a console flashing up on somebody's desktop.
-pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
+/// How long a `gh` call may run. One GraphQL read is a second or two.
+const GH_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// `gh` with the environment a windowless process needs, before its streams are
+/// chosen. `status` spawned its own and left the window flag off, so asking
+/// whether `gh` was logged in put a console on the desktop each time.
+fn gh_command(args: &[&str]) -> Command {
     let mut cmd = Command::new("gh");
     cmd.args(args)
-        .stdin(if stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         // A GUI has no console, so anything that wants to prompt has to fail
         // instead of blocking on a read nobody can answer.
         .env("GH_PROMPT_DISABLED", "1")
@@ -481,23 +474,23 @@ pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|err| format!("could not start gh: {err}"))?;
+    cmd
+}
 
-    if let Some(body) = stdin {
-        let Some(pipe) = child.stdin.as_mut() else {
-            return Err("gh took no stdin".to_string());
-        };
-        pipe.write_all(body.as_bytes())
-            .map_err(|err| format!("could not write the query to gh: {err}"))?;
-    }
-    // Dropping the handle closes the pipe, which is what lets gh finish reading.
-    drop(child.stdin.take());
-
-    let out = child
-        .wait_with_output()
-        .map_err(|err| format!("gh did not finish: {err}"))?;
+/// One `gh` invocation, with the environment a windowless process needs.
+///
+/// `update` borrows this rather than growing a second copy of the prompt
+/// disabling and the `CREATE_NO_WINDOW` flag, both of which are the difference
+/// between a failed call and a console flashing up on somebody's desktop.
+pub(crate) fn gh(args: &[&str], stdin: Option<&str>) -> Result<String, String> {
+    let out =
+        crate::gitops::output_within(gh_command(args), stdin, GH_LIMIT).map_err(|err| match err
+            .kind()
+        {
+            std::io::ErrorKind::TimedOut => format!("gh {err}"),
+            std::io::ErrorKind::NotFound => format!("could not start gh: {err}"),
+            _ => format!("gh did not finish: {err}"),
+        })?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
 
     // gh exits non-zero when any alias in the query failed, and prints the
@@ -524,12 +517,10 @@ pub fn status() -> GhStatus {
     // `auth status` exits non-zero when nobody is logged in, and that is the
     // one place its exit code is the answer rather than a side effect.
     let logged_in = version.is_some()
-        && Command::new("gh")
-            .args(["auth", "status"])
+        && gh_command(&["auth", "status"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
             .status()
             .map(|s| s.success())
             .unwrap_or(false);

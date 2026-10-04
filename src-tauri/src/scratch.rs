@@ -75,6 +75,26 @@ pub fn slug(text: &str) -> String {
     format!("{}-{tail}", &flat[..99])
 }
 
+/// Writes `content` under a name nothing else is using, and returns the path.
+///
+/// The name is `stem.ext` when that is free or already holds exactly this
+/// content, and `stem-2.ext`, `stem-3.ext` after it otherwise. Shift-click
+/// leaves a command at the prompt with its file unread, and a second message
+/// with the same subject used to overwrite the first one's before it ran.
+pub fn write_unique(dir: &Path, stem: &str, ext: &str, content: &str) -> Result<PathBuf, String> {
+    let mut path = dir.join(format!("{stem}.{ext}"));
+    for n in 2..=99 {
+        match std::fs::read_to_string(&path) {
+            Ok(existing) if existing != content => {
+                path = dir.join(format!("{stem}-{n}.{ext}"));
+            }
+            _ => break,
+        }
+    }
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// The folder name of a repository, for a file name that says which one.
 pub fn repo_name(repo_path: &str) -> String {
     Path::new(repo_path)
@@ -100,8 +120,7 @@ pub fn write_commit_message(repo_path: &str, message: &str) -> Result<String, St
         .take(60)
         .collect::<String>();
     let name = slug(&format!("{}-{subject}", repo_name(repo_path)));
-    let path = dir.join(format!("{name}.txt"));
-    std::fs::write(&path, message.replace("\r\n", "\n")).map_err(|e| e.to_string())?;
+    let path = write_unique(&dir, &name, "txt", &message.replace("\r\n", "\n"))?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -122,6 +141,20 @@ mod tests {
         assert_eq!(short.len(), 200);
         assert!(short.starts_with("aaa"));
         assert!(short.ends_with("bbb"));
+    }
+
+    #[test]
+    fn a_second_message_with_the_same_subject_gets_a_name_of_its_own() {
+        let dir = std::env::temp_dir().join(format!("gitview-unique-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let first = write_unique(&dir, "m", "txt", "one").unwrap();
+        let again = write_unique(&dir, "m", "txt", "one").unwrap();
+        let other = write_unique(&dir, "m", "txt", "two").unwrap();
+        let third = write_unique(&dir, "m", "txt", "three").unwrap();
+        assert_eq!(first, again, "the same text reuses its file");
+        assert!(other.ends_with("m-2.txt") && third.ends_with("m-3.txt"));
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "one");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

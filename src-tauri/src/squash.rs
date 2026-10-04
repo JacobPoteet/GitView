@@ -22,6 +22,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::fleet::default_branch;
+
 /// A ceiling on the trunk walk, for the case the fork point is not on it.
 ///
 /// A branch normally stops the walk itself: a squash of that branch has to sit
@@ -261,20 +263,6 @@ fn trunk(repo: &Repository) -> Option<(Oid, String)> {
     }
     let branch = repo.find_branch(&default, BranchType::Local).ok()?;
     branch.get().target().map(|oid| (oid, default))
-}
-
-fn default_branch(repo: &Repository) -> Option<String> {
-    if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
-        if let Some(target) = reference.symbolic_target() {
-            return Some(target.rsplit('/').next().unwrap_or(target).to_string());
-        }
-    }
-    for name in ["main", "master"] {
-        if repo.find_branch(name, BranchType::Local).is_ok() {
-            return Some(name.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]

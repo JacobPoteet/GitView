@@ -17,6 +17,9 @@ import type { MergeMethod, Operation, WorktreeSummary } from "./types";
 
 export type ShellKind = "powershell" | "posix";
 
+/** Every character PowerShell treats as a single quote: ASCII and U+2018 to U+201B. */
+const SINGLE_QUOTES = /['‘’‚‛]/g;
+
 export function shellKind(shellPath: string | undefined): ShellKind {
   if (!shellPath) return "powershell";
   const name = shellPath.split(/[\\/]/).pop()?.toLowerCase() ?? "";
@@ -37,8 +40,13 @@ export function quote(value: string, kind: ShellKind): string {
   if (kind === "powershell") {
     if (value === "") return '\'""\'';
     // A single-quoted PowerShell string expands nothing at all. The only
-    // character with meaning inside one is the quote itself, which doubles.
-    return `'${value.replace(/'/g, "''")}'`;
+    // characters with meaning inside one are the quotes, and there are four
+    // more than the ASCII one: PowerShell's tokenizer reads U+2018 to U+201B
+    // as a single quote too. A file, branch or issue title with a typographic
+    // apostrophe in it closed the string early, and whatever followed ran as
+    // the next statement. Each one doubles with itself, which is how the
+    // tokenizer reads a literal one back.
+    return `'${value.replace(SINGLE_QUOTES, "$&$&")}'`;
   }
   // POSIX has no escape inside single quotes: close, emit a literal, reopen.
   return `'${value.split("'").join("'\\''")}'`;
