@@ -34,6 +34,9 @@
   --w98-light: #ffffff;
   --w98-face: #dfdfdf;
   --w98-shadow: #808080;
+  /* Disabled text. 98.css uses the bevel grey, 3.9:1 on silver; this is 4.9:1 and
+     the white emboss still marks it as off. */
+  --w98-disabled: #4a4a4a;
   --w98-frame: #0a0a0a;
   --w98-blue: #000080;
   --w98-blue-light: #1084d0;
@@ -54,24 +57,26 @@
   --bg: #c0c0c0;
   --bg-raised: #c0c0c0;
   --bg-hover: #dfdfdf;
-  --bg-active: #a9b2dc;
+  --bg-active: #b4bce4;
   --bg-inset: #ffffff;
 
   --line: #808080;
   --line-strong: #404040;
 
   --text: #000000;
-  --text-dim: #222222;
-  /* Under dim by a step, and still over 4.5:1 on the silver. */
-  --text-faint: #4a4a4a;
+  --text-dim: #1a1a1a;
+  /* Under dim by a step. 5.7:1 on the silver. The status colours below were
+     darkened to clear 4.5:1 on silver and on the selected row; the first
+     picks measured 3.9 to 4.1. */
+  --text-faint: #333333;
 
   --accent: #000080;
   --accent-soft: rgb(0 0 128 / 0.12);
   --accent-line: rgb(0 0 128 / 0.55);
 
-  --green: #006400;
-  --amber: #7a4f00;
-  --red: #b00000;
+  --green: #004800;
+  --amber: #5e3b00;
+  --red: #8c0000;
   --blue: #0000a0;
 
   /* Lanes avoid red and amber here too, as they do in the default theme. */
@@ -166,7 +171,7 @@
 :root[data-theme="win98"] .btn:disabled,
 :root[data-theme="win98"] .btn.accent:disabled {
   background: var(--w98-surface);
-  color: var(--w98-shadow);
+  color: var(--w98-disabled);
   text-shadow: 1px 1px 0 var(--w98-light);
   box-shadow: var(--raised);
 }
@@ -272,8 +277,20 @@
   color: var(--text);
 }
 
+:root[data-theme="win98"] .rail {
+  background: var(--bg);
+}
+
+/* The pane and its tab bar stay silver, so the bar's text reads on silver.
+   Only the screen itself is black. */
 :root[data-theme="win98"] .terminal-pane {
+  background: var(--bg);
+}
+
+:root[data-theme="win98"] .terminal-host {
+  margin: 0 3px 3px;
   background: #000;
+  box-shadow: var(--field);
 }
 
 /* The theme picker's rows are buttons, and a chosen one is pressed in. */
@@ -286,6 +303,130 @@
 :root[data-theme="win98"] .theme-option.on {
   box-shadow: var(--pressed);
   background: var(--w98-surface);
+}
+
+/* ------------------------------------------------------------------ menus and popovers */
+
+/* A menu, a branch popover and the tour card are raised windows without a
+   title bar. */
+:root[data-theme="win98"] .row-menu,
+:root[data-theme="win98"] .branch-pop,
+:root[data-theme="win98"] .tour-card {
+  background: var(--w98-surface);
+  border: none;
+  box-shadow: var(--window-bevel);
+}
+
+/* The highlighted menu row is the navy bar, danger rows included. */
+:root[data-theme="win98"] .row-menu button:hover:not(:disabled),
+:root[data-theme="win98"] .row-menu button.danger:hover:not(:disabled) {
+  background: var(--w98-blue);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ effects a token cannot carry */
+
+/* Faint text that the default dims by mixing it with transparent. On silver
+   that lands under 3:1, so these use the faint token as it is. */
+:root[data-theme="win98"] .diff-line .ln,
+:root[data-theme="win98"] .blame-age,
+:root[data-theme="win98"] .terminal-tab.asleep {
+  color: var(--text-faint);
+}
+
+/* The graph's glow is a soft light, and a bevelled theme has none. */
+:root[data-theme="win98"] .rail.ours {
+  filter: none;
+}
+
+:root[data-theme="win98"] .graph-node.ours.tip .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px var(--accent-soft);
+}
+
+:root[data-theme="win98"] .graph-node.theirs.tip .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--blue), 0 0 0 3px var(--accent-soft);
+}
+
+/* ------------------------------------------------------------------ one surface, flat marks */
+
+/* The default tints a chip by mixing its colour into the surface. On silver
+   that mix is a muddy teal or tan, so every mark here is white with a hairline
+   and keeps its colour in the text. */
+:root[data-theme="win98"] .chip.ahead,
+:root[data-theme="win98"] .chip.behind,
+:root[data-theme="win98"] .chip.dirty,
+:root[data-theme="win98"] .chip.conflict,
+:root[data-theme="win98"] .chip.unpushed,
+:root[data-theme="win98"] .chip.pr,
+:root[data-theme="win98"] .agent.waiting,
+:root[data-theme="win98"] .agent.done,
+:root[data-theme="win98"] .inbox-label,
+:root[data-theme="win98"] .graph-ref,
+:root[data-theme="win98"] .graph-ref.head {
+  background: #fff;
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--w98-shadow);
+}
+
+:root[data-theme="win98"] .graph-ref {
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .graph-ref.head {
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+
+:root[data-theme="win98"] .graph-node.theirs .graph-dot,
+:root[data-theme="win98"] .graph-node.ours .graph-dot,
+:root[data-theme="win98"] .graph-node.fork.head .graph-dot,
+:root[data-theme="win98"] .graph-node.trunk.head .graph-dot {
+  background: #fff;
+}
+
+/* A disabled control is grey with a white shadow, never a faded one: opacity
+   on silver gives a third grey that matches nothing else on the screen. */
+:root[data-theme="win98"] .change-discard-all:disabled,
+:root[data-theme="win98"] .change-bulk:disabled,
+:root[data-theme="win98"] .hunk-apply:disabled,
+:root[data-theme="win98"] .commit-amend:disabled,
+:root[data-theme="win98"] .row-menu button:disabled {
+  opacity: 1;
+  color: var(--w98-disabled);
+  text-shadow: 1px 1px 0 var(--w98-light);
+}
+
+:root[data-theme="win98"] .task-hidden-list {
+  opacity: 1;
+}
+
+/* Every disabled control, not just the ones named above: the commit button,
+   Sync all, the chip buttons and whatever comes next. A faded one is a third
+   grey, so the colour is solid and the white emboss says it is off. */
+:root[data-theme="win98"] :disabled,
+:root[data-theme="win98"] .setting-row.disabled .setting-label {
+  opacity: 1;
+  color: var(--w98-disabled);
+  text-shadow: 1px 1px 0 var(--w98-light);
+}
+
+/* The reference is black text on silver with navy for selection. The default
+   uses green for "live" and "ok" on labels as well as marks. Here the marks
+   (chips, dots, diff signs, badges) keep their colour, and a label or a count
+   that only names something goes back to the text colour. */
+:root[data-theme="win98"] .btn .btn-count,
+:root[data-theme="win98"] .graph-ref.head,
+:root[data-theme="win98"] .history-row.head .history-sha,
+:root[data-theme="win98"] .history-ref.head,
+:root[data-theme="win98"] .setting-hint.ok,
+:root[data-theme="win98"] .block-bar.ok .block-status,
+:root[data-theme="win98"] .batch-code.ok,
+:root[data-theme="win98"] .inbox-checks.ok {
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .graph-ref.head {
+  box-shadow: inset 0 0 0 1px var(--text);
 }
 
 /* ------------------------------------------------------------------ scrollbars */
