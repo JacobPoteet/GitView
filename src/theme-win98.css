@@ -1,0 +1,305 @@
+/**
+ * The Windows 98 theme.
+ *
+ * Everything here sits under :root[data-theme="win98"], so the default theme
+ * never sees a rule from this file. The bevel recipes, the title-bar gradient,
+ * the palette values and the scrollbar artwork follow 98.css by Jordan Scales
+ * (MIT, copy in src/assets/win98/LICENSE-98.css). 98.css itself is not imported:
+ * it styles bare elements globally, so it would restyle the default theme and
+ * fight the tokens. The pixel font is the "Pixelated MS Sans Serif" it ships.
+ *
+ * Shape comes from the tokens in styles.css (radius 0, no blur, no shadow
+ * under a window). Colour comes from the same tokens. The rules below are only
+ * what a token cannot say: bevels, title bars, the font, the scrollbars.
+ */
+
+@font-face {
+  font-family: "Pixelated MS Sans Serif";
+  src: url("./assets/win98/ms_sans_serif.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Pixelated MS Sans Serif";
+  src: url("./assets/win98/ms_sans_serif_bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+
+:root[data-theme="win98"] {
+  color-scheme: light;
+
+  --w98-surface: #c0c0c0;
+  --w98-light: #ffffff;
+  --w98-face: #dfdfdf;
+  --w98-shadow: #808080;
+  --w98-frame: #0a0a0a;
+  --w98-blue: #000080;
+  --w98-blue-light: #1084d0;
+
+  /* Bevels, as 98.css stacks them: an outer and an inner inset pair. */
+  --raised: inset -1px -1px var(--w98-frame), inset 1px 1px var(--w98-light),
+    inset -2px -2px var(--w98-shadow), inset 2px 2px var(--w98-face);
+  --pressed: inset -1px -1px var(--w98-light), inset 1px 1px var(--w98-frame),
+    inset -2px -2px var(--w98-face), inset 2px 2px var(--w98-shadow);
+  --default-raised: inset -2px -2px var(--w98-frame), inset 1px 1px var(--w98-frame),
+    inset 2px 2px var(--w98-light), inset -3px -3px var(--w98-shadow),
+    inset 3px 3px var(--w98-face);
+  --window-bevel: inset -1px -1px var(--w98-frame), inset 1px 1px var(--w98-face),
+    inset -2px -2px var(--w98-shadow), inset 2px 2px var(--w98-light);
+  --field: inset -1px -1px var(--w98-light), inset 1px 1px var(--w98-shadow),
+    inset -2px -2px var(--w98-face), inset 2px 2px var(--w98-frame);
+
+  --bg: #c0c0c0;
+  --bg-raised: #c0c0c0;
+  --bg-hover: #dfdfdf;
+  --bg-active: #a9b2dc;
+  --bg-inset: #ffffff;
+
+  --line: #808080;
+  --line-strong: #404040;
+
+  --text: #000000;
+  --text-dim: #222222;
+  /* Under dim by a step, and still over 4.5:1 on the silver. */
+  --text-faint: #4a4a4a;
+
+  --accent: #000080;
+  --accent-soft: rgb(0 0 128 / 0.12);
+  --accent-line: rgb(0 0 128 / 0.55);
+
+  --green: #006400;
+  --amber: #7a4f00;
+  --red: #b00000;
+  --blue: #0000a0;
+
+  /* Lanes avoid red and amber here too, as they do in the default theme. */
+  --lane-1: #0000a0;
+  --lane-2: #008080;
+  --lane-3: #008000;
+  --lane-4: #800080;
+  --lane-5: #006080;
+  --lane-6: #4040c0;
+  --age-0: #000080;
+  --age-1: #2a2a90;
+  --age-2: #50509a;
+  --age-3: #6e6e9e;
+  --age-4: #8a8a9a;
+  --age-5: #a0a0a0;
+
+  --radius: 0;
+  --radius-lg: 0;
+  --r-xs: 0;
+  --r-sm: 0;
+  --r-pill: 0;
+  --blur: 0px;
+  --shadow-dialog: none;
+  --shadow-menu: none;
+  --shadow-popover: none;
+  --shadow-tip: none;
+
+  /* The pixel face is drawn for 11 px and blurs at anything else, so the
+     scale collapses to 11 and its double. */
+  --fs-micro: 11px;
+  --fs-meta: 11px;
+  --fs-small: 11px;
+  --fs-body: 11px;
+  --fs-title: 11px;
+  --fs-display: 22px;
+  --font-ui: "Pixelated MS Sans Serif", Arial, sans-serif;
+}
+
+/* The face is bitmap-hinted; smoothing it undoes that. */
+:root[data-theme="win98"] body {
+  -webkit-font-smoothing: none;
+  font-feature-settings: normal;
+}
+
+/* A bevel is the whole look, and a fade between two of them is not one. */
+:root[data-theme="win98"] *,
+:root[data-theme="win98"] *::before,
+:root[data-theme="win98"] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+:root[data-theme="win98"] ::selection {
+  background: var(--w98-blue);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+:root[data-theme="win98"] .btn {
+  border: none;
+  background: var(--w98-surface);
+  color: var(--text);
+  box-shadow: var(--raised);
+  font-weight: 400;
+  padding: 4px 12px;
+  min-height: 23px;
+}
+
+:root[data-theme="win98"] .btn:hover:not(:disabled) {
+  background: var(--w98-surface);
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .btn:active:not(:disabled),
+:root[data-theme="win98"] .btn[aria-pressed="true"]:not(.changes-toggle) {
+  background: var(--w98-surface);
+  color: var(--text);
+  box-shadow: var(--pressed);
+}
+
+/* The accent button is the dialog's default, with the heavier frame. */
+:root[data-theme="win98"] .btn.accent {
+  color: var(--text);
+  box-shadow: var(--default-raised);
+}
+
+:root[data-theme="win98"] .btn.accent:hover:not(:disabled) {
+  background: var(--w98-surface);
+}
+
+:root[data-theme="win98"] .btn:disabled,
+:root[data-theme="win98"] .btn.accent:disabled {
+  background: var(--w98-surface);
+  color: var(--w98-shadow);
+  text-shadow: 1px 1px 0 var(--w98-light);
+  box-shadow: var(--raised);
+}
+
+:root[data-theme="win98"] .btn code {
+  opacity: 1;
+}
+
+:root[data-theme="win98"] .btn:focus-visible,
+:root[data-theme="win98"] button:focus-visible,
+:root[data-theme="win98"] select:focus-visible,
+:root[data-theme="win98"] [role="button"]:focus-visible,
+:root[data-theme="win98"] [tabindex]:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: -4px;
+}
+
+/* ------------------------------------------------------------------ fields */
+
+:root[data-theme="win98"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root[data-theme="win98"] textarea,
+:root[data-theme="win98"] select {
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--field);
+  border: none;
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------------ windows */
+
+:root[data-theme="win98"] .confirm,
+:root[data-theme="win98"] .palette {
+  background: var(--w98-surface);
+  border: none;
+  box-shadow: var(--window-bevel);
+  padding: 3px;
+}
+
+:root[data-theme="win98"] .confirm-backdrop,
+:root[data-theme="win98"] .palette-backdrop {
+  background: rgb(0 0 0 / 0.25);
+}
+
+/* A dialog's heading is its title bar. */
+:root[data-theme="win98"] .confirm h2 {
+  align-items: center;
+  padding: 3px 2px 3px 3px;
+  background: linear-gradient(90deg, var(--w98-blue), var(--w98-blue-light));
+  color: #fff;
+  font-weight: 700;
+}
+
+:root[data-theme="win98"] .confirm h2 .pane-close {
+  margin-top: 0;
+  margin-left: auto;
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--w98-surface);
+  color: #000;
+  box-shadow: var(--raised);
+}
+
+:root[data-theme="win98"] .confirm h2 .pane-close:active {
+  box-shadow: var(--pressed);
+}
+
+:root[data-theme="win98"] .pane-close svg path {
+  stroke-width: 2;
+  stroke-linecap: butt;
+}
+
+:root[data-theme="win98"] .confirm p {
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .confirm pre {
+  box-shadow: var(--field);
+  border: none;
+}
+
+/* The highlighted menu row is the navy bar. */
+:root[data-theme="win98"] .palette-item.active {
+  background: var(--w98-blue);
+  color: #fff;
+}
+
+:root[data-theme="win98"] .palette-item.active .label,
+:root[data-theme="win98"] .palette-item.active .kind,
+:root[data-theme="win98"] .palette-item.active .hint {
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ chrome */
+
+:root[data-theme="win98"] .status-bar {
+  background: var(--w98-surface);
+  border-top: 1px solid var(--w98-shadow);
+  box-shadow: 0 -1px 0 var(--w98-light);
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .terminal-pane {
+  background: #000;
+}
+
+/* The theme picker's rows are buttons, and a chosen one is pressed in. */
+:root[data-theme="win98"] .theme-option {
+  border: none;
+  background: var(--w98-surface);
+  box-shadow: var(--raised);
+}
+
+:root[data-theme="win98"] .theme-option.on {
+  box-shadow: var(--pressed);
+  background: var(--w98-surface);
+}
+
+/* ------------------------------------------------------------------ scrollbars */
+
+:root[data-theme="win98"] ::-webkit-scrollbar {width:16px}
+:root[data-theme="win98"] ::-webkit-scrollbar:horizontal {height:17px}
+:root[data-theme="win98"] ::-webkit-scrollbar-corner {background:#dfdfdf}
+:root[data-theme="win98"] ::-webkit-scrollbar-track {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='2' height='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M1 0H0v1h1v1h1V1H1V0z' fill='silver'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 0H1v1H0v1h1V1h1V0z' fill='%23fff'/%3E%3C/svg%3E")}
+:root[data-theme="win98"] ::-webkit-scrollbar-thumb {background-color:#dfdfdf;box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px grey,inset 2px 2px #dfdfdf}
+:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:end:increment,
+:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:start:decrement,
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:end:increment,
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:start:decrement {display:block}
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:start {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M8 6H7v1H6v1H5v1H4v1h7V9h-1V8H9V7H8V6z' fill='%23000'/%3E%3C/svg%3E");height:17px}
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:end {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M11 6H4v1h1v1h1v1h1v1h1V9h1V8h1V7h1V6z' fill='%23000'/%3E%3C/svg%3E");height:17px}
+:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:start {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M9 4H8v1H7v1H6v1H5v1h1v1h1v1h1v1h1V4z' fill='%23000'/%3E%3C/svg%3E");width:16px}
+:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:end {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7 4H6v7h1v-1h1V9h1V8h1V7H9V6H8V5H7V4z' fill='%23000'/%3E%3C/svg%3E");width:16px}

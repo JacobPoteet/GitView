@@ -62,6 +62,8 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | Path | Holds |
 | --- | --- |
 | `src/` | React frontend. Components, plus `lib/api.ts` mirroring the Rust command surface, `lib/shell.ts` quoting the commands that get typed at a prompt, and `lib/settings.ts` holding the app's own settings in `localStorage` |
+| `src/lib/themes.ts` | The theme registry and `applyTheme`. A theme's terminal palette, and the id the settings store |
+| `src/theme-win98.css` | The Windows 98 theme. Scoped to its attribute, so the default never sees a rule from it |
 | `src/hooks/` | State that left `App.tsx`: `useInbox`, `useBatch`, `useUpdate`, `useTour`, `useCommandHint`. Each owns its state and returns what the render needs; a feature that grows a handful of state goes here rather than into `App` |
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
@@ -129,6 +131,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | A right-click opens the surface's own menu, never the webview's | WebView2 offers Back, Reload, Print and Share, and `App.tsx` swallows the event at the document. A surface with something to offer uses `ContextMenu.tsx` and builds its items from actions it already has; there is no "Type without running" item because shift-click on any item already does that. Text fields keep the native menu for cut, copy and paste |
 | A chord is added to `lib/keys.ts` and nowhere else | Three places have to agree on it: the terminal releases it rather than handing it to the shell, `App` acts on it, and the settings dialog lists it. `isClaimed` and `SHORTCUTS` both read the one table, and `chordOf` is the only reading of a key event, so a handler that tests `event.key` itself is a chord the terminal will swallow |
 | The clipboard is read in Rust, and written from the webview | `navigator.clipboard.readText()` makes WebView2 raise an Edge permission dialog over the window; `clipboard_text` through `arboard` asks nothing. `writeText` never prompts, so `copyText` stays where it is |
+| A theme is a registry entry in `lib/themes.ts` plus a block of tokens under `:root[data-theme]` | Colour, radius, blur, shadow and the type scale are tokens, so a theme redefines them rather than touching a selector. What a token cannot say (bevels, a title bar) goes in that theme's own file, scoped to its attribute. The terminal's palette is in the registry because xterm needs hex. The default carries no attribute. A new literal radius or shadow in `styles.css` is a rule every theme has to override, so use `--r-xs`, `--r-sm`, `--r-pill`, `--radius*` and `--shadow-*` |
 | A pull request opens with one kind label at the least and an `area:` label for each part of the app it touches | A phase label dies with its phase; `area: graph` still says which wiki note owns the change three phases on. The kinds are the ones the issues use plus `release`, the areas follow the layout table above, and `gh label list` is the live vocabulary. Pass `--label` to `gh pr create` rather than labelling afterwards, and add a kind for every issue the PR closes. The wiki's `Operations/Wiki and PR Protocol.md` says what each label means |
 
 ## Building
