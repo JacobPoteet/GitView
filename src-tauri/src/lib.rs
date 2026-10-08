@@ -535,8 +535,37 @@ fn pty_open(
     cols: u16,
     rows: u16,
     on_output: Channel<String>,
+    shell: Option<String>,
 ) -> Result<bool, String> {
-    state.pty.open(&id, &cwd, cols, rows, on_output)
+    state.pty.open(
+        &id,
+        &cwd,
+        cols,
+        rows,
+        on_output,
+        shell.as_deref().unwrap_or(""),
+    )
+}
+
+/// The shell a preference resolves to, for the dialog's line under the field and
+/// for the quoting every typed command is built with.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedShell {
+    path: String,
+    integration: bool,
+    /// False when a preference was given and this is the fallback instead.
+    found: bool,
+}
+
+#[tauri::command]
+fn shell_resolve(preference: String) -> ResolvedShell {
+    let (path, found) = pty::resolve_shell(&preference);
+    ResolvedShell {
+        integration: pty::is_powershell(&path),
+        path,
+        found,
+    }
 }
 
 #[tauri::command]
@@ -757,6 +786,7 @@ pub fn run() {
             settings_set_fetched_at,
             clipboard_text,
             app_info,
+            shell_resolve,
         ])
         .run(tauri::generate_context!())
         .expect("GitView failed to start");

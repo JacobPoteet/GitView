@@ -14,6 +14,7 @@ import type {
   IssueDetail,
   RepoPref,
   RepoState,
+  ResolvedShell,
   RootSuggestion,
   ScanReport,
   Squashed,
@@ -132,11 +133,16 @@ export const api = {
     cols: number,
     rows: number,
     onOutput: (chunk: string) => void,
+    /** The shell setting as typed; empty is automatic. */
+    shell = "",
   ) => {
     const channel = new Channel<string>();
     channel.onmessage = onOutput;
-    return invoke<boolean>("pty_open", { id, cwd, cols, rows, onOutput: channel });
+    return invoke<boolean>("pty_open", { id, cwd, cols, rows, onOutput: channel, shell });
   },
+  /** What a shell setting resolves to on this machine, and whether it was found. */
+  shellResolve: (preference: string) =>
+    invoke<ResolvedShell>("shell_resolve", { preference }),
   ptyWrite: (id: string, data: string) => invoke<void>("pty_write", { id, data }),
   ptyResize: (id: string, cols: number, rows: number) =>
     invoke<void>("pty_resize", { id, cols, rows }),

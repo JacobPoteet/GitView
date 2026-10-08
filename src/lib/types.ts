@@ -577,6 +577,14 @@ export interface AppInfo {
   roots: string[];
 }
 
+/** What the shell setting resolves to: the path, whether it emits OSC 133, and whether it was found. */
+export interface ResolvedShell {
+  path: string;
+  integration: boolean;
+  /** False when a shell was asked for and this is the default standing in. */
+  found: boolean;
+}
+
 /** A folder the welcome screen offers to watch, and how many repositories it holds. */
 export interface RootSuggestion {
   path: string;
