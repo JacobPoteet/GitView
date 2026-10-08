@@ -12,6 +12,7 @@ import { api } from "../lib/api";
 import CloseButton from "./CloseButton";
 import type { CommandBlock, StoredBlock } from "../lib/types";
 import { settings, subscribeSettings, terminalFontStack } from "../lib/settings";
+import { themeFor } from "../lib/themes";
 import { isClaimed } from "../lib/keys";
 import { claudeId, isClaude, nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
 import { asksForInput, settle, titleActivity, type AgentState } from "../lib/agent";
@@ -71,19 +72,8 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
-/**
- * How a search match is drawn. The addon wants #RRGGBB, so these are the
- * theme's violet and its lighter step written out, the same family as the
- * cursor; the selection colour is what the active match sits over.
- */
-const SEARCH_DECORATIONS = {
-  matchBackground: "#3B3F63",
-  matchBorder: "#5B4BD6",
-  matchOverviewRuler: "#5B4BD6",
-  activeMatchBackground: "#7C5CFF",
-  activeMatchBorder: "#C4B5FD",
-  activeMatchColorOverviewRuler: "#C4B5FD",
-};
+/** The palette the open sessions wear, so a settings write that is not a theme change repaints nothing. */
+let wornPalette = themeFor(settings().appearance.theme).terminal;
 
 /**
  * The settings every terminal shares: the type size and whether xterm keeps
@@ -105,9 +95,13 @@ function applyTerminalSettings() {
     document.fonts.load(`${fontSize}px "${fontFamily}"`).then(applyTerminalSettings, () => undefined);
   }
   const stack = terminalFontStack(fontFamily);
+  const palette = themeFor(settings().appearance.theme).terminal;
+  const repaint = palette !== wornPalette;
+  wornPalette = palette;
   for (const session of sessions.values()) {
     const options = session.term.options;
     options.screenReaderMode = screenReader;
+    if (repaint) options.theme = palette;
     options.cursorStyle = cursorStyle;
     options.cursorBlink = cursorBlink;
     if (options.scrollback !== scrollback) options.scrollback = scrollback;
@@ -146,30 +140,6 @@ const ANCHOR_REACH = 3;
 const RECONCILE_LIMIT = 60;
 /** Enough of a command to recognise its line by, without the whole thing. */
 const ANCHOR_TAIL = 24;
-
-const THEME = {
-  background: "#0F1013",
-  foreground: "#E4E5EA",
-  cursor: "#A78BFA",
-  cursorAccent: "#0F1013",
-  selectionBackground: "#2F3242",
-  black: "#1A1C22",
-  red: "#F87171",
-  green: "#4ADE80",
-  yellow: "#FBBF24",
-  blue: "#60A5FA",
-  magenta: "#A78BFA",
-  cyan: "#22D3EE",
-  white: "#D4D6DD",
-  brightBlack: "#4B4F5C",
-  brightRed: "#FCA5A5",
-  brightGreen: "#86EFAC",
-  brightYellow: "#FDE047",
-  brightBlue: "#93C5FD",
-  brightMagenta: "#C4B5FD",
-  brightCyan: "#67E8F9",
-  brightWhite: "#F5F6F8",
-};
 
 // ------------------------------------------------------------ prompt marks
 
@@ -517,7 +487,7 @@ function getSession(id: string): Session {
     cursorBlink: settings().terminal.cursorBlink,
     cursorStyle: settings().terminal.cursorStyle,
     scrollback: settings().terminal.scrollback,
-    theme: THEME,
+    theme: themeFor(settings().appearance.theme).terminal,
     allowProposedApi: true,
     screenReaderMode: settings().terminal.screenReader,
   });
@@ -872,7 +842,7 @@ export default function TerminalPane({
       setSearchHits(null);
       return;
     }
-    const options = { incremental, decorations: SEARCH_DECORATIONS };
+    const options = { incremental, decorations: themeFor(settings().appearance.theme).search };
     if (backwards) session.search.findPrevious(text, options);
     else session.search.findNext(text, options);
   }

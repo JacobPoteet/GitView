@@ -15,12 +15,17 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { DEFAULT_THEME, isThemeId } from "./themes";
 import type { MergeMethod } from "./types";
 
 export type CursorStyle = "bar" | "block" | "underline";
 export const CURSOR_STYLES: CursorStyle[] = ["bar", "block", "underline"];
 
 export interface Settings {
+  appearance: {
+    /** An id from `THEMES` in `lib/themes.ts`. An unknown one reads as the default. */
+    theme: string;
+  };
   terminal: {
     /** Points. xterm takes a float, and 12.5 is what the app shipped with. */
     fontSize: number;
@@ -119,6 +124,7 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
+  appearance: { theme: DEFAULT_THEME },
   terminal: {
     fontSize: 12.5,
     screenReader: false,
@@ -237,6 +243,7 @@ function read(): Settings {
     stored = {};
   }
   const settings: Settings = {
+    appearance: { ...DEFAULTS.appearance, ...stored.appearance },
     terminal: { ...DEFAULTS.terminal, ...stored.terminal },
     launch: { ...DEFAULTS.launch, ...stored.launch },
     graph: { ...DEFAULTS.graph, ...stored.graph },
@@ -281,6 +288,7 @@ function read(): Settings {
       if (picked) settings.github.mergeMethod[key.slice(prefix.length)] = picked as MergeMethod;
     }
   }
+  if (!isThemeId(settings.appearance.theme)) settings.appearance.theme = DEFAULT_THEME;
   if (!Number.isFinite(settings.terminal.fontSize)) {
     settings.terminal.fontSize = DEFAULTS.terminal.fontSize;
   }

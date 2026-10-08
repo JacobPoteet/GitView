@@ -26,10 +26,12 @@ import {
 import type { AppInfo, ResolvedShell } from "../lib/types";
 import { SHORTCUTS } from "../lib/keys";
 import { openUrlCommand, type ShellKind } from "../lib/shell";
+import { THEMES } from "../lib/themes";
 import Dialog from "./Dialog";
 
 export type SettingsSection =
   | "folders"
+  | "appearance"
   | "layout"
   | "terminal"
   | "general"
@@ -54,6 +56,7 @@ interface Props {
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "folders", label: "Folders" },
+  { id: "appearance", label: "Appearance" },
   { id: "layout", label: "Layout" },
   { id: "terminal", label: "Terminal" },
   { id: "general", label: "General" },
@@ -98,6 +101,7 @@ export default function SettingsDialog({
         </nav>
         <div className="settings-page">
           {section === "folders" && <Folders roots={roots} onChange={onRoots} />}
+          {section === "appearance" && <AppearanceSection />}
           {section === "layout" && <LayoutSection />}
           {section === "terminal" && <TerminalSection />}
           {section === "general" && (
@@ -676,6 +680,30 @@ function formatBytes(bytes: number): string {
 }
 
 // ---------------------------------------------------------------- general
+
+function AppearanceSection() {
+  const { appearance } = useSettings();
+  return (
+    <>
+      <h3>Appearance</h3>
+      <div className="theme-list" role="radiogroup" aria-label="Theme">
+        {THEMES.map((theme) => (
+          <button
+            key={theme.id}
+            type="button"
+            role="radio"
+            aria-checked={theme.id === appearance.theme}
+            className={`theme-option${theme.id === appearance.theme ? " on" : ""}`}
+            onClick={() => updateSettings("appearance", { theme: theme.id })}
+          >
+            <span className="theme-name">{theme.label}</span>
+            <span className="theme-hint">{theme.hint}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
 
 function GeneralSection({ gh, claude }: { gh: boolean; claude: string | null }) {
   const { launch, ai } = useSettings();

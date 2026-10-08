@@ -1929,6 +1929,44 @@ select:focus-visible,
 /* Text in the first column, the control in the second, spanning both rows.
    A grid rather than a wrapping span because the toggle's label is the row,
    and the lint rule for a label reads no deeper than one element. */
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.theme-option:hover {
+  background: var(--bg-hover);
+}
+
+.theme-option.on {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.theme-name {
+  font-size: var(--fs-body);
+}
+
+.theme-hint {
+  font-size: var(--fs-small);
+  color: var(--text-dim);
+}
+
 .setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

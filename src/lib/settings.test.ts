@@ -142,3 +142,19 @@ describe("settings", () => {
     expect(seen).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("appearance", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("defaults to the default theme and reads a stored one", async () => {
+    const { settings, DEFAULTS } = await load({});
+    expect(settings().appearance.theme).toBe(DEFAULTS.appearance.theme);
+  });
+
+  it("falls back to the default when the stored theme no longer exists", async () => {
+    const { settings, DEFAULTS } = await load({
+      "gitview.settings": JSON.stringify({ appearance: { theme: "removed-theme" } }),
+    });
+    expect(settings().appearance.theme).toBe(DEFAULTS.appearance.theme);
+  });
+});
