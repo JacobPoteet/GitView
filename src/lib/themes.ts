@@ -94,7 +94,45 @@ const GITVIEW: Theme = {
   },
 };
 
-export const THEMES: Theme[] = [GITVIEW];
+const WIN98: Theme = {
+  id: "win98",
+  label: "Windows 98",
+  hint: "Silver bevels, a navy title bar and a pixel face, after 98.css.",
+  // The VGA sixteen, which is what a DOS prompt in Windows 98 drew.
+  terminal: {
+    background: "#000000",
+    foreground: "#C0C0C0",
+    cursor: "#C0C0C0",
+    cursorAccent: "#000000",
+    selectionBackground: "#000080",
+    black: "#000000",
+    red: "#AA0000",
+    green: "#00AA00",
+    yellow: "#AA5500",
+    blue: "#0000AA",
+    magenta: "#AA00AA",
+    cyan: "#00AAAA",
+    white: "#AAAAAA",
+    brightBlack: "#555555",
+    brightRed: "#FF5555",
+    brightGreen: "#55FF55",
+    brightYellow: "#FFFF55",
+    brightBlue: "#5555FF",
+    brightMagenta: "#FF55FF",
+    brightCyan: "#55FFFF",
+    brightWhite: "#FFFFFF",
+  },
+  search: {
+    matchBackground: "#808000",
+    matchBorder: "#FFFF55",
+    matchOverviewRuler: "#FFFF55",
+    activeMatchBackground: "#000080",
+    activeMatchBorder: "#55FFFF",
+    activeMatchColorOverviewRuler: "#55FFFF",
+  },
+};
+
+export const THEMES: Theme[] = [GITVIEW, WIN98];
 
 export const DEFAULT_THEME = GITVIEW.id;
 

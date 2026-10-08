@@ -14,6 +14,7 @@ import "@fontsource/fira-code/latin-700.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-700.css";
 import "./styles.css";
+import "./theme-win98.css";
 import { settings, subscribeSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
 
