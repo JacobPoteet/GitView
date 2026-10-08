@@ -8,9 +8,16 @@
  * it styles bare elements globally, so it would restyle the default theme and
  * fight the tokens. The pixel font is the "Pixelated MS Sans Serif" it ships.
  *
- * Shape comes from the tokens in styles.css (radius 0, no blur, no shadow
- * under a window). Colour comes from the same tokens. The rules below are only
- * what a token cannot say: bevels, title bars, the font, the scrollbars.
+ * Shape and colour come from the tokens in styles.css, redefined in the first
+ * block. The rest is what a token cannot say, in two parts: the default layout
+ * wearing bevels (buttons, fields, windows, menus, marks), then the places
+ * where the theme changes how the app is built (title bars, sunken fields,
+ * tabs, status fields, the splash).
+ *
+ * Three rules hold throughout. A selection is the navy bar with white text,
+ * wherever it is. A mark (a chip, a dot, a ref) is white with a hairline and
+ * keeps its colour in the text, because a tint mixed into silver is mud. Content
+ * a user reads (a list, a diff, a history) sits in a white sunken field.
  */
 
 @font-face {
@@ -40,6 +47,9 @@
   --w98-frame: #0a0a0a;
   --w98-blue: #000080;
   --w98-blue-light: #1084d0;
+  --w98-title: linear-gradient(90deg, var(--w98-blue), var(--w98-blue-light));
+  /* The 50% checker Windows drew under a scrollbar and a latched toolbar button. */
+  --w98-dither: url("data:image/svg+xml;charset=utf-8,%3Csvg width='2' height='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M1 0H0v1h1v1h1V1H1V0z' fill='silver'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 0H1v1H0v1h1V1h1V0z' fill='%23fff'/%3E%3C/svg%3E");
 
   /* Bevels, as 98.css stacks them: an outer and an inner inset pair. */
   --raised: inset -1px -1px var(--w98-frame), inset 1px 1px var(--w98-light),
@@ -53,6 +63,10 @@
     inset -2px -2px var(--w98-shadow), inset 2px 2px var(--w98-light);
   --field: inset -1px -1px var(--w98-light), inset 1px 1px var(--w98-shadow),
     inset -2px -2px var(--w98-face), inset 2px 2px var(--w98-frame);
+  /* A status bar's field: one pixel in, where --field is two. */
+  --status-field: inset 1px 1px var(--w98-shadow), inset -1px -1px var(--w98-light);
+  /* The hairline round a mark. */
+  --mark-line: inset 0 0 0 1px var(--w98-shadow);
 
   --bg: #c0c0c0;
   --bg-raised: #c0c0c0;
@@ -65,15 +79,15 @@
 
   --text: #000000;
   --text-dim: #1a1a1a;
-  /* Under dim by a step. 5.7:1 on the silver. The status colours below were
-     darkened to clear 4.5:1 on silver and on the selected row; the first
-     picks measured 3.9 to 4.1. */
+  /* Under dim by a step. 5.7:1 on the silver. */
   --text-faint: #333333;
 
   --accent: #000080;
   --accent-soft: rgb(0 0 128 / 0.12);
   --accent-line: rgb(0 0 128 / 0.55);
 
+  /* Darkened to clear 4.5:1 on silver and on the selected row; the first picks
+     measured 3.9 to 4.1. */
   --green: #004800;
   --amber: #5e3b00;
   --red: #8c0000;
@@ -105,7 +119,8 @@
   --shadow-tip: none;
 
   /* The pixel face is drawn for 11 px and blurs at anything else, so the
-     scale collapses to 11 and its double. */
+     scale collapses to 11 and its double. Hierarchy comes from weight and from
+     the title bars. */
   --fs-micro: 11px;
   --fs-meta: 11px;
   --fs-small: 11px;
@@ -113,6 +128,7 @@
   --fs-title: 11px;
   --fs-display: 22px;
   --font-ui: "Pixelated MS Sans Serif", Arial, sans-serif;
+  --font-mono: "Lucida Console", "Courier New", monospace;
 }
 
 /* The face is bitmap-hinted; smoothing it undoes that. */
@@ -131,8 +147,25 @@
 
 :root[data-theme="win98"] ::selection {
   background: var(--w98-blue);
-  color: #fff;
+  color: var(--w98-light);
 }
+
+/* A control is an arrow-pointer thing. The hand is a web idea. */
+:root[data-theme="win98"] button,
+:root[data-theme="win98"] [role="button"],
+:root[data-theme="win98"] summary,
+:root[data-theme="win98"] label {
+  cursor: default;
+}
+
+/* Busy is an hourglass. */
+:root[data-theme="win98"] [aria-busy="true"],
+:root[data-theme="win98"] .busy,
+:root[data-theme="win98"] .loading {
+  cursor: wait;
+}
+
+/* ================================================================== the default, bevelled */
 
 /* ------------------------------------------------------------------ buttons */
 
@@ -151,9 +184,18 @@
   color: var(--text);
 }
 
-:root[data-theme="win98"] .btn:active:not(:disabled),
-:root[data-theme="win98"] .btn[aria-pressed="true"]:not(.changes-toggle) {
+:root[data-theme="win98"] .btn:active:not(:disabled) {
   background: var(--w98-surface);
+  color: var(--text);
+  box-shadow: var(--pressed);
+}
+
+/* A button that stays down (History while the history is open, the chosen
+   theme) is latched: pressed in, over the dither, so it reads as a state and
+   not as a click in progress. */
+:root[data-theme="win98"] .btn[aria-pressed="true"]:not(.changes-toggle),
+:root[data-theme="win98"] .theme-option.on {
+  background: var(--w98-dither);
   color: var(--text);
   box-shadow: var(--pressed);
 }
@@ -168,11 +210,11 @@
   background: var(--w98-surface);
 }
 
+/* Restates the disabled colour below, which `.btn.accent` would otherwise outrank. */
 :root[data-theme="win98"] .btn:disabled,
 :root[data-theme="win98"] .btn.accent:disabled {
   background: var(--w98-surface);
   color: var(--w98-disabled);
-  text-shadow: 1px 1px 0 var(--w98-light);
   box-shadow: var(--raised);
 }
 
@@ -185,8 +227,22 @@
 :root[data-theme="win98"] select:focus-visible,
 :root[data-theme="win98"] [role="button"]:focus-visible,
 :root[data-theme="win98"] [tabindex]:focus-visible {
-  outline: 1px dotted #000;
+  outline: 1px dotted var(--text);
   outline-offset: -4px;
+}
+
+/* A disabled control is grey with a white emboss, never a faded one: opacity
+   on silver gives a third grey that matches nothing else on the screen. This
+   covers every disabled control, so a new one needs no rule of its own. */
+:root[data-theme="win98"] :disabled,
+:root[data-theme="win98"] .setting-row.disabled .setting-label {
+  opacity: 1;
+  color: var(--w98-disabled);
+  text-shadow: 1px 1px 0 var(--w98-light);
+}
+
+:root[data-theme="win98"] .task-hidden-list {
+  opacity: 1;
 }
 
 /* ------------------------------------------------------------------ fields */
@@ -194,11 +250,72 @@
 :root[data-theme="win98"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 :root[data-theme="win98"] textarea,
 :root[data-theme="win98"] select {
-  background: #fff;
+  background: var(--w98-light);
   color: var(--text);
   box-shadow: var(--field);
   border: none;
   border-radius: 0;
+}
+
+/* A filter with an icon or a clear button is one field: the wrapper is sunken
+   and the input inside it is bare, rather than a field drawn inside a box. */
+:root[data-theme="win98"] .sidebar-search,
+:root[data-theme="win98"] .history-filter {
+  background: var(--w98-light);
+  border: none;
+  box-shadow: var(--field);
+}
+
+:root[data-theme="win98"] .sidebar-search {
+  margin: 3px 3px 4px;
+  padding: 3px 6px;
+}
+
+:root[data-theme="win98"] .history-filter {
+  padding: 1px 4px;
+}
+
+:root[data-theme="win98"] .sidebar-search input,
+:root[data-theme="win98"] .history-filter input {
+  box-shadow: none;
+  background: transparent;
+}
+
+/* The history and terminal filters sit in a title bar, whose text is white;
+   inside the field, the count and the clear button go back to black. */
+:root[data-theme="win98"] .history-filter,
+:root[data-theme="win98"] .history-filter * {
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ checkboxes */
+
+:root[data-theme="win98"] input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  background: var(--w98-light);
+  box-shadow: var(--field);
+  border: none;
+  border-radius: 0;
+  position: relative;
+}
+
+:root[data-theme="win98"] input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 7px;
+  height: 7px;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg width='7' height='7' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7 0H6v1H5v1H4v1H3v1H2V3H1V2H0v3h1v1h1v1h1V6h1V5h1V4h1V3h1V0z' fill='%23000'/%3E%3C/svg%3E")
+    no-repeat;
+}
+
+:root[data-theme="win98"] input[type="checkbox"]:disabled {
+  background: var(--w98-surface);
 }
 
 /* ------------------------------------------------------------------ windows */
@@ -220,8 +337,8 @@
 :root[data-theme="win98"] .confirm h2 {
   align-items: center;
   padding: 3px 2px 3px 3px;
-  background: linear-gradient(90deg, var(--w98-blue), var(--w98-blue-light));
-  color: #fff;
+  background: var(--w98-title);
+  color: var(--w98-light);
   font-weight: 700;
 }
 
@@ -234,7 +351,7 @@
   display: grid;
   place-items: center;
   background: var(--w98-surface);
-  color: #000;
+  color: var(--text);
   box-shadow: var(--raised);
 }
 
@@ -256,55 +373,6 @@
   border: none;
 }
 
-/* The highlighted menu row is the navy bar. */
-:root[data-theme="win98"] .palette-item.active {
-  background: var(--w98-blue);
-  color: #fff;
-}
-
-:root[data-theme="win98"] .palette-item.active .label,
-:root[data-theme="win98"] .palette-item.active .kind,
-:root[data-theme="win98"] .palette-item.active .hint {
-  color: #fff;
-}
-
-/* ------------------------------------------------------------------ chrome */
-
-:root[data-theme="win98"] .status-bar {
-  background: var(--w98-surface);
-  border-top: 1px solid var(--w98-shadow);
-  box-shadow: 0 -1px 0 var(--w98-light);
-  color: var(--text);
-}
-
-:root[data-theme="win98"] .rail {
-  background: var(--bg);
-}
-
-/* The pane and its tab bar stay silver, so the bar's text reads on silver.
-   Only the screen itself is black. */
-:root[data-theme="win98"] .terminal-pane {
-  background: var(--bg);
-}
-
-:root[data-theme="win98"] .terminal-host {
-  margin: 0 3px 3px;
-  background: #000;
-  box-shadow: var(--field);
-}
-
-/* The theme picker's rows are buttons, and a chosen one is pressed in. */
-:root[data-theme="win98"] .theme-option {
-  border: none;
-  background: var(--w98-surface);
-  box-shadow: var(--raised);
-}
-
-:root[data-theme="win98"] .theme-option.on {
-  box-shadow: var(--pressed);
-  background: var(--w98-surface);
-}
-
 /* ------------------------------------------------------------------ menus and popovers */
 
 /* A menu, a branch popover and the tour card are raised windows without a
@@ -317,39 +385,53 @@
   box-shadow: var(--window-bevel);
 }
 
-/* The highlighted menu row is the navy bar, danger rows included. */
+/* ------------------------------------------------------------------ selection */
+
+/* One selection everywhere: the navy bar with white text. The default lights a
+   chosen row with a soft violet, which on silver came out as three different
+   lavenders. */
+:root[data-theme="win98"] .palette-item.active,
 :root[data-theme="win98"] .row-menu button:hover:not(:disabled),
-:root[data-theme="win98"] .row-menu button.danger:hover:not(:disabled) {
+:root[data-theme="win98"] .row-menu button.danger:hover:not(:disabled),
+:root[data-theme="win98"] .repo-row-wrap.selected,
+:root[data-theme="win98"] .change-row.open,
+:root[data-theme="win98"] .settings-nav button.on {
   background: var(--w98-blue);
-  color: #fff;
+  color: var(--w98-light);
 }
 
-/* ------------------------------------------------------------------ effects a token cannot carry */
-
-/* Faint text that the default dims by mixing it with transparent. On silver
-   that lands under 3:1, so these use the faint token as it is. */
-:root[data-theme="win98"] .diff-line .ln,
-:root[data-theme="win98"] .blame-age,
-:root[data-theme="win98"] .terminal-tab.asleep {
-  color: var(--text-faint);
+:root[data-theme="win98"] .palette-item.active *,
+:root[data-theme="win98"] .change-row.open *,
+:root[data-theme="win98"] .repo-row-wrap.selected *:not(.chip):not(.chip *):not(.dot) {
+  color: var(--w98-light);
 }
 
-/* The graph's glow is a soft light, and a bevelled theme has none. */
-:root[data-theme="win98"] .rail.ours {
-  filter: none;
+/* The fleet's selected row also carries the focus rectangle, as a list did. */
+:root[data-theme="win98"] .repo-row-wrap.selected {
+  outline: 1px dotted var(--w98-light);
+  outline-offset: -2px;
 }
 
-:root[data-theme="win98"] .graph-node.ours.tip .graph-dot {
-  box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px var(--accent-soft);
+:root[data-theme="win98"] .repo-row-wrap {
+  border: none;
 }
 
-:root[data-theme="win98"] .graph-node.theirs.tip .graph-dot {
-  box-shadow: inset 0 0 0 2px var(--blue), 0 0 0 3px var(--accent-soft);
+:root[data-theme="win98"] .repo-row-wrap:hover {
+  background: transparent;
 }
 
-/* ------------------------------------------------------------------ one surface, flat marks */
+:root[data-theme="win98"] .repo-row-wrap.selected > .repo-row::before {
+  display: none;
+}
 
-/* The default tints a chip by mixing its colour into the surface. On silver
+/* A dot keeps its colour on the navy bar, so it gets a white rim to stand on. */
+:root[data-theme="win98"] .repo-row-wrap.selected .dot {
+  box-shadow: 0 0 0 1px var(--w98-light);
+}
+
+/* ------------------------------------------------------------------ marks */
+
+/* The default tints a mark by mixing its colour into the surface. On silver
    that mix is a muddy teal or tan, so every mark here is white with a hairline
    and keeps its colour in the text. */
 :root[data-theme="win98"] .chip.ahead,
@@ -362,62 +444,33 @@
 :root[data-theme="win98"] .agent.done,
 :root[data-theme="win98"] .inbox-label,
 :root[data-theme="win98"] .graph-ref,
-:root[data-theme="win98"] .graph-ref.head {
-  background: #fff;
+:root[data-theme="win98"] .history-ref,
+:root[data-theme="win98"] .history-ref.local,
+:root[data-theme="win98"] .history-ref.remote,
+:root[data-theme="win98"] .history-ref.tag {
+  background: var(--w98-light);
   border: none;
-  box-shadow: inset 0 0 0 1px var(--w98-shadow);
+  box-shadow: var(--mark-line);
 }
 
 :root[data-theme="win98"] .graph-ref {
   color: var(--text);
 }
 
-:root[data-theme="win98"] .graph-ref.head {
-  color: var(--green);
-  box-shadow: inset 0 0 0 1px var(--green);
-}
-
-:root[data-theme="win98"] .graph-node.theirs .graph-dot,
-:root[data-theme="win98"] .graph-node.ours .graph-dot,
-:root[data-theme="win98"] .graph-node.fork.head .graph-dot,
-:root[data-theme="win98"] .graph-node.trunk.head .graph-dot {
-  background: #fff;
-}
-
-/* A disabled control is grey with a white shadow, never a faded one: opacity
-   on silver gives a third grey that matches nothing else on the screen. */
-:root[data-theme="win98"] .change-discard-all:disabled,
-:root[data-theme="win98"] .change-bulk:disabled,
-:root[data-theme="win98"] .hunk-apply:disabled,
-:root[data-theme="win98"] .commit-amend:disabled,
-:root[data-theme="win98"] .row-menu button:disabled {
-  opacity: 1;
-  color: var(--w98-disabled);
-  text-shadow: 1px 1px 0 var(--w98-light);
-}
-
-:root[data-theme="win98"] .task-hidden-list {
-  opacity: 1;
-}
-
-/* Every disabled control, not just the ones named above: the commit button,
-   Sync all, the chip buttons and whatever comes next. A faded one is a third
-   grey, so the colour is solid and the white emboss says it is off. */
-:root[data-theme="win98"] :disabled,
-:root[data-theme="win98"] .setting-row.disabled .setting-label {
-  opacity: 1;
-  color: var(--w98-disabled);
-  text-shadow: 1px 1px 0 var(--w98-light);
+/* A tag's dashed rim says origin has not seen it, so it keeps the dash. */
+:root[data-theme="win98"] .history-ref.tag.here,
+:root[data-theme="win98"] .history-ref.tag.moved {
+  box-shadow: none;
+  border: 1px dashed var(--w98-shadow);
 }
 
 /* The reference is black text on silver with navy for selection. The default
    uses green for "live" and "ok" on labels as well as marks. Here the marks
-   (chips, dots, diff signs, badges) keep their colour, and a label or a count
-   that only names something goes back to the text colour. */
+   (chips, dots, diff signs, badges) keep their colour, and a label, a count or
+   a head ref that only names something goes back to the text colour, framed in
+   black where the default framed it in green. */
 :root[data-theme="win98"] .btn .btn-count,
-:root[data-theme="win98"] .graph-ref.head,
 :root[data-theme="win98"] .history-row.head .history-sha,
-:root[data-theme="win98"] .history-ref.head,
 :root[data-theme="win98"] .setting-hint.ok,
 :root[data-theme="win98"] .block-bar.ok .block-status,
 :root[data-theme="win98"] .batch-code.ok,
@@ -425,44 +478,59 @@
   color: var(--text);
 }
 
-:root[data-theme="win98"] .graph-ref.head {
+:root[data-theme="win98"] .graph-ref.head,
+:root[data-theme="win98"] .history-ref.head {
+  background: var(--w98-light);
+  border: none;
+  color: var(--text);
   box-shadow: inset 0 0 0 1px var(--text);
 }
 
-/* ------------------------------------------------------------------ committing to the bit */
-
-/* Everything above is the default theme wearing a colour scheme. Everything
-   below changes how the app is built: the headings are title bars, the lists
-   are sunken fields, the shell tabs are tabs, and the pointer is an arrow. */
-
-:root[data-theme="win98"] {
-  --font-mono: "Lucida Console", "Courier New", monospace;
-  --w98-title: linear-gradient(90deg, var(--w98-blue), var(--w98-blue-light));
+/* The default's dots and tips glow: a translucent ring of their own colour. A
+   bevelled theme has no soft light, so the ring goes and the dot stands flat. */
+:root[data-theme="win98"] .dot.live,
+:root[data-theme="win98"] .dot.attention,
+:root[data-theme="win98"] .dot.error {
+  box-shadow: none;
 }
 
-/* A control is an arrow-pointer thing. The hand is a web idea. */
-:root[data-theme="win98"] button,
-:root[data-theme="win98"] [role="button"],
-:root[data-theme="win98"] summary,
-:root[data-theme="win98"] label {
-  cursor: default;
+:root[data-theme="win98"] .rail.ours {
+  filter: none;
 }
 
-/* Busy is an hourglass. */
-:root[data-theme="win98"] [aria-busy="true"],
-:root[data-theme="win98"] .busy,
-:root[data-theme="win98"] .loading {
-  cursor: wait;
+:root[data-theme="win98"] .graph-node.ours.tip .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-/* ---------------------------------------------------------- title bars */
+:root[data-theme="win98"] .graph-node.theirs.tip .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+:root[data-theme="win98"] .graph-node.theirs .graph-dot,
+:root[data-theme="win98"] .graph-node.ours .graph-dot,
+:root[data-theme="win98"] .graph-node.fork.head .graph-dot,
+:root[data-theme="win98"] .graph-node.trunk.head .graph-dot {
+  background: var(--w98-light);
+}
+
+/* Faint text that the default dims by mixing it with transparent. On silver
+   that lands under 3:1, so these use the faint token as it is. */
+:root[data-theme="win98"] .diff-line .ln,
+:root[data-theme="win98"] .blame-age,
+:root[data-theme="win98"] .terminal-tab.asleep {
+  color: var(--text-faint);
+}
+
+/* ================================================================== how the app is built */
+
+/* ------------------------------------------------------------------ title bars */
 
 /* Each column's heading is a window title bar: navy gradient, white bold text. */
 :root[data-theme="win98"] .sidebar-head,
 :root[data-theme="win98"] .task-head,
 :root[data-theme="win98"] .pane-tab-bar {
   background: var(--w98-title);
-  color: #fff;
+  color: var(--w98-light);
   font-weight: 700;
   border-bottom: none;
   margin: 3px 3px 0;
@@ -479,18 +547,24 @@
 
 :root[data-theme="win98"] .pane-tab-bar {
   height: 20px;
-  padding: 0 4px;
+  padding: 0 2px 0 4px;
 }
 
-:root[data-theme="win98"] .sidebar-head *,
-:root[data-theme="win98"] .task-head *,
+:root[data-theme="win98"] .sidebar-head .brand,
+:root[data-theme="win98"] .task-head > :not(button),
+:root[data-theme="win98"] .task-head > :not(button) *,
 :root[data-theme="win98"] .pane-tab-bar span,
 :root[data-theme="win98"] .pane-tab-bar .tab-path,
 :root[data-theme="win98"] .pane-tab-bar > span:first-child {
-  color: #fff;
+  color: var(--w98-light);
 }
 
-/* The little buttons on a title bar. */
+/* The logo is drawn in the accent, which is the title bar's own navy. */
+:root[data-theme="win98"] .sidebar-head .brand-mark {
+  --accent: var(--w98-light);
+}
+
+/* The little buttons on a title bar: silver, black glyph, 18 by 16. */
 :root[data-theme="win98"] .sidebar-head .icon-btn,
 :root[data-theme="win98"] .pane-tab-bar .pane-close,
 :root[data-theme="win98"] .task-head button {
@@ -501,9 +575,15 @@
   display: grid;
   place-items: center;
   background: var(--w98-surface);
-  color: #000;
+  color: var(--text);
   border: none;
   box-shadow: var(--raised);
+}
+
+:root[data-theme="win98"] .sidebar-head .icon-btn:hover,
+:root[data-theme="win98"] .pane-tab-bar .pane-close:hover {
+  color: var(--text);
+  background: var(--w98-surface);
 }
 
 :root[data-theme="win98"] .sidebar-head .icon-btn:active,
@@ -511,68 +591,63 @@
   box-shadow: var(--pressed);
 }
 
-:root[data-theme="win98"] .sidebar-head .icon-btn:hover,
-:root[data-theme="win98"] .pane-tab-bar .pane-close:hover {
-  color: #000;
-  background: var(--w98-surface);
+/* A text button on a title bar (stage, History, Prune merged) shrinks to the
+   bar's height rather than hanging out of it. */
+:root[data-theme="win98"] .pane-tab-bar .btn {
+  min-height: 0;
+  height: 16px;
+  padding: 0 6px;
+  font-weight: 400;
 }
 
-/* ---------------------------------------------------------- the repository's toolbar */
+/* ------------------------------------------------------------------ the repository's toolbar */
 
 :root[data-theme="win98"] .repo-head {
   border-bottom: 1px solid var(--w98-shadow);
   box-shadow: 0 1px 0 var(--w98-light);
 }
 
-/* ---------------------------------------------------------- sunken lists */
+/* ------------------------------------------------------------------ sunken fields */
 
-/* The fleet is a tree view: a white field with a sunken edge. */
+/* The fleet is a tree view: a white field with a sunken edge. So is anything
+   else whose rows are read rather than clicked through. */
 :root[data-theme="win98"] .repo-list,
 :root[data-theme="win98"] .task-list,
 :root[data-theme="win98"] .change-list {
-  background: #fff;
+  background: var(--w98-light);
   box-shadow: var(--field);
   margin: 0 3px 3px;
   padding: 4px;
 }
 
 :root[data-theme="win98"] .change-staged {
-  background: #fff;
+  background: var(--w98-light);
   box-shadow: var(--field);
   margin: 0 3px 3px;
   padding: 2px 6px;
   border-top: none;
 }
 
-/* A selected row is the navy bar with white text; marks keep their own colour. */
-:root[data-theme="win98"] .repo-row-wrap {
-  border: none;
+/* The diff and the history are fields too. Their rows mix tints into --bg and
+   the history's canvas knocks its dots out of it, so --bg turns white inside
+   the field and every one of those follows. */
+:root[data-theme="win98"] .diff-body,
+:root[data-theme="win98"] .history-scroll {
+  --bg: var(--w98-light);
+  background: var(--bg);
+  box-shadow: var(--field);
+  margin: 0 3px 3px;
+  /* The rows paint their own backgrounds, which would cover an inset bevel. */
+  padding: 2px;
 }
 
-:root[data-theme="win98"] .repo-row-wrap:hover {
-  background: transparent;
-}
-
-:root[data-theme="win98"] .repo-row-wrap.selected {
-  background: var(--w98-blue);
-}
-
-:root[data-theme="win98"] .repo-row-wrap.selected > .repo-row::before {
-  display: none;
-}
-
-:root[data-theme="win98"] .repo-row-wrap.selected *:not(.chip):not(.chip *):not(.dot) {
-  color: #fff;
-}
-
-:root[data-theme="win98"] .repo-row-wrap.selected {
-  outline: 1px dotted #fff;
-  outline-offset: -2px;
-}
-
-/* ---------------------------------------------------------- shell tabs */
+/* ------------------------------------------------------------------ shell tabs */
 
 /* The terminal's bar is a strip of tabs, not a title bar. */
+:root[data-theme="win98"] .terminal-pane {
+  background: var(--bg);
+}
+
 :root[data-theme="win98"] .terminal-pane > .pane-tab-bar {
   background: transparent;
   color: var(--text);
@@ -588,6 +663,17 @@
 :root[data-theme="win98"] .terminal-pane > .pane-tab-bar span,
 :root[data-theme="win98"] .terminal-pane > .pane-tab-bar .tab-path {
   color: var(--text);
+}
+
+/* The bar's gap is 0 so the tabs abut; the separator before the path gets its
+   room back. */
+:root[data-theme="win98"] .terminal-pane > .pane-tab-bar > span:not([class]) {
+  margin: 0 6px;
+  align-self: center;
+}
+
+:root[data-theme="win98"] .terminal-pane > .pane-tab-bar .pane-close {
+  align-self: center;
 }
 
 :root[data-theme="win98"] .terminal-tab {
@@ -612,65 +698,68 @@
   color: var(--text);
 }
 
-/* ---------------------------------------------------------- the status bar */
+/* Only the screen itself is black; the pane and its tabs stay silver. */
+:root[data-theme="win98"] .terminal-host {
+  margin: 0 3px 3px;
+  background: #000;
+  box-shadow: var(--field);
+}
 
+/* ------------------------------------------------------------------ the status bar */
+
+/* A row of sunken fields, one per fact, above a white rule. */
 :root[data-theme="win98"] .status-bar {
+  background: var(--w98-surface);
+  color: var(--text);
   gap: 2px;
   padding: 2px 3px 0;
-  box-shadow: none;
   border-top: 1px solid var(--w98-light);
 }
 
-:root[data-theme="win98"] .status-bar > *:not(.spacer):not(button) {
+:root[data-theme="win98"] .status-bar > :not(.spacer):not(button.sync-all) {
   padding: 1px 6px;
-  box-shadow: inset 1px 1px var(--w98-shadow), inset -1px -1px var(--w98-light);
+  box-shadow: var(--status-field);
   align-self: stretch;
   display: flex;
   align-items: center;
 }
 
+/* Sync all is the bar's one button, so it is raised where the fields are sunk. */
+:root[data-theme="win98"] .status-bar > button.sync-all {
+  align-self: stretch;
+  padding: 0 8px;
+  background: var(--w98-surface);
+  color: var(--text);
+  border: none;
+  box-shadow: var(--raised);
+}
+
+:root[data-theme="win98"] .status-bar > button.sync-all:active:not(:disabled) {
+  box-shadow: var(--pressed);
+}
+
+/* The shell count is green in the default, where green says live. Here it is a
+   count like the one beside it. The colour is inline, hence the !important. */
+:root[data-theme="win98"] .status-bar > .status-link[style*="--green"] {
+  color: var(--text) !important;
+}
+
 /* The note's live region stays in the DOM while empty; an empty field would be
-   a stray sunken box. */
-:root[data-theme="win98"] .status-bar > *:empty {
+   a stray sunken box. Written to outrank the rule above. */
+:root[data-theme="win98"] .status-bar > :not(.spacer):not(button.sync-all):empty {
   padding: 0;
   box-shadow: none;
 }
 
-:root[data-theme="win98"] .status-bar .spacer {
-  flex: 1;
-}
+/* ------------------------------------------------------------------ the theme picker */
 
-/* ---------------------------------------------------------- checkboxes */
-
-:root[data-theme="win98"] input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 13px;
-  height: 13px;
-  flex: none;
-  background: #fff;
-  box-shadow: var(--field);
+:root[data-theme="win98"] .theme-option {
   border: none;
-  border-radius: 0;
-  position: relative;
-}
-
-:root[data-theme="win98"] input[type="checkbox"]:checked::after {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 1px;
-  width: 7px;
-  height: 7px;
-  background: url("data:image/svg+xml;charset=utf-8,%3Csvg width='7' height='7' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7 0H6v1H5v1H4v1H3v1H2V3H1V2H0v3h1v1h1v1h1V6h1V5h1V4h1V3h1V0z' fill='%23000'/%3E%3C/svg%3E")
-    no-repeat;
-}
-
-:root[data-theme="win98"] input[type="checkbox"]:disabled {
   background: var(--w98-surface);
+  box-shadow: var(--raised);
 }
 
-/* ---------------------------------------------------------- the splash is a dialog */
+/* ------------------------------------------------------------------ the splash is a dialog */
 
 /* Over a teal desktop, a window that says it is starting, with the segmented
    bar that never knew how long it would take. */
@@ -693,7 +782,7 @@
   padding: 3px 4px;
   margin-bottom: 14px;
   background: var(--w98-title);
-  color: #fff;
+  color: var(--w98-light);
   font-weight: 700;
 }
 
@@ -742,16 +831,51 @@
 
 /* ------------------------------------------------------------------ scrollbars */
 
-:root[data-theme="win98"] ::-webkit-scrollbar {width:16px}
-:root[data-theme="win98"] ::-webkit-scrollbar:horizontal {height:17px}
-:root[data-theme="win98"] ::-webkit-scrollbar-corner {background:#dfdfdf}
-:root[data-theme="win98"] ::-webkit-scrollbar-track {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='2' height='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M1 0H0v1h1v1h1V1H1V0z' fill='silver'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 0H1v1H0v1h1V1h1V0z' fill='%23fff'/%3E%3C/svg%3E")}
-:root[data-theme="win98"] ::-webkit-scrollbar-thumb {background-color:#dfdfdf;box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px grey,inset 2px 2px #dfdfdf}
+/* The arrows are 98.css's artwork, one data URI per direction. */
+:root[data-theme="win98"] ::-webkit-scrollbar {
+  width: 16px;
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar:horizontal {
+  height: 17px;
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-corner {
+  background: var(--w98-face);
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-track {
+  background-image: var(--w98-dither);
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-thumb {
+  background-color: var(--w98-face);
+  box-shadow: var(--raised);
+}
+
 :root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:end:increment,
 :root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:start:decrement,
 :root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:end:increment,
-:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:start:decrement {display:block}
-:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:start {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M8 6H7v1H6v1H5v1H4v1h7V9h-1V8H9V7H8V6z' fill='%23000'/%3E%3C/svg%3E");height:17px}
-:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:end {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M11 6H4v1h1v1h1v1h1v1h1V9h1V8h1V7h1V6z' fill='%23000'/%3E%3C/svg%3E");height:17px}
-:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:start {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M9 4H8v1H7v1H6v1H5v1h1v1h1v1h1v1h1V4z' fill='%23000'/%3E%3C/svg%3E");width:16px}
-:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:end {background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7 4H6v7h1v-1h1V9h1V8h1V7H9V6H8V5H7V4z' fill='%23000'/%3E%3C/svg%3E");width:16px}
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:start:decrement {
+  display: block;
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:start {
+  height: 17px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M8 6H7v1H6v1H5v1H4v1h7V9h-1V8H9V7H8V6z' fill='%23000'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-button:vertical:end {
+  height: 17px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M11 6H4v1h1v1h1v1h1v1h1V9h1V8h1V7h1V6z' fill='%23000'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:start {
+  width: 16px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M9 4H8v1H7v1H6v1H5v1h1v1h1v1h1v1h1V4z' fill='%23000'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="win98"] ::-webkit-scrollbar-button:horizontal:end {
+  width: 16px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='17' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 0H0v16h1V1h14V0z' fill='%23DFDFDF'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2 1H1v14h1V2h12V1H2z' fill='%23fff'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M16 17H0v-1h15V0h1v17z' fill='%23000'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15 1h-1v14H1v1h14V1z' fill='gray'/%3E%3Cpath fill='silver' d='M2 2h12v13H2z'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7 4H6v7h1v-1h1V9h1V8h1V7H9V6H8V5H7V4z' fill='%23000'/%3E%3C/svg%3E");
+}

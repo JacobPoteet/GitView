@@ -1,11 +1,12 @@
 /**
  * The themes the app can wear, and the one place that applies them.
  *
- * A theme is two things. Its CSS is a block of token overrides under
- * `:root[data-theme="<id>"]` in `styles.css`; the default theme is the bare
- * `:root` and has no block. Its terminal palette lives here, because xterm
- * parses its own colours and cannot read a custom property. Adding a theme is
- * one entry in `THEMES` and one block of tokens.
+ * A theme is two things. Its CSS is a file of its own, `theme-<id>.css`,
+ * imported in `main.tsx`: token overrides under `:root[data-theme="<id>"]`,
+ * then whatever a token cannot say, scoped to the same attribute. The default
+ * theme is the bare `:root` in `styles.css` and has no file. Its terminal
+ * palette lives here, because xterm parses its own colours and cannot read a
+ * custom property. Adding a theme is one entry in `THEMES` and one file.
  *
  * This module imports nothing from `settings.ts`, which imports it to check a
  * stored id against `THEMES`.
