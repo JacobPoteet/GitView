@@ -54,7 +54,7 @@
   --bg: #c0c0c0;
   --bg-raised: #c0c0c0;
   --bg-hover: #dfdfdf;
-  --bg-active: #a9b2dc;
+  --bg-active: #b4bce4;
   --bg-inset: #ffffff;
 
   --line: #808080;
@@ -62,16 +62,18 @@
 
   --text: #000000;
   --text-dim: #222222;
-  /* Under dim by a step, and still over 4.5:1 on the silver. */
-  --text-faint: #4a4a4a;
+  /* Under dim by a step. 5.7:1 on the silver. The status colours below were
+     darkened to clear 4.5:1 on silver and on the selected row; the first
+     picks measured 3.9 to 4.1. */
+  --text-faint: #404040;
 
   --accent: #000080;
   --accent-soft: rgb(0 0 128 / 0.12);
   --accent-line: rgb(0 0 128 / 0.55);
 
-  --green: #006400;
-  --amber: #7a4f00;
-  --red: #b00000;
+  --green: #004800;
+  --amber: #5e3b00;
+  --red: #8c0000;
   --blue: #0000a0;
 
   /* Lanes avoid red and amber here too, as they do in the default theme. */
@@ -286,6 +288,48 @@
 :root[data-theme="win98"] .theme-option.on {
   box-shadow: var(--pressed);
   background: var(--w98-surface);
+}
+
+/* ------------------------------------------------------------------ menus and popovers */
+
+/* A menu, a branch popover and the tour card are raised windows without a
+   title bar. */
+:root[data-theme="win98"] .row-menu,
+:root[data-theme="win98"] .branch-pop,
+:root[data-theme="win98"] .tour-card {
+  background: var(--w98-surface);
+  border: none;
+  box-shadow: var(--window-bevel);
+}
+
+/* The highlighted menu row is the navy bar, danger rows included. */
+:root[data-theme="win98"] .row-menu button:hover:not(:disabled),
+:root[data-theme="win98"] .row-menu button.danger:hover:not(:disabled) {
+  background: var(--w98-blue);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ effects a token cannot carry */
+
+/* Faint text that the default dims by mixing it with transparent. On silver
+   that lands under 3:1, so these use the faint token as it is. */
+:root[data-theme="win98"] .diff-line .ln,
+:root[data-theme="win98"] .blame-age,
+:root[data-theme="win98"] .terminal-tab.asleep {
+  color: var(--text-faint);
+}
+
+/* The graph's glow is a soft light, and a bevelled theme has none. */
+:root[data-theme="win98"] .rail.ours {
+  filter: none;
+}
+
+:root[data-theme="win98"] .graph-node.ours.tip .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px var(--accent-soft);
+}
+
+:root[data-theme="win98"] .graph-node.theirs.tip .graph-dot {
+  box-shadow: inset 0 0 0 2px var(--blue), 0 0 0 3px var(--accent-soft);
 }
 
 /* ------------------------------------------------------------------ scrollbars */
