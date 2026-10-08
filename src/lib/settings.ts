@@ -17,6 +17,9 @@
 import { useSyncExternalStore } from "react";
 import type { MergeMethod } from "./types";
 
+export type CursorStyle = "bar" | "block" | "underline";
+export const CURSOR_STYLES: CursorStyle[] = ["bar", "block", "underline"];
+
 export interface Settings {
   terminal: {
     /** Points. xterm takes a float, and 12.5 is what the app shipped with. */
@@ -32,10 +35,24 @@ export interface Settings {
      * launch, so yesterday's build output is still above the cursor.
      */
     restoreScrollback: boolean;
+    /**
+     * The shell to start, as a path or a bare name looked up on PATH. Empty is
+     * automatic: PowerShell 7 when installed, Windows PowerShell otherwise.
+     * Read when a shell opens, so the ones already running keep theirs.
+     */
+    shell: string;
+    /** A bundled face from `TERMINAL_FACES`, or the name of any font installed on this machine. */
+    fontFamily: string;
+    /** Lines of history each shell keeps in memory, and the most a saved scrollback holds. */
+    scrollback: number;
+    cursorStyle: CursorStyle;
+    cursorBlink: boolean;
   };
   launch: {
     /** `git fetch` in every repository at launch, when the last one is stale. */
     fetch: boolean;
+    /** Rescan the fleet when the window comes back to the front after a while away. */
+    refreshOnFocus: boolean;
     /** Ask GitHub for the latest release at launch. Only a word in the status bar either way. */
     checkUpdate: boolean;
   };
@@ -102,8 +119,17 @@ export interface Settings {
 }
 
 export const DEFAULTS: Settings = {
-  terminal: { fontSize: 12.5, screenReader: false, restoreScrollback: true },
-  launch: { fetch: true, checkUpdate: true },
+  terminal: {
+    fontSize: 12.5,
+    screenReader: false,
+    restoreScrollback: true,
+    shell: "",
+    fontFamily: "JetBrains Mono",
+    scrollback: 20000,
+    cursorStyle: "bar",
+    cursorBlink: true,
+  },
+  launch: { fetch: true, refreshOnFocus: false, checkUpdate: true },
   graph: { collapsed: false },
   layout: { sidebar: 296, changes: 300, shell: 47, tasks: null, changesHidden: false },
   inbox: { mode: "repo", collapsed: [] },
@@ -114,6 +140,23 @@ export const DEFAULTS: Settings = {
 
 export const FONT_SIZE_MIN = 9;
 export const FONT_SIZE_MAX = 20;
+/** Under a screenful there is nothing to scroll back to; over this xterm's buffer is the memory bill. */
+export const SCROLLBACK_MIN = 1000;
+export const SCROLLBACK_MAX = 100000;
+/** A focus that follows another within this is one trip away from the window, not two. */
+export const FOCUS_REFRESH_GAP_MS = 60_000;
+
+/** The monospace faces that ship in the binary, so the choice is the same on every machine. */
+export const TERMINAL_FACES = ["JetBrains Mono", "Cascadia Code", "Fira Code", "IBM Plex Mono"];
+
+/** What draws when the chosen face is missing. */
+const FALLBACK_FONTS = "Consolas, ui-monospace, monospace";
+
+/** The stack xterm is given: the chosen face first, then what a machine always has. */
+export function terminalFontStack(family: string): string {
+  const named = family.replace(/[;{}"]/g, "").trim() || DEFAULTS.terminal.fontFamily;
+  return `"${named}", ${FALLBACK_FONTS}`;
+}
 /** An interval under a minute is a poll GitHub would notice; over a day is off with extra steps. */
 export const MINUTES_MIN = 1;
 export const MINUTES_MAX = 1440;
@@ -245,6 +288,21 @@ function read(): Settings {
     FONT_SIZE_MAX,
     Math.max(FONT_SIZE_MIN, settings.terminal.fontSize),
   );
+  const term = settings.terminal;
+  term.shell = typeof term.shell === "string" ? term.shell.trim() : "";
+  term.fontFamily =
+    typeof term.fontFamily === "string" && term.fontFamily.trim()
+      ? term.fontFamily.trim()
+      : DEFAULTS.terminal.fontFamily;
+  term.scrollback = pixels(
+    term.scrollback,
+    SCROLLBACK_MIN,
+    SCROLLBACK_MAX,
+    DEFAULTS.terminal.scrollback,
+  );
+  if (!CURSOR_STYLES.includes(term.cursorStyle)) term.cursorStyle = DEFAULTS.terminal.cursorStyle;
+  term.cursorBlink = term.cursorBlink !== false;
+  settings.launch.refreshOnFocus = settings.launch.refreshOnFocus === true;
   const layout = settings.layout;
   layout.sidebar = pixels(layout.sidebar, SIDEBAR_MIN, SIDEBAR_MAX, DEFAULTS.layout.sidebar);
   layout.changes = pixels(layout.changes, CHANGES_MIN, CHANGES_MAX, DEFAULTS.layout.changes);

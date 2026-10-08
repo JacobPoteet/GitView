@@ -72,6 +72,7 @@ import {
   SIDEBAR_MIN,
   updateSettings,
   useSetting,
+  FOCUS_REFRESH_GAP_MS,
 } from "./lib/settings";
 import { chordOf, repoChord } from "./lib/keys";
 import { claudeId, isClaude, pickShell, sessionLabel, sessionNumber, sessionRepo } from "./lib/sessions";
@@ -1155,6 +1156,49 @@ export default function App() {
       setRefreshing(false);
     }
   }, [scan, refreshInbox, info?.gh.version, refreshing]);
+
+  // Coming back to the window after a while is when the fleet is most likely
+  // to have moved: an editor, a pull in another terminal. The gap keeps a
+  // flick between windows from being a sweep each way, and a refresh already
+  // running is left to finish.
+  const refreshOnFocus = useSetting((s) => s.launch.refreshOnFocus);
+  const lastRefreshAt = useRef(Date.now());
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
+  useEffect(() => {
+    if (!refreshOnFocus) return;
+    const onFocus = () => {
+      if (Date.now() - lastRefreshAt.current < FOCUS_REFRESH_GAP_MS) return;
+      lastRefreshAt.current = Date.now();
+      void refreshAllRef.current();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshOnFocus]);
+
+  // The shell the next terminal opens decides how a typed command is quoted and
+  // whether blocks are possible, so the setting is resolved here and written
+  // over what `app_info` said at boot.
+  const shellPref = useSetting((s) => s.terminal.shell);
+  const haveInfo = info !== null;
+  useEffect(() => {
+    if (!haveInfo) return;
+    let cancelled = false;
+    api
+      .shellResolve(shellPref)
+      .then((resolved) => {
+        if (cancelled) return;
+        setInfo((current) =>
+          current && (current.shell !== resolved.path || current.shellIntegration !== resolved.integration)
+            ? { ...current, shell: resolved.path, shellIntegration: resolved.integration }
+            : current,
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [shellPref, haveInfo]);
 
 
   const lastPush = useRef<number | null>(null);

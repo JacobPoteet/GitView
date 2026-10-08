@@ -5,7 +5,13 @@ import { api } from "../lib/api";
 import {
   CHANGES_MAX,
   CHANGES_MIN,
+  CURSOR_STYLES,
   DEFAULTS,
+  SCROLLBACK_MAX,
+  SCROLLBACK_MIN,
+  TERMINAL_FACES,
+  type CursorStyle,
+  type Settings,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
   SIDEBAR_MAX,
@@ -17,7 +23,7 @@ import {
   updateSettings,
   useSettings,
 } from "../lib/settings";
-import type { AppInfo } from "../lib/types";
+import type { AppInfo, ResolvedShell } from "../lib/types";
 import { SHORTCUTS } from "../lib/keys";
 import { openUrlCommand, type ShellKind } from "../lib/shell";
 import Dialog from "./Dialog";
@@ -26,9 +32,8 @@ export type SettingsSection =
   | "folders"
   | "layout"
   | "terminal"
-  | "launch"
+  | "general"
   | "github"
-  | "ai"
   | "keyboard"
   | "about";
 
@@ -51,9 +56,8 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "folders", label: "Folders" },
   { id: "layout", label: "Layout" },
   { id: "terminal", label: "Terminal" },
-  { id: "launch", label: "Launch" },
+  { id: "general", label: "General" },
   { id: "github", label: "GitHub" },
-  { id: "ai", label: "AI" },
   { id: "keyboard", label: "Keyboard" },
   { id: "about", label: "About" },
 ];
@@ -96,9 +100,10 @@ export default function SettingsDialog({
           {section === "folders" && <Folders roots={roots} onChange={onRoots} />}
           {section === "layout" && <LayoutSection />}
           {section === "terminal" && <TerminalSection />}
-          {section === "launch" && <LaunchSection gh={info?.gh.version != null} />}
+          {section === "general" && (
+            <GeneralSection gh={info?.gh.version != null} claude={info?.claude ?? null} />
+          )}
           {section === "github" && <GitHubSection info={info} />}
-          {section === "ai" && <AiSection claude={info?.claude ?? null} />}
           {section === "keyboard" && <Keyboard />}
           {section === "about" && (
             <About info={info} shell={shell} onCommand={onCommand} onReplayTour={onReplayTour} />
@@ -111,7 +116,7 @@ export default function SettingsDialog({
 
 // ---------------------------------------------------------------- pieces
 
-/** A switch with its name and the one sentence that says what it costs. */
+/** A switch with its name, and a hint only when there is something to warn about. */
 function Toggle({
   id,
   label,
@@ -122,7 +127,7 @@ function Toggle({
 }: {
   id: string;
   label: string;
-  hint: string;
+  hint?: string;
   checked: boolean;
   disabled?: boolean;
   onChange: (on: boolean) => void;
@@ -133,7 +138,7 @@ function Toggle({
   return (
     <label htmlFor={id} className={`setting-row${disabled ? " disabled" : ""}`}>
       <span className="setting-label">{label}</span>
-      <span className="setting-hint">{hint}</span>
+      {hint && <span className="setting-hint">{hint}</span>}
       <input
         id={id}
         type="checkbox"
@@ -155,6 +160,7 @@ function Toggle({
 function NumberRow({
   label,
   hint,
+  unit,
   value,
   fallback,
   min,
@@ -164,7 +170,8 @@ function NumberRow({
   onChange,
 }: {
   label: string;
-  hint: string;
+  hint?: string;
+  unit?: string;
   value: number;
   fallback: number;
   min: number;
@@ -190,7 +197,7 @@ function NumberRow({
   return (
     <div className={`setting-row${disabled ? " disabled" : ""}`}>
       <span className="setting-label">{label}</span>
-      <span className="setting-hint">{hint}</span>
+      {hint && <span className="setting-hint">{hint}</span>}
       <span className="setting-number">
         <input
           type="number"
@@ -207,6 +214,7 @@ function NumberRow({
           }}
           aria-label={label}
         />
+        {unit && <span className="setting-unit">{unit}</span>}
         {value !== fallback && !disabled && (
           <button
             className="btn tiny"
@@ -218,6 +226,148 @@ function NumberRow({
         )}
       </span>
     </div>
+  );
+}
+
+interface PickOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
+const CUSTOM = "\u0000custom";
+
+/**
+ * A dropdown of named choices ending in Custom, which opens a field for a value
+ * of your own. A value that is not one of the choices is a custom one, so a path
+ * or a font typed on another install still shows as what it is. `problem` is the
+ * only line of explanation: a row says nothing until something is wrong.
+ */
+function PickRow({
+  label,
+  value,
+  options,
+  customPlaceholder,
+  problem,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: PickOption[];
+  /** Offers a Custom choice with this placeholder; without it the list is closed. */
+  customPlaceholder?: string;
+  problem?: string;
+  onChange: (value: string) => void;
+}) {
+  const named = options.some((option) => option.value === value);
+  const [asked, setAsked] = useState(false);
+  const custom = customPlaceholder !== undefined && (!named || asked);
+  const [typed, setTyped] = useState(named ? "" : value);
+  useEffect(() => setTyped(named ? "" : value), [value, named]);
+  const commit = () => {
+    const next = typed.trim();
+    if (next && next !== value) onChange(next);
+  };
+  return (
+    <div className="setting-row">
+      <span className="setting-label">{label}</span>
+      {problem && (
+        <span className="setting-hint bad" role="status">
+          {problem}
+        </span>
+      )}
+      <span className="setting-number">
+        <select
+          value={custom ? CUSTOM : value}
+          aria-label={label}
+          onChange={(e) => {
+            if (e.target.value === CUSTOM) {
+              setAsked(true);
+              return;
+            }
+            setAsked(false);
+            onChange(e.target.value);
+          }}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabled}>
+              {option.label}
+            </option>
+          ))}
+          {customPlaceholder !== undefined && <option value={CUSTOM}>Custom…</option>}
+        </select>
+        {custom && (
+          <input
+            type="text"
+            className="wide"
+            value={typed}
+            placeholder={customPlaceholder}
+            spellCheck={false}
+            autoFocus={asked}
+            aria-label={`${label}, custom`}
+            onChange={(e) => setTyped(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+            }}
+          />
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Puts every setting a section owns back to its default. A switch has no Reset
+ * of its own, since a row that is a label cannot hold a button, so this is the
+ * way back for them, and for the rest in one click.
+ */
+function ResetSection<K extends "terminal" | "launch">({
+  category,
+  keys,
+}: {
+  category: K;
+  keys: (keyof Settings[K])[];
+}) {
+  const current = useSettings()[category];
+  const moved = keys.some((key) => current[key] !== DEFAULTS[category][key]);
+  return (
+    <p className="about-links">
+      <button
+        type="button"
+        className="link-btn"
+        disabled={!moved}
+        onClick={() => {
+          const patch: Partial<Settings[K]> = {};
+          for (const key of keys) patch[key] = DEFAULTS[category][key];
+          updateSettings(category, patch);
+        }}
+      >
+        Reset this section to its defaults
+      </button>
+    </p>
+  );
+}
+
+/**
+ * Whether a typeface is installed, by measuring: a string drawn in the named
+ * face and a generic fallback is a different width from the fallback alone only
+ * if the name resolved. `document.fonts.check` answers true for a name it has
+ * never heard of, so it cannot be asked.
+ */
+function fontInstalled(family: string): boolean {
+  const first = family.split(",")[0].trim().replace(/^["']|["']$/g, "");
+  if (!first) return true;
+  const canvas = document.createElement("canvas").getContext("2d");
+  if (!canvas) return true;
+  const sample = "mmmmmmmmmmlli1 WwO0@";
+  const width = (stack: string) => {
+    canvas.font = `64px ${stack}`;
+    return canvas.measureText(sample).width;
+  };
+  return (
+    width(`"${first}", monospace`) !== width("monospace") ||
+    width(`"${first}", serif`) !== width("serif")
   );
 }
 
@@ -271,12 +421,7 @@ function Folders({ roots, onChange }: { roots: string[]; onChange: (roots: strin
 
   return (
     <>
-      <h3>Watched folders</h3>
-      <p>
-        Every folder here is scanned one level deep. Add the folder your projects sit in, or a
-        single project when it lives somewhere else.
-      </p>
-
+      <h3>Folders</h3>
       <ul className="root-list">
         {roots.length === 0 && <li className="empty">Nothing watched yet.</li>}
         {roots.map((root) => (
@@ -314,12 +459,6 @@ function Folders({ roots, onChange }: { roots: string[]; onChange: (roots: strin
 
 // ----------------------------------------------------------------- layout
 
-/**
- * The two column widths. The handles on the column edges are the usual way
- * to set them; the numbers are here so the dialog shows every setting the
- * app keeps and so a width can be typed or put back without finding the
- * edge.
- */
 function LayoutSection() {
   const { layout } = useSettings();
   return (
@@ -327,7 +466,7 @@ function LayoutSection() {
       <h3>Layout</h3>
       <NumberRow
         label="Sidebar width"
-        hint={`${SIDEBAR_MIN} to ${SIDEBAR_MAX} pixels. Drag the edge beside the repositories, or double-click it for the default.`}
+        unit="px"
         value={layout.sidebar}
         fallback={DEFAULTS.layout.sidebar}
         min={SIDEBAR_MIN}
@@ -336,8 +475,8 @@ function LayoutSection() {
         onChange={(sidebar) => updateSettings("layout", { sidebar })}
       />
       <NumberRow
-        label="Changes column width"
-        hint={`${CHANGES_MIN} to ${CHANGES_MAX} pixels. Drag the edge beside the working tree, or double-click it for the default.`}
+        label="Changes width"
+        unit="px"
         value={layout.changes}
         fallback={DEFAULTS.layout.changes}
         min={CHANGES_MIN}
@@ -345,12 +484,41 @@ function LayoutSection() {
         step={1}
         onChange={(changes) => updateSettings("layout", { changes })}
       />
-      <p>The middle column takes what is left, and never less than the terminal needs for 80 columns.</p>
     </>
   );
 }
 
 // --------------------------------------------------------------- terminal
+
+/** The shells worth naming. Anything else is a path under Custom. */
+const SHELLS = [
+  { value: "", label: "Automatic" },
+  { value: "pwsh", label: "PowerShell 7" },
+  { value: "powershell", label: "Windows PowerShell" },
+  { value: "cmd", label: "Command Prompt" },
+];
+
+/** Which of the named shells this machine has, asked once when the section opens. */
+function useInstalledShells(): Record<string, boolean> {
+  const [installed, setInstalled] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      SHELLS.filter((s) => s.value).map((s) =>
+        api.shellResolve(s.value).then(
+          (r) => [s.value, r.found] as const,
+          () => [s.value, false] as const,
+        ),
+      ),
+    ).then((pairs) => {
+      if (!cancelled) setInstalled(Object.fromEntries(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return installed;
+}
 
 function TerminalSection() {
   const { terminal } = useSettings();
@@ -359,12 +527,45 @@ function TerminalSection() {
   useEffect(() => {
     api.scrollbackSize().then(setSize, () => setSize(0));
   }, []);
+  const installed = useInstalledShells();
+  const resolved = useResolvedShell(terminal.shell);
+  const fontMissing =
+    !TERMINAL_FACES.includes(terminal.fontFamily) && !fontInstalled(terminal.fontFamily);
+  const shellProblem =
+    resolved && !resolved.found
+      ? `Not found. New shells use ${resolved.path}.`
+      : resolved && !resolved.integration
+        ? "This shell has no command blocks."
+        : undefined;
   return (
     <>
       <h3>Terminal</h3>
+      <PickRow
+        label="Shell"
+        value={terminal.shell}
+        options={SHELLS.map((s) => {
+          const missing = s.value !== "" && installed[s.value] === false;
+          return {
+            value: s.value,
+            label: missing ? `${s.label} (not installed)` : s.label,
+            disabled: missing && terminal.shell !== s.value,
+          };
+        })}
+        customPlaceholder="Path to a shell"
+        problem={shellProblem}
+        onChange={(shell) => updateSettings("terminal", { shell })}
+      />
+      <PickRow
+        label="Font"
+        value={terminal.fontFamily}
+        options={TERMINAL_FACES.map((face) => ({ value: face, label: face }))}
+        customPlaceholder="Any installed font"
+        problem={fontMissing ? "Not installed on this machine." : undefined}
+        onChange={(fontFamily) => updateSettings("terminal", { fontFamily })}
+      />
       <NumberRow
-        label="Type size"
-        hint={`${FONT_SIZE_MIN} to ${FONT_SIZE_MAX} points. Every open shell refits as it changes.`}
+        label="Font size"
+        unit="pt"
         value={terminal.fontSize}
         fallback={DEFAULTS.terminal.fontSize}
         min={FONT_SIZE_MIN}
@@ -372,24 +573,43 @@ function TerminalSection() {
         step={0.5}
         onChange={(fontSize) => updateSettings("terminal", { fontSize })}
       />
+      <PickRow
+        label="Cursor"
+        value={terminal.cursorStyle}
+        options={CURSOR_STYLES.map((style) => ({
+          value: style,
+          label: style[0].toUpperCase() + style.slice(1),
+        }))}
+        onChange={(cursorStyle) =>
+          updateSettings("terminal", { cursorStyle: cursorStyle as CursorStyle })
+        }
+      />
       <Toggle
-        id="setting-screen-reader"
-        label="Screen reader mode"
-        hint="A live region a reader can follow, in every shell. The renderer pays for it on every line a build prints, so it stays off until asked for."
-        checked={terminal.screenReader}
-        onChange={(on) => updateSettings("terminal", { screenReader: on })}
+        id="setting-cursor-blink"
+        label="Blink the cursor"
+        checked={terminal.cursorBlink}
+        onChange={(on) => updateSettings("terminal", { cursorBlink: on })}
+      />
+      <NumberRow
+        label="Scrollback"
+        unit="lines"
+        value={terminal.scrollback}
+        fallback={DEFAULTS.terminal.scrollback}
+        min={SCROLLBACK_MIN}
+        max={SCROLLBACK_MAX}
+        step={1000}
+        onChange={(scrollback) => updateSettings("terminal", { scrollback })}
       />
       <Toggle
         id="setting-restore-scrollback"
-        label="Keep the scrollback across restarts"
-        hint="Each shell's buffer is written out as it settles and on close, and read back above the first prompt of the next launch. Off, nothing is written and what is saved stays until cleared."
+        label="Keep scrollback across restarts"
         checked={terminal.restoreScrollback}
         onChange={(on) => updateSettings("terminal", { restoreScrollback: on })}
       />
       <div className="setting-row">
         <span className="setting-label">Saved scrollback</span>
         <span className="setting-hint">
-          {size === null ? "…" : size === 0 ? "Nothing saved." : `${formatBytes(size)}, one file per shell, under the data folder.`}
+          {size === null ? "…" : size === 0 ? "Nothing saved" : formatBytes(size)}
         </span>
         <span className="setting-number">
           <button
@@ -399,14 +619,53 @@ function TerminalSection() {
               await api.scrollbackClear().catch(() => undefined);
               setSize(await api.scrollbackSize().catch(() => 0));
             }}
-            title="Remove every saved scrollback. The open shells keep theirs until they next save."
           >
             Clear
           </button>
         </span>
       </div>
+      <Toggle
+        id="setting-screen-reader"
+        label="Screen reader mode"
+        hint="Slows long build output."
+        checked={terminal.screenReader}
+        onChange={(on) => updateSettings("terminal", { screenReader: on })}
+      />
+      <ResetSection
+        category="terminal"
+        keys={[
+          "shell",
+          "fontFamily",
+          "fontSize",
+          "cursorStyle",
+          "cursorBlink",
+          "scrollback",
+          "screenReader",
+          "restoreScrollback",
+        ]}
+      />
     </>
   );
+}
+
+/** What a shell preference resolves to on this machine, asked of Rust when it changes. */
+function useResolvedShell(preference: string): ResolvedShell | null {
+  const [resolved, setResolved] = useState<ResolvedShell | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.shellResolve(preference).then(
+      (found) => {
+        if (!cancelled) setResolved(found);
+      },
+      () => {
+        if (!cancelled) setResolved(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [preference]);
+  return resolved;
 }
 
 /** "12.4 KB", "3.1 MB": the size the row states. */
@@ -416,63 +675,42 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
-// ----------------------------------------------------------------- launch
+// ---------------------------------------------------------------- general
 
-function LaunchSection({ gh }: { gh: boolean }) {
-  const { launch } = useSettings();
+function GeneralSection({ gh, claude }: { gh: boolean; claude: string | null }) {
+  const { launch, ai } = useSettings();
   return (
     <>
-      <h3>Launch</h3>
+      <h3>General</h3>
       <Toggle
         id="setting-launch-fetch"
-        label="Fetch every repository"
-        hint="git fetch across the fleet when the window opens and the last fetch is more than ten minutes old. Fetch and never pull: nothing in a working tree moves without a click."
+        label="Fetch every repository at launch"
+        hint="Fetch only. Nothing is pulled."
         checked={launch.fetch}
         onChange={(on) => updateSettings("launch", { fetch: on })}
       />
       <Toggle
+        id="setting-launch-refresh-on-focus"
+        label="Rescan when the window comes back"
+        checked={launch.refreshOnFocus}
+        onChange={(on) => updateSettings("launch", { refreshOnFocus: on })}
+      />
+      <Toggle
         id="setting-launch-update"
         label="Check for a new GitView"
-        hint={
-          gh
-            ? "Ask GitHub for the latest release through gh. A newer one is a word in the status bar and nothing else; the palette can still ask on demand."
-            : "Needs gh, which this machine does not have."
-        }
+        hint={gh ? undefined : "Needs gh."}
         checked={launch.checkUpdate}
         disabled={!gh}
         onChange={(on) => updateSettings("launch", { checkUpdate: on })}
       />
-    </>
-  );
-}
-
-// --------------------------------------------------------------------- ai
-
-/**
- * One switch: a Claude tab beside each repository's shell. It opens nothing
- * until it is clicked, so turning it on costs no process and no window.
- */
-function AiSection({ claude }: { claude: string | null }) {
-  const { ai } = useSettings();
-  return (
-    <>
-      <h3>AI</h3>
       <Toggle
         id="setting-ai-claude-tab"
         label="Show a Claude tab"
-        hint={
-          claude
-            ? "A tab after each repository's first shell. It sleeps until you click it, then opens a shell in that folder and types claude. A restart puts it back to sleep."
-            : "claude is not on PATH, so the tab would open a shell that cannot find it. Install Claude Code first."
-        }
+        hint={claude ? undefined : "claude is not on PATH."}
         checked={ai.claudeTab}
         onChange={(on) => updateSettings("ai", { claudeTab: on })}
       />
-      {claude && (
-        <p>
-          Found at <code>{claude}</code>.
-        </p>
-      )}
+      <ResetSection category="launch" keys={["fetch", "refreshOnFocus", "checkUpdate"]} />
     </>
   );
 }
@@ -488,45 +726,34 @@ function costOf(minutes: number): string {
 }
 
 /**
- * The inbox's timers, each with what it costs beside it.
- *
- * The rate limit is 5000 points an hour and a read of the fleet measured cost
- * 8, so the numbers here are affordable by a wide margin; they are shown so
- * the trade is visible where it is made, and so a laptop on a metered
- * connection can turn the timer off without losing the button.
+ * The inbox's timers, each with what it costs beside it. A read of the fleet
+ * measured 8 points against 5000 an hour, so the numbers are affordable; they
+ * are shown so the trade is visible where it is made.
  */
 function GitHubSection({ info }: { info: AppInfo | null }) {
   const { github } = useSettings();
   const gh = info?.gh.version != null && info.gh.loggedIn;
   const why = !info?.gh.version
-    ? "Needs gh, which this machine does not have."
+    ? "Needs gh."
     : !info.gh.loggedIn
-      ? "gh is not logged in, so the inbox has nothing to read."
-      : null;
+      ? "gh is not logged in."
+      : undefined;
   return (
     <>
       <h3>GitHub</h3>
-      <p>
-        Everything on GitHub goes through gh, so the account gh is logged into is the one in use.
-        The inbox reads out of sight, one <code>gh api graphql</code> query for the whole fleet;
-        anything that writes, <code>gh issue create</code> or <code>gh pr merge</code>, is typed
-        into the repository's shell. <code>gh auth login</code> at any prompt signs in.
-      </p>
       <Connection />
       <Toggle
         id="setting-github-poll"
         label="Read the inbox on a timer"
-        hint={
-          why ??
-          "One GraphQL query for the whole fleet, out of sight. Off, the inbox reads at launch, after a command, and when the refresh button asks."
-        }
+        hint={why}
         checked={github.poll}
         disabled={!gh}
         onChange={(on) => updateSettings("github", { poll: on })}
       />
       <NumberRow
-        label="Minutes between reads"
-        hint={`While nothing is running: ${costOf(github.idleMinutes)}.`}
+        label="Read every"
+        unit="min"
+        hint={costOf(github.idleMinutes)}
         value={github.idleMinutes}
         fallback={DEFAULTS.github.idleMinutes}
         min={MINUTES_MIN}
@@ -536,8 +763,9 @@ function GitHubSection({ info }: { info: AppInfo | null }) {
         onChange={(idleMinutes) => updateSettings("github", { idleMinutes })}
       />
       <NumberRow
-        label="Minutes between reads while checks run"
-        hint={`While a pull request that moved in the last hour has checks running: ${costOf(github.busyMinutes)}.`}
+        label="Read every, while checks run"
+        unit="min"
+        hint={costOf(github.busyMinutes)}
         value={github.busyMinutes}
         fallback={DEFAULTS.github.busyMinutes}
         min={MINUTES_MIN}
@@ -547,8 +775,8 @@ function GitHubSection({ info }: { info: AppInfo | null }) {
         onChange={(busyMinutes) => updateSettings("github", { busyMinutes })}
       />
       <NumberRow
-        label="Read at launch when older than"
-        hint="Minutes. The cached inbox shows straight away either way; this is when it is read again behind it."
+        label="Read at launch if older than"
+        unit="min"
         value={github.launchStaleMinutes}
         fallback={DEFAULTS.github.launchStaleMinutes}
         min={MINUTES_MIN}
@@ -570,9 +798,8 @@ type Probe =
 
 /**
  * The test connection row: one `gh api graphql` asking who the token belongs
- * to, which is the same call the inbox makes, so a pass means the inbox works.
- * A failure shows gh's own sentence, since "gh auth login" and "Bad
- * credentials" are the diagnoses, and nothing here would put them better.
+ * to, the same call the inbox makes, so a pass means the inbox works. A failure
+ * shows gh's own sentence.
  */
 function Connection() {
   const [probe, setProbe] = useState<Probe>({ state: "idle" });
@@ -586,11 +813,11 @@ function Connection() {
   };
   const hint =
     probe.state === "idle"
-      ? "Asks GitHub who gh is logged in as, and how much of the hour's rate limit is left."
+      ? ""
       : probe.state === "busy"
         ? "Asking GitHub…"
         : probe.state === "ok"
-          ? `Connected as ${probe.login}. ${probe.remaining} of ${probe.limit} points left until ${clockOf(probe.resetAt)}.`
+          ? `${probe.login}, ${probe.remaining} of ${probe.limit} points left until ${clockOf(probe.resetAt)}`
           : probe.error;
   return (
     <div className="setting-row">
@@ -605,7 +832,7 @@ function Connection() {
           onClick={test}
           title="gh api graphql, one small query. Nothing is written."
         >
-          Test connection
+          Test
         </button>
       </span>
     </div>
@@ -637,15 +864,7 @@ function Keyboard() {
           </div>
         ))}
       </dl>
-      <p>
-        Each chord is released by the terminal rather than sent to the shell, so it works with the
-        cursor at a prompt. The palette shows the chord beside anything that has one.
-      </p>
-      <p>
-        Every button that runs a git command shows it in the status bar while the pointer or the
-        keyboard focus is on it. Shift-click types the command at the prompt and leaves it there
-        instead of running it.
-      </p>
+      <p>Shift-click any button to type its command without running it.</p>
     </>
   );
 }

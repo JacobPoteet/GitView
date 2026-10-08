@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import{ afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * A `localStorage` for Node, which has none. The module reads it once on
@@ -38,6 +38,27 @@ describe("settings", () => {
     vi.resetModules();
     const bare = await import("./settings");
     expect(bare.settings()).toEqual(bare.DEFAULTS);
+  });
+
+  it("clamps the terminal settings an old or hand-edited object can hold", async () => {
+    const { settings } = await load({
+      "gitview.settings": JSON.stringify({
+        terminal: { scrollback: 5, cursorStyle: "triangle", shell: 3, fontFamily: "  Fira Code " },
+        launch: { refreshOnFocus: "yes" },
+      }),
+    });
+    const { terminal, launch } = settings();
+    expect(terminal.scrollback).toBe(1000);
+    expect(terminal.cursorStyle).toBe("bar");
+    expect(terminal.shell).toBe("");
+    expect(terminal.fontFamily).toBe("Fira Code");
+    expect(launch.refreshOnFocus).toBe(false);
+  });
+
+  it("puts a named typeface ahead of the built-in stack and drops what would end the rule", async () => {
+    const { terminalFontStack } = await load({});
+    expect(terminalFontStack("")).toBe('"JetBrains Mono", Consolas, ui-monospace, monospace');
+    expect(terminalFontStack("Fira Code; }")).toBe('"Fira Code", Consolas, ui-monospace, monospace');
   });
 
   it("reads each pre-object key once, and removes them all on the next write", async () => {

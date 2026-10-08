@@ -11,7 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api } from "../lib/api";
 import CloseButton from "./CloseButton";
 import type { CommandBlock, StoredBlock } from "../lib/types";
-import { settings, subscribeSettings } from "../lib/settings";
+import { settings, subscribeSettings, terminalFontStack } from "../lib/settings";
 import { isClaimed } from "../lib/keys";
 import { claudeId, isClaude, nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
 import { asksForInput, settle, titleActivity, type AgentState } from "../lib/agent";
@@ -95,11 +95,26 @@ const SEARCH_DECORATIONS = {
  * new column count, and the rest refit when they next attach.
  */
 function applyTerminalSettings() {
-  const { fontSize, screenReader } = settings().terminal;
+  const { fontSize, fontFamily, screenReader, scrollback, cursorStyle, cursorBlink } =
+    settings().terminal;
+  // A face measured before it has loaded gives the grid the wrong cell, and
+  // xterm ignores a second write of the same stack. So a face that is not
+  // ready is asked for first, and the whole pass runs again when it arrives.
+  const ready = document.fonts.check(`${fontSize}px "${fontFamily}"`);
+  if (!ready) {
+    document.fonts.load(`${fontSize}px "${fontFamily}"`).then(applyTerminalSettings, () => undefined);
+  }
+  const stack = terminalFontStack(fontFamily);
   for (const session of sessions.values()) {
-    session.term.options.screenReaderMode = screenReader;
-    if (session.term.options.fontSize !== fontSize) {
-      session.term.options.fontSize = fontSize;
+    const options = session.term.options;
+    options.screenReaderMode = screenReader;
+    options.cursorStyle = cursorStyle;
+    options.cursorBlink = cursorBlink;
+    if (options.scrollback !== scrollback) options.scrollback = scrollback;
+    // Either one changes the cell, so the shell has to learn its new column count.
+    if (options.fontSize !== fontSize || (ready && options.fontFamily !== stack)) {
+      options.fontSize = fontSize;
+      if (ready) options.fontFamily = stack;
       if (session.host.isConnected) {
         try {
           session.fit.fit();
@@ -495,13 +510,13 @@ function getSession(id: string): Session {
   if (existing) return existing;
 
   const term = new Terminal({
-    fontFamily: 'Cascadia Code, JetBrains Mono, Consolas, ui-monospace, monospace',
+    fontFamily: terminalFontStack(settings().terminal.fontFamily),
     fontSize: settings().terminal.fontSize,
     lineHeight: 1.35,
     letterSpacing: 0,
-    cursorBlink: true,
-    cursorStyle: "bar",
-    scrollback: 20000,
+    cursorBlink: settings().terminal.cursorBlink,
+    cursorStyle: settings().terminal.cursorStyle,
+    scrollback: settings().terminal.scrollback,
     theme: THEME,
     allowProposedApi: true,
     screenReaderMode: settings().terminal.screenReader,
@@ -981,7 +996,14 @@ export default function TerminalPane({
           // prints its first prompt. A reopened one after a close on purpose
           // has had its file removed, so there is nothing to put back.
           await restoreSession(session);
-          await api.ptyOpen(sessionId, repoPath, cols, rows, (chunk) => receive(session, chunk));
+          await api.ptyOpen(
+            sessionId,
+            repoPath,
+            cols,
+            rows,
+            (chunk) => receive(session, chunk),
+            settings().terminal.shell,
+          );
           session.attached = true;
         }
         onLiveChange(sessionId, true);

@@ -42,6 +42,7 @@ impl PtyManager {
         cols: u16,
         rows: u16,
         channel: Channel<String>,
+        shell: &str,
     ) -> Result<bool, String> {
         // Reattach rather than replacing a live shell.
         if let Some(existing) = self.sessions.lock().get(id) {
@@ -51,7 +52,7 @@ impl PtyManager {
             }
         }
 
-        let shell = default_shell();
+        let (shell, _) = resolve_shell(shell);
         let pty = native_pty_system();
         let pair = pty
             .openpty(PtySize {
@@ -275,6 +276,38 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
+/// The shell the settings dialog asked for, or the default when it asked for
+/// nothing or for something this machine cannot start.
+///
+/// `preference` is a full path, or a bare name such as `pwsh`, `powershell` or
+/// `cmd` that is looked up on PATH. `found` is false when a preference was given
+/// and did not resolve, so the dialog can say it fell back rather than saying
+/// nothing and opening a different shell.
+pub fn resolve_shell(preference: &str) -> (String, bool) {
+    let wanted = preference.trim().trim_matches('"');
+    if wanted.is_empty() {
+        return (default_shell(), true);
+    }
+    if wanted.contains(['\\', '/']) {
+        if Path::new(wanted).is_file() {
+            return (wanted.to_string(), true);
+        }
+        return (default_shell(), false);
+    }
+    #[cfg(windows)]
+    {
+        let named = if Path::new(wanted).extension().is_some() {
+            wanted.to_string()
+        } else {
+            format!("{wanted}.exe")
+        };
+        if let Some(found) = find_on_path(&named) {
+            return (found, true);
+        }
+    }
+    (default_shell(), false)
+}
+
 /// PowerShell 7 when it is installed, Windows PowerShell otherwise.
 pub fn default_shell() -> String {
     #[cfg(windows)]
@@ -346,6 +379,31 @@ mod tests {
             .all(|c| c.is_ascii_alphanumeric() || "+/=".contains(c)));
         assert_eq!(base64(&[b'#', 0, b' ']), "IwAg");
         assert!(encoded.starts_with("IwAg"));
+    }
+
+    #[test]
+    fn a_shell_nobody_asked_for_is_the_default() {
+        assert_eq!(resolve_shell(""), (default_shell(), true));
+        assert_eq!(resolve_shell("   "), (default_shell(), true));
+    }
+
+    #[test]
+    fn a_shell_that_does_not_exist_falls_back_and_says_so() {
+        assert_eq!(
+            resolve_shell(r"C:\no\such\shell.exe"),
+            (default_shell(), false)
+        );
+        assert_eq!(
+            resolve_shell("gitview-no-such-shell"),
+            (default_shell(), false)
+        );
+    }
+
+    #[test]
+    fn a_shell_given_as_a_path_that_exists_is_used_as_written() {
+        let exe = std::env::current_exe().unwrap();
+        let path = exe.to_string_lossy().to_string();
+        assert_eq!(resolve_shell(&format!("\"{path}\"")), (path, true));
     }
 
     #[test]

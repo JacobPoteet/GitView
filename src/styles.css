@@ -2023,8 +2023,42 @@ div.setting-row {
   text-align: right;
 }
 
-.setting-number input:focus {
+.setting-number input:focus,
+.setting-number select:focus {
   border-color: var(--accent-line);
+}
+
+/* Text fields hold a path or a typeface, so they left-align and keep a width of their own. */
+.setting-number input[type="text"] {
+  width: 180px;
+  text-align: left;
+}
+
+.setting-number input.wide {
+  width: 220px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+.setting-unit {
+  min-width: 2.5ch;
+  font-size: var(--fs-meta);
+  color: var(--text-faint);
+}
+
+.setting-number select {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: inherit;
+  font-size: var(--fs-small);
+}
+
+.about-links .link-btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  text-decoration: none;
 }
 
 .about-list {
