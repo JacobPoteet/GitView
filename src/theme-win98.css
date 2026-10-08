@@ -429,6 +429,317 @@
   box-shadow: inset 0 0 0 1px var(--text);
 }
 
+/* ------------------------------------------------------------------ committing to the bit */
+
+/* Everything above is the default theme wearing a colour scheme. Everything
+   below changes how the app is built: the headings are title bars, the lists
+   are sunken fields, the shell tabs are tabs, and the pointer is an arrow. */
+
+:root[data-theme="win98"] {
+  --font-mono: "Lucida Console", "Courier New", monospace;
+  --w98-title: linear-gradient(90deg, var(--w98-blue), var(--w98-blue-light));
+}
+
+/* A control is an arrow-pointer thing. The hand is a web idea. */
+:root[data-theme="win98"] button,
+:root[data-theme="win98"] [role="button"],
+:root[data-theme="win98"] summary,
+:root[data-theme="win98"] label {
+  cursor: default;
+}
+
+/* Busy is an hourglass. */
+:root[data-theme="win98"] [aria-busy="true"],
+:root[data-theme="win98"] .busy,
+:root[data-theme="win98"] .loading {
+  cursor: wait;
+}
+
+/* ---------------------------------------------------------- title bars */
+
+/* Each column's heading is a window title bar: navy gradient, white bold text. */
+:root[data-theme="win98"] .sidebar-head,
+:root[data-theme="win98"] .task-head,
+:root[data-theme="win98"] .pane-tab-bar {
+  background: var(--w98-title);
+  color: #fff;
+  font-weight: 700;
+  border-bottom: none;
+  margin: 3px 3px 0;
+}
+
+:root[data-theme="win98"] .sidebar-head {
+  height: 22px;
+  padding: 0 2px 0 4px;
+}
+
+:root[data-theme="win98"] .task-head {
+  padding: 3px 4px;
+}
+
+:root[data-theme="win98"] .pane-tab-bar {
+  height: 20px;
+  padding: 0 4px;
+}
+
+:root[data-theme="win98"] .sidebar-head *,
+:root[data-theme="win98"] .task-head *,
+:root[data-theme="win98"] .pane-tab-bar span,
+:root[data-theme="win98"] .pane-tab-bar .tab-path,
+:root[data-theme="win98"] .pane-tab-bar > span:first-child {
+  color: #fff;
+}
+
+/* The little buttons on a title bar. */
+:root[data-theme="win98"] .sidebar-head .icon-btn,
+:root[data-theme="win98"] .pane-tab-bar .pane-close,
+:root[data-theme="win98"] .task-head button {
+  width: 18px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--w98-surface);
+  color: #000;
+  border: none;
+  box-shadow: var(--raised);
+}
+
+:root[data-theme="win98"] .sidebar-head .icon-btn:active,
+:root[data-theme="win98"] .pane-tab-bar .pane-close:active {
+  box-shadow: var(--pressed);
+}
+
+:root[data-theme="win98"] .sidebar-head .icon-btn:hover,
+:root[data-theme="win98"] .pane-tab-bar .pane-close:hover {
+  color: #000;
+  background: var(--w98-surface);
+}
+
+/* ---------------------------------------------------------- the repository's toolbar */
+
+:root[data-theme="win98"] .repo-head {
+  border-bottom: 1px solid var(--w98-shadow);
+  box-shadow: 0 1px 0 var(--w98-light);
+}
+
+/* ---------------------------------------------------------- sunken lists */
+
+/* The fleet is a tree view: a white field with a sunken edge. */
+:root[data-theme="win98"] .repo-list,
+:root[data-theme="win98"] .task-list,
+:root[data-theme="win98"] .change-list {
+  background: #fff;
+  box-shadow: var(--field);
+  margin: 0 3px 3px;
+  padding: 4px;
+}
+
+:root[data-theme="win98"] .change-staged {
+  background: #fff;
+  box-shadow: var(--field);
+  margin: 0 3px 3px;
+  padding: 2px 6px;
+  border-top: none;
+}
+
+/* A selected row is the navy bar with white text; marks keep their own colour. */
+:root[data-theme="win98"] .repo-row-wrap {
+  border: none;
+}
+
+:root[data-theme="win98"] .repo-row-wrap:hover {
+  background: transparent;
+}
+
+:root[data-theme="win98"] .repo-row-wrap.selected {
+  background: var(--w98-blue);
+}
+
+:root[data-theme="win98"] .repo-row-wrap.selected > .repo-row::before {
+  display: none;
+}
+
+:root[data-theme="win98"] .repo-row-wrap.selected *:not(.chip):not(.chip *):not(.dot) {
+  color: #fff;
+}
+
+:root[data-theme="win98"] .repo-row-wrap.selected {
+  outline: 1px dotted #fff;
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------- shell tabs */
+
+/* The terminal's bar is a strip of tabs, not a title bar. */
+:root[data-theme="win98"] .terminal-pane > .pane-tab-bar {
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
+  height: 24px;
+  padding: 3px 3px 0;
+  margin: 0;
+  border-bottom: none;
+  gap: 0;
+  align-items: flex-end;
+}
+
+:root[data-theme="win98"] .terminal-pane > .pane-tab-bar span,
+:root[data-theme="win98"] .terminal-pane > .pane-tab-bar .tab-path {
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .terminal-tab {
+  height: 21px;
+  margin: 0 0 0 -1px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--w98-surface);
+  box-shadow: inset -1px 0 var(--w98-frame), inset 1px 1px var(--w98-light),
+    inset -2px 0 var(--w98-shadow), inset 2px 2px var(--w98-face);
+}
+
+:root[data-theme="win98"] .terminal-tab.on {
+  height: 23px;
+  margin-bottom: -2px;
+  position: relative;
+  z-index: 2;
+}
+
+:root[data-theme="win98"] .terminal-tab:hover:not(.on) {
+  background: var(--w98-surface);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------- the status bar */
+
+:root[data-theme="win98"] .status-bar {
+  gap: 2px;
+  padding: 2px 3px 0;
+  box-shadow: none;
+  border-top: 1px solid var(--w98-light);
+}
+
+:root[data-theme="win98"] .status-bar > *:not(.spacer):not(button) {
+  padding: 1px 6px;
+  box-shadow: inset 1px 1px var(--w98-shadow), inset -1px -1px var(--w98-light);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+/* The note's live region stays in the DOM while empty; an empty field would be
+   a stray sunken box. */
+:root[data-theme="win98"] .status-bar > *:empty {
+  padding: 0;
+  box-shadow: none;
+}
+
+:root[data-theme="win98"] .status-bar .spacer {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------- checkboxes */
+
+:root[data-theme="win98"] input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  background: #fff;
+  box-shadow: var(--field);
+  border: none;
+  border-radius: 0;
+  position: relative;
+}
+
+:root[data-theme="win98"] input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 7px;
+  height: 7px;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg width='7' height='7' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7 0H6v1H5v1H4v1H3v1H2V3H1V2H0v3h1v1h1v1h1V6h1V5h1V4h1V3h1V0z' fill='%23000'/%3E%3C/svg%3E")
+    no-repeat;
+}
+
+:root[data-theme="win98"] input[type="checkbox"]:disabled {
+  background: var(--w98-surface);
+}
+
+/* ---------------------------------------------------------- the splash is a dialog */
+
+/* Over a teal desktop, a window that says it is starting, with the segmented
+   bar that never knew how long it would take. */
+:root[data-theme="win98"] .splash {
+  background: #008080;
+}
+
+:root[data-theme="win98"] .splash-prompt {
+  width: 300px;
+  align-items: stretch;
+  gap: 0;
+  padding: 3px 3px 12px;
+  background: var(--w98-surface);
+  box-shadow: var(--window-bevel);
+}
+
+:root[data-theme="win98"] .splash-prompt::before {
+  content: "GitView";
+  display: block;
+  padding: 3px 4px;
+  margin-bottom: 14px;
+  background: var(--w98-title);
+  color: #fff;
+  font-weight: 700;
+}
+
+:root[data-theme="win98"] .splash-line {
+  padding: 0 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+}
+
+:root[data-theme="win98"] .splash-chev,
+:root[data-theme="win98"] .splash-word,
+:root[data-theme="win98"] .splash-cursor {
+  display: none;
+}
+
+:root[data-theme="win98"] .splash-line::before {
+  content: "Starting GitView, please wait...";
+}
+
+:root[data-theme="win98"] .splash-track {
+  width: auto;
+  height: 18px;
+  margin: 12px 10px 0;
+  background: var(--w98-surface);
+  box-shadow: var(--field);
+  padding: 2px;
+}
+
+:root[data-theme="win98"] .splash-track::after {
+  inset: 2px auto 2px 2px;
+  height: auto;
+  width: 40%;
+  background: repeating-linear-gradient(90deg, var(--w98-blue) 0 8px, transparent 8px 10px);
+  /* The one animation this theme allows: the global rule turns the rest off. */
+  animation: w98-progress 2.4s steps(14) infinite !important;
+}
+
+@keyframes w98-progress {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
 /* ------------------------------------------------------------------ scrollbars */
 
 :root[data-theme="win98"] ::-webkit-scrollbar {width:16px}
