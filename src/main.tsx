@@ -14,7 +14,12 @@ import "@fontsource/fira-code/latin-700.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-700.css";
 import "./styles.css";
-import { settings } from "./lib/settings";
+import { settings, subscribeSettings } from "./lib/settings";
+import { applyTheme } from "./lib/themes";
+
+// Before the first render, so the window never paints one theme and then another.
+applyTheme(settings().appearance.theme);
+subscribeSettings(() => applyTheme(settings().appearance.theme));
 
 // A face that has not loaded when the terminal measures its cell gives a grid
 // of the wrong width, so the chosen one is asked for before the first render.
