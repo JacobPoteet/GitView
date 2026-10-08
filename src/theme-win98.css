@@ -61,11 +61,11 @@
   --line-strong: #404040;
 
   --text: #000000;
-  --text-dim: #222222;
+  --text-dim: #1a1a1a;
   /* Under dim by a step. 5.7:1 on the silver. The status colours below were
      darkened to clear 4.5:1 on silver and on the selected row; the first
      picks measured 3.9 to 4.1. */
-  --text-faint: #404040;
+  --text-faint: #333333;
 
   --accent: #000080;
   --accent-soft: rgb(0 0 128 / 0.12);
@@ -274,8 +274,20 @@
   color: var(--text);
 }
 
+:root[data-theme="win98"] .rail {
+  background: var(--bg);
+}
+
+/* The pane and its tab bar stay silver, so the bar's text reads on silver.
+   Only the screen itself is black. */
 :root[data-theme="win98"] .terminal-pane {
+  background: var(--bg);
+}
+
+:root[data-theme="win98"] .terminal-host {
+  margin: 0 3px 3px;
   background: #000;
+  box-shadow: var(--field);
 }
 
 /* The theme picker's rows are buttons, and a chosen one is pressed in. */
@@ -330,6 +342,59 @@
 
 :root[data-theme="win98"] .graph-node.theirs.tip .graph-dot {
   box-shadow: inset 0 0 0 2px var(--blue), 0 0 0 3px var(--accent-soft);
+}
+
+/* ------------------------------------------------------------------ one surface, flat marks */
+
+/* The default tints a chip by mixing its colour into the surface. On silver
+   that mix is a muddy teal or tan, so every mark here is white with a hairline
+   and keeps its colour in the text. */
+:root[data-theme="win98"] .chip.ahead,
+:root[data-theme="win98"] .chip.behind,
+:root[data-theme="win98"] .chip.dirty,
+:root[data-theme="win98"] .chip.conflict,
+:root[data-theme="win98"] .chip.unpushed,
+:root[data-theme="win98"] .chip.pr,
+:root[data-theme="win98"] .agent.waiting,
+:root[data-theme="win98"] .agent.done,
+:root[data-theme="win98"] .inbox-label,
+:root[data-theme="win98"] .graph-ref,
+:root[data-theme="win98"] .graph-ref.head {
+  background: #fff;
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--w98-shadow);
+}
+
+:root[data-theme="win98"] .graph-ref {
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .graph-ref.head {
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+
+:root[data-theme="win98"] .graph-node.theirs .graph-dot,
+:root[data-theme="win98"] .graph-node.ours .graph-dot,
+:root[data-theme="win98"] .graph-node.fork.head .graph-dot,
+:root[data-theme="win98"] .graph-node.trunk.head .graph-dot {
+  background: #fff;
+}
+
+/* A disabled control is grey with a white shadow, never a faded one: opacity
+   on silver gives a third grey that matches nothing else on the screen. */
+:root[data-theme="win98"] .change-discard-all:disabled,
+:root[data-theme="win98"] .change-bulk:disabled,
+:root[data-theme="win98"] .hunk-apply:disabled,
+:root[data-theme="win98"] .commit-amend:disabled,
+:root[data-theme="win98"] .row-menu button:disabled {
+  opacity: 1;
+  color: var(--w98-shadow);
+  text-shadow: 1px 1px 0 var(--w98-light);
+}
+
+:root[data-theme="win98"] .task-hidden-list {
+  opacity: 1;
 }
 
 /* ------------------------------------------------------------------ scrollbars */
