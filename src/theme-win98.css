@@ -410,6 +410,25 @@
   text-shadow: 1px 1px 0 var(--w98-light);
 }
 
+/* The reference is black text on silver with navy for selection. The default
+   uses green for "live" and "ok" on labels as well as marks. Here the marks
+   (chips, dots, diff signs, badges) keep their colour, and a label or a count
+   that only names something goes back to the text colour. */
+:root[data-theme="win98"] .btn .btn-count,
+:root[data-theme="win98"] .graph-ref.head,
+:root[data-theme="win98"] .history-row.head .history-sha,
+:root[data-theme="win98"] .history-ref.head,
+:root[data-theme="win98"] .setting-hint.ok,
+:root[data-theme="win98"] .block-bar.ok .block-status,
+:root[data-theme="win98"] .batch-code.ok,
+:root[data-theme="win98"] .inbox-checks.ok {
+  color: var(--text);
+}
+
+:root[data-theme="win98"] .graph-ref.head {
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+
 /* ------------------------------------------------------------------ scrollbars */
 
 :root[data-theme="win98"] ::-webkit-scrollbar {width:16px}
