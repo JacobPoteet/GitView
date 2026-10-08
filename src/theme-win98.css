@@ -41,9 +41,9 @@
   --w98-light: #ffffff;
   --w98-face: #dfdfdf;
   --w98-shadow: #808080;
-  /* Disabled text. 98.css uses the bevel grey, 3.9:1 on silver; this is 4.9:1 and
-     the white emboss still marks it as off. */
-  --w98-disabled: #4a4a4a;
+  /* Disabled text: 98.css's bevel grey under a white emboss. A darker grey read as
+     enabled text with a blur under it, and WCAG exempts a disabled control. */
+  --w98-disabled: #808080;
   --w98-frame: #0a0a0a;
   --w98-blue: #000080;
   --w98-blue-light: #1084d0;
@@ -200,6 +200,30 @@
   box-shadow: var(--pressed);
 }
 
+/* The inbox's sort and the diff's side are two-way switches: a pair of buttons,
+   the chosen one latched, rather than a silver segment on a white track. */
+:root[data-theme="win98"] .inbox-modes,
+:root[data-theme="win98"] .diff-sides {
+  background: transparent;
+  gap: 0;
+  padding: 0;
+}
+
+:root[data-theme="win98"] .inbox-modes button,
+:root[data-theme="win98"] .diff-sides button {
+  background: var(--w98-surface);
+  color: var(--text);
+  box-shadow: var(--raised);
+  padding: 1px 8px;
+  font-weight: 400;
+}
+
+:root[data-theme="win98"] .inbox-modes button.on,
+:root[data-theme="win98"] .diff-sides button.on {
+  background: var(--w98-dither);
+  box-shadow: var(--pressed);
+}
+
 /* The accent button is the dialog's default, with the heavier frame. */
 :root[data-theme="win98"] .btn.accent {
   color: var(--text);
@@ -342,7 +366,8 @@
   font-weight: 700;
 }
 
-:root[data-theme="win98"] .confirm h2 .pane-close {
+:root[data-theme="win98"] .confirm h2 .pane-close,
+:root[data-theme="win98"] .tour-head .pane-close {
   margin-top: 0;
   margin-left: auto;
   width: 16px;
@@ -355,7 +380,8 @@
   box-shadow: var(--raised);
 }
 
-:root[data-theme="win98"] .confirm h2 .pane-close:active {
+:root[data-theme="win98"] .confirm h2 .pane-close:active,
+:root[data-theme="win98"] .tour-head .pane-close:active {
   box-shadow: var(--pressed);
 }
 
@@ -416,7 +442,7 @@
   border: none;
 }
 
-:root[data-theme="win98"] .repo-row-wrap:hover {
+:root[data-theme="win98"] .repo-row-wrap:hover:not(.selected) {
   background: transparent;
 }
 
@@ -447,13 +473,24 @@
 :root[data-theme="win98"] .history-ref,
 :root[data-theme="win98"] .history-ref.local,
 :root[data-theme="win98"] .history-ref.remote,
-:root[data-theme="win98"] .history-ref.tag {
+:root[data-theme="win98"] .history-ref.tag,
+:root[data-theme="win98"] .inbox-kind.pr,
+:root[data-theme="win98"] .inbox-kind.issue {
   background: var(--w98-light);
   border: none;
   box-shadow: var(--mark-line);
 }
 
 :root[data-theme="win98"] .graph-ref {
+  color: var(--text);
+}
+
+/* A filled badge is a mark too: navy text for a pull request, black for an issue. */
+:root[data-theme="win98"] .inbox-kind.pr {
+  color: var(--accent);
+}
+
+:root[data-theme="win98"] .inbox-kind.issue {
   color: var(--text);
 }
 
@@ -522,6 +559,34 @@
 }
 
 /* ================================================================== how the app is built */
+
+/* ------------------------------------------------------------------ windows round the columns */
+
+/* Each column is a window: a raised frame, its title bar inside the frame, and
+   the white field inside that. Without the frame a white list sat loose on the
+   silver while the terminal sat in a box, and the columns read as three
+   different things. The splitters keep the gap between the frames. */
+:root[data-theme="win98"] .sidebar,
+:root[data-theme="win98"] .task-pane,
+:root[data-theme="win98"] .main,
+:root[data-theme="win98"] .changes-pane {
+  background: var(--w98-surface);
+  box-shadow: var(--window-bevel);
+  border: none;
+  margin: 2px;
+}
+
+/* The rail held both windows on a white ground; it is the gap between them now. */
+:root[data-theme="win98"] .rail {
+  border: none;
+  background: var(--bg);
+}
+
+/* The main window has no title bar of its own, so the repository's toolbar
+   sits inside the frame's padding like the others' title bars. */
+:root[data-theme="win98"] .main > .repo-head {
+  margin: 3px 3px 0;
+}
 
 /* ------------------------------------------------------------------ title bars */
 
@@ -639,6 +704,24 @@
   margin: 0 3px 3px;
   /* The rows paint their own backgrounds, which would cover an inset bevel. */
   padding: 2px;
+}
+
+/* The inbox is a list you read, like the others. */
+:root[data-theme="win98"] .inbox-list {
+  --bg: var(--w98-light);
+  background: var(--bg);
+  box-shadow: var(--field);
+  margin: 0 3px 3px;
+}
+
+/* A paused rebase is a strip of the toolbar, not a pink band: the default mixes
+   red into the surface, which on silver is a dusty rose. The red stays on the
+   mark at its left. */
+:root[data-theme="win98"] .operation-bar {
+  background: var(--w98-surface);
+  border-bottom: 1px solid var(--w98-shadow);
+  box-shadow: 0 1px 0 var(--w98-light);
+  margin: 0 3px;
 }
 
 /* ------------------------------------------------------------------ shell tabs */
