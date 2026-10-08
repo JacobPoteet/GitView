@@ -3066,6 +3066,7 @@ button.branch-name.has-other .branch-count {
 .inbox-pane {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -3161,20 +3162,28 @@ button.branch-name.has-other .branch-count {
 
 .inbox-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
+  gap: 3px 7px;
   margin-top: 3px;
   padding-left: 26px;
+  min-width: 0;
 }
 
 .inbox-repo {
   font-size: var(--fs-meta);
   color: var(--text-dim);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inbox-when {
   font-size: var(--fs-meta);
   color: var(--text-faint);
+  white-space: nowrap;
 }
 
 .inbox-badge {
@@ -3183,6 +3192,7 @@ button.branch-name.has-other .branch-count {
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .inbox-badge.approved {
@@ -3267,6 +3277,7 @@ button.branch-name.has-other .branch-count {
 .btn.tiny {
   font-size: var(--fs-meta);
   padding: 2px 7px;
+  white-space: nowrap;
 }
 
 /* The chevron that opens a pull request's desk. An issue gets the blank so the
@@ -3288,6 +3299,7 @@ button.inbox-expand:hover {
    left closed. It takes the row's full width beneath the chevron and the
    actions. */
 .inbox-desk {
+  min-width: 0;
   margin: 0 8px 8px 26px;
   padding: 8px 10px;
   background: var(--bg-inset);
@@ -3300,8 +3312,9 @@ button.inbox-expand:hover {
 
 .inbox-desk-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 2px 10px;
   font-size: var(--fs-meta);
   color: var(--text-dim);
 }
@@ -3396,6 +3409,10 @@ button.inbox-expand:hover {
 .inbox-check-name {
   font-family: var(--font-mono);
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 button.inbox-check-name.link:hover {
@@ -3528,6 +3545,29 @@ button.inbox-check-name.link:hover {
 
 /* Two questions about one list, in the same segmented control the diff pane
    uses to switch sides of the index. */
+/* The inbox's bar has the most in it of any pane's: a stamp, the grouping
+   switch, two buttons and the X. At the 960px minimum the column is about 360px
+   wide, so it wraps onto a second line instead of running under the X. */
+.inbox-pane > .pane-tab-bar {
+  height: auto;
+  min-height: 30px;
+  flex-wrap: wrap;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  row-gap: 3px;
+}
+
+.inbox-pane > .pane-tab-bar > .spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.inbox-pane > .pane-tab-bar > .inbox-when {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .inbox-modes {
   flex: none;
   display: flex;
