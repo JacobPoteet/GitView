@@ -34,6 +34,9 @@
   --w98-light: #ffffff;
   --w98-face: #dfdfdf;
   --w98-shadow: #808080;
+  /* Disabled text. 98.css uses the bevel grey, 3.9:1 on silver; this is 4.9:1 and
+     the white emboss still marks it as off. */
+  --w98-disabled: #4a4a4a;
   --w98-frame: #0a0a0a;
   --w98-blue: #000080;
   --w98-blue-light: #1084d0;
@@ -168,7 +171,7 @@
 :root[data-theme="win98"] .btn:disabled,
 :root[data-theme="win98"] .btn.accent:disabled {
   background: var(--w98-surface);
-  color: var(--w98-shadow);
+  color: var(--w98-disabled);
   text-shadow: 1px 1px 0 var(--w98-light);
   box-shadow: var(--raised);
 }
@@ -389,12 +392,22 @@
 :root[data-theme="win98"] .commit-amend:disabled,
 :root[data-theme="win98"] .row-menu button:disabled {
   opacity: 1;
-  color: var(--w98-shadow);
+  color: var(--w98-disabled);
   text-shadow: 1px 1px 0 var(--w98-light);
 }
 
 :root[data-theme="win98"] .task-hidden-list {
   opacity: 1;
+}
+
+/* Every disabled control, not just the ones named above: the commit button,
+   Sync all, the chip buttons and whatever comes next. A faded one is a third
+   grey, so the colour is solid and the white emboss says it is off. */
+:root[data-theme="win98"] :disabled,
+:root[data-theme="win98"] .setting-row.disabled .setting-label {
+  opacity: 1;
+  color: var(--w98-disabled);
+  text-shadow: 1px 1px 0 var(--w98-light);
 }
 
 /* ------------------------------------------------------------------ scrollbars */
