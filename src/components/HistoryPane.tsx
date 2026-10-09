@@ -7,12 +7,13 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
-import { commitMenu, type ResetMode } from "./BranchGraph";
+import { checkoutItem, commitMenu, type ResetMode } from "./BranchGraph";
 import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
 import PaneNote from "./PaneNote";
 import CloseButton from "./CloseButton";
 import {
+  branchTips,
   parseHistoryFilter,
   relativeTime,
   signedTitle,
@@ -254,31 +255,30 @@ export default function HistoryPane({
 
   /**
    * A row's menu is the commit: what the click already does, and the id. A
-   * local branch chip gets the branch instead, which is where deleting lives:
+   * branch chip gets the branch instead. A local one is where deleting lives:
    * the history is the view that shows a branch is finished, so it is the
-   * view to remove it from.
+   * view to remove it from. A remote one offers the local branch it would
+   * check out, which is the reason to right-click `origin/feature` at all.
    */
   function rowMenu({ row, ref }: Target): MenuEntry[] {
-    // A detached HEAD's chip is named `HEAD` and is no branch: nothing to
-    // switch to and nothing to delete, so it gets the commit's menu.
-    const isBranch = (r: HistoryRef) => r.kind === "local" || (r.kind === "head" && r.name !== "HEAD");
-    if (ref && isBranch(ref)) {
-      const current = ref.kind === "head";
-      const switchTo = `git switch ${quote(ref.name, shell)}`;
+    const tip = ref ? branchTips([ref], headBranch)[0] : undefined;
+    if (ref && tip?.remote) {
       return [
-        {
-          label: `Switch to ${ref.name}`,
-          title: current ? "You are on it." : switchTo,
-          disabled: current,
-          run: (typeOnly) => onCommand(switchTo, typeOnly),
-        },
+        checkoutItem(tip, shell, onCommand),
+        { label: "Copy branch name", run: () => onCopy(ref.name, "the branch name") },
+      ];
+    }
+    if (ref && tip) {
+      const current = tip.isHead;
+      return [
+        checkoutItem(tip, shell, onCommand),
         { label: "Copy branch name", run: () => onCopy(ref.name, "the branch name") },
         "-",
         {
           label: `Delete ${ref.name}`,
           danger: true,
           disabled: current,
-          title: current ? "You are on it. Switch away first." : "Asks first, and names the command.",
+          title: current ? "You are on it. Check out another branch first." : "Asks first, and names the command.",
           run: () => onDeleteBranch(ref.name),
         },
       ];
@@ -314,8 +314,7 @@ export default function HistoryPane({
         },
       ];
     }
-    const tips = row.refs.filter(isBranch).map((r) => ({ name: r.name, isHead: r.kind === "head" }));
-    return commitMenu(row, tips, { shell, headBranch, onCommand, onCopy, onTag, onReset });
+    return commitMenu(row, branchTips(row.refs, headBranch), { shell, headBranch, onCommand, onCopy, onTag, onReset });
   }
 
   const loadPage = useCallback(

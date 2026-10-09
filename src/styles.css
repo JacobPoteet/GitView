@@ -2372,6 +2372,45 @@ div.setting-row {
   cursor: default;
 }
 
+/* A submenu's item, with the arrow at its right edge, stays lit while its
+   child is open, so the pointer can leave it for the child without losing
+   the trail. */
+.row-menu-sub {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.row-menu-sub > button {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.row-menu-sub > button > :first-child {
+  flex: 1;
+}
+
+.row-menu-sub > button.open:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.row-menu-arrow {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.row-menu-sub > button:hover:not(:disabled) .row-menu-arrow,
+.row-menu-sub > button.open:not(:disabled) .row-menu-arrow {
+  color: inherit;
+}
+
+.row-menu-child {
+  position: absolute;
+  white-space: nowrap;
+}
+
 .row-menu-heading {
   padding: 4px 9px 2px;
   max-width: 320px;

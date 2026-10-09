@@ -83,7 +83,7 @@ export default function BranchMenu({
     const held = branch.worktree;
     return [
       {
-        label: "Switch to it",
+        label: "Check out",
         title: branch.isHead
           ? "You are here."
           : held
@@ -103,7 +103,7 @@ export default function BranchMenu({
         danger: true,
         disabled: branch.isHead,
         title: branch.isHead
-          ? "You are on it. Switch away first."
+          ? "You are on it. Check out another branch first."
           : held
             ? `Checked out in the worktree at ${held}. Asks first, and names both commands: the worktree goes, then the branch.`
             : "Asks first, and names the command.",

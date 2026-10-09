@@ -309,6 +309,39 @@ export interface HistoryRow {
   edges: [number, number][];
 }
 
+/** A branch to check out, as `git switch` takes it. See `TipOf` in BranchGraph. */
+export interface BranchTip {
+  name: string;
+  isHead: boolean;
+  /** The remote ref it came from, when there was no local chip of that name. */
+  remote?: string;
+}
+
+/**
+ * The branches a commit's chips offer to check out, locals first.
+ *
+ * `origin/feature` offers `feature`, since `git switch feature` finds the local
+ * one or makes it tracking the remote. A remote whose local namesake already
+ * sits on the same commit says nothing new and is dropped, as is the remote's
+ * own `HEAD`. A detached HEAD's chip is named `HEAD` and is no branch.
+ */
+export function branchTips(refs: HistoryRef[], headBranch: string | null): BranchTip[] {
+  const tips: BranchTip[] = [];
+  for (const ref of refs) {
+    if (ref.kind === "local" || (ref.kind === "head" && ref.name !== "HEAD")) {
+      tips.push({ name: ref.name, isHead: ref.kind === "head" });
+    }
+  }
+  for (const ref of refs) {
+    const slash = ref.name.indexOf("/");
+    if (ref.kind !== "remote" || slash < 0) continue;
+    const name = ref.name.slice(slash + 1);
+    if (name === "HEAD" || tips.some((t) => t.name === name)) continue;
+    tips.push({ name, isHead: name === headBranch, remote: ref.name });
+  }
+  return tips;
+}
+
 /** One page of the whole DAG, with its lanes already packed by the backend. */
 /**
  * What narrows the history. Every field is a case-insensitive substring, and

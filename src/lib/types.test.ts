@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { repo } from "./fixtures";
-import { attentionScore, isClean, unpushed } from "./types";
+import { attentionScore, branchTips, isClean, unpushed } from "./types";
 
 describe("attentionScore", () => {
   it("orders a conflict above a paused operation above behind above dirty", () => {
@@ -54,5 +54,40 @@ describe("unpushed", () => {
   it("leaves HEAD's tracked branch to `ahead`, and skips a merged branch", () => {
     expect(unpushed(repo({ ahead: 4, branches: [branch({ name: "main", isHead: true, ahead: 4 })] }))).toBe(0);
     expect(unpushed(repo({ branches: [branch({ ahead: 2, merged: true })] }))).toBe(0);
+  });
+});
+
+describe("branchTips", () => {
+  it("offers a remote chip as the local branch it would check out", () => {
+    expect(branchTips([{ name: "origin/feature/x", kind: "remote" }], "main")).toEqual([
+      { name: "feature/x", isHead: false, remote: "origin/feature/x" },
+    ]);
+  });
+
+  it("drops a remote whose local namesake sits on the same commit", () => {
+    const tips = branchTips(
+      [
+        { name: "origin/main", kind: "remote" },
+        { name: "main", kind: "head" },
+      ],
+      "main",
+    );
+    expect(tips).toEqual([{ name: "main", isHead: true }]);
+  });
+
+  it("marks a remote as current when its local namesake is checked out elsewhere", () => {
+    expect(branchTips([{ name: "origin/main", kind: "remote" }], "main")[0].isHead).toBe(true);
+  });
+
+  it("skips tags, a detached HEAD and a remote's own HEAD", () => {
+    const tips = branchTips(
+      [
+        { name: "v1.0.0", kind: "tag" },
+        { name: "HEAD", kind: "head" },
+        { name: "origin/HEAD", kind: "remote" },
+      ],
+      null,
+    );
+    expect(tips).toEqual([]);
   });
 });
