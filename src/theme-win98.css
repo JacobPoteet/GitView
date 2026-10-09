@@ -38,9 +38,11 @@
 :root[data-theme="win98"] {
   color-scheme: light;
 
-  --w98-surface: #c0c0c0;
-  --w98-light: #ffffff;
-  --w98-face: #dfdfdf;
+  /* The three surfaces are 99.8% opaque, which no eye can tell from solid. It is
+     what keeps ClearType off the pixel face: see the body rule below. */
+  --w98-surface: rgb(192 192 192 / 0.998);
+  --w98-light: rgb(255 255 255 / 0.998);
+  --w98-face: rgb(223 223 223 / 0.998);
   --w98-shadow: #808080;
   /* Disabled text: 98.css's bevel grey under a white emboss. A darker grey read as
      enabled text with a blur under it, and WCAG exempts a disabled control. */
@@ -69,12 +71,12 @@
   /* The hairline round a mark. */
   --mark-line: inset 0 0 0 1px var(--w98-shadow);
 
-  --bg: #c0c0c0;
-  --bg-raised: #c0c0c0;
+  --bg: var(--w98-surface);
+  --bg-raised: var(--w98-surface);
   --bg-hover: #dfdfdf;
   /* Not a lavender: 98 had none. A pressed or chosen surface is the face grey. */
   --bg-active: #dfdfdf;
-  --bg-inset: #ffffff;
+  --bg-inset: var(--w98-light);
 
   --line: #808080;
   --line-strong: #404040;
@@ -138,9 +140,18 @@
   --font-mono: "Lucida Console", "Courier New", monospace;
 }
 
-/* The face is bitmap-hinted; smoothing it undoes that. */
+/* The face is drawn in whole pixels, and ClearType's subpixel smoothing gave
+   more than half of its pixels a green or purple fringe, so text on silver read
+   as green. `-webkit-font-smoothing` is a macOS property Chromium ignores on
+   Windows. Chromium drops to greyscale smoothing for text under an opacity
+   effect, which the body's 0.999 provides. A scrolling list with a solid
+   background gets a layer of its own with ClearType back on, and the 99.8%
+   surfaces above are what stop that: Chromium does not give a scroller its own
+   layer when the layer would cost it ClearType. Measured over CDP: coloured
+   text pixels went from 6,958 to 178 on the fleet view, and the 178 are the
+   dots and chips. */
 :root[data-theme="win98"] body {
-  -webkit-font-smoothing: none;
+  opacity: 0.999;
   font-feature-settings: normal;
 }
 
@@ -521,9 +532,12 @@
    put colour in its icons and almost never in its text, so nothing here is
    green text: a label, a count, a chip or a head ref that the default greens
    goes back to the text colour, framed in black where the default framed it in
-   green. Green stays on fills: a dot, the head node, a diff's added line. */
+   green. Green stays on fills: a dot, the head node, a diff's added line. The
+   dirty chip goes black for the same reason: its amber is a dark olive brown
+   that read as green beside the rest. */
 :root[data-theme="win98"] .btn .btn-count,
 :root[data-theme="win98"] .chip.ahead,
+:root[data-theme="win98"] .chip.dirty,
 :root[data-theme="win98"] .agent.done,
 :root[data-theme="win98"] .change-mark.new,
 :root[data-theme="win98"] .diff-tally .add,
