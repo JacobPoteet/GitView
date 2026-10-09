@@ -3,8 +3,10 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type MutableRefObject,
 } from "react";
 
 /**
@@ -33,8 +35,21 @@ export interface MenuHeading {
   heading: true;
 }
 
+/**
+ * An item that opens a second menu beside it, for a group too rare to show in
+ * full every time: reset's three modes, or the branches at a commit when there
+ * are several. Hover, a click or the right arrow opens it; the left arrow and
+ * Escape close it again.
+ */
+export interface MenuSubmenu {
+  label: string;
+  title?: string;
+  disabled?: boolean;
+  entries: MenuEntry[];
+}
+
 /** A `"-"` between two items draws a rule. */
-export type MenuEntry = MenuItem | MenuHeading | "-";
+export type MenuEntry = MenuItem | MenuHeading | MenuSubmenu | "-";
 
 export interface MenuAt {
   x: number;
@@ -107,20 +122,10 @@ export default function ContextMenu({
     ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }, []);
 
-  function onKeyDown(event: ReactKeyboardEvent) {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    const items = Array.from(
-      ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [],
-    );
-    if (items.length === 0) return;
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    const step = event.key === "ArrowDown" ? 1 : -1;
-    items[(at + step + items.length) % items.length].focus();
-  }
-
   useEffect(() => {
     function dismiss(event: Event) {
+      // A submenu is inside the menu's element, so a click in one is not a
+      // click elsewhere.
       if (event.target instanceof Node && ref.current?.contains(event.target)) return;
       onClose();
     }
@@ -141,13 +146,75 @@ export default function ContextMenu({
   }, [onClose]);
 
   return (
+    <MenuPanel
+      panelRef={ref}
+      entries={entries}
+      label={label}
+      style={{ left: pos.x, top: pos.y }}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
+ * One column of items: the menu, or a submenu inside it.
+ *
+ * Each panel walks only its own items with the arrows, so a submenu's items
+ * are not in the top level's order. Escape and the left arrow inside a
+ * submenu are handled here and stopped, which keeps the window listener from
+ * closing the whole menu when only the submenu should go.
+ */
+function MenuPanel({
+  panelRef,
+  entries,
+  label,
+  style,
+  onClose,
+  onBack,
+}: {
+  panelRef: MutableRefObject<HTMLDivElement | null>;
+  entries: MenuEntry[];
+  label: string;
+  style: CSSProperties;
+  onClose: () => void;
+  /** Set on a submenu: closes it and gives focus back to its item. */
+  onBack?: () => void;
+}) {
+  const [open, setOpen] = useState<number | null>(null);
+
+  function items(): HTMLButtonElement[] {
+    return Array.from(
+      panelRef.current?.querySelectorAll<HTMLButtonElement>(
+        ":scope > button:not(:disabled), :scope > .row-menu-sub > button:not(:disabled)",
+      ) ?? [],
+    );
+  }
+
+  function onKeyDown(event: ReactKeyboardEvent) {
+    // A key pressed inside an open submenu is that submenu's business.
+    const list = items();
+    if (!list.includes(event.target as HTMLButtonElement)) return;
+    if (onBack && (event.key === "Escape" || event.key === "ArrowLeft")) {
+      event.preventDefault();
+      event.stopPropagation();
+      onBack();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    list[(at + step + list.length) % list.length].focus();
+  }
+
+  return (
     <div
-      className="row-menu"
-      ref={ref}
+      className={onBack ? "row-menu row-menu-child" : "row-menu"}
+      ref={panelRef}
       role="menu"
       aria-label={label}
       tabIndex={-1}
-      style={{ left: pos.x, top: pos.y }}
+      style={style}
       onKeyDown={onKeyDown}
       // A right-click on the menu itself is nothing, rather than a second menu.
       onContextMenu={(event) => event.preventDefault()}
@@ -159,6 +226,15 @@ export default function ContextMenu({
           <div key={index} className="row-menu-heading" title={entry.label}>
             {entry.label}
           </div>
+        ) : "entries" in entry ? (
+          <Submenu
+            key={index}
+            entry={entry}
+            open={open === index}
+            onOpen={() => setOpen(index)}
+            onShut={() => setOpen(null)}
+            onClose={onClose}
+          />
         ) : (
           <button
             key={index}
@@ -166,6 +242,9 @@ export default function ContextMenu({
             className={entry.danger ? "danger" : undefined}
             disabled={entry.disabled}
             title={entry.title}
+            // Moving onto a plain item closes a sibling's submenu, as a
+            // desktop menu does.
+            onMouseEnter={() => setOpen(null)}
             onClick={(event) => {
               entry.run(event.shiftKey);
               onClose();
@@ -174,6 +253,94 @@ export default function ContextMenu({
             {entry.label}
           </button>
         ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * The item that opens a submenu, and the submenu once it is open.
+ *
+ * The child sits to the item's right, and goes to its left when the right
+ * would run off the window, which is where a menu opened near the edge
+ * already is. It moves up by however much it would run off the bottom.
+ */
+function Submenu({
+  entry,
+  open,
+  onOpen,
+  onShut,
+  onClose,
+}: {
+  entry: MenuSubmenu;
+  open: boolean;
+  onOpen: () => void;
+  onShut: () => void;
+  onClose: () => void;
+}) {
+  const button = useRef<HTMLButtonElement | null>(null);
+  const child = useRef<HTMLDivElement | null>(null);
+  const [place, setPlace] = useState({ left: false, lift: 0 });
+  // Set when the keyboard or a click opened it, so focus follows into the
+  // child. A hover leaves focus where it was.
+  const focusChild = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const item = button.current?.getBoundingClientRect();
+    const el = child.current?.getBoundingClientRect();
+    if (!item || !el) return;
+    setPlace({
+      left: item.right + el.width + 4 > window.innerWidth,
+      lift: Math.max(0, item.top + el.height + 4 - window.innerHeight),
+    });
+    if (focusChild.current) {
+      focusChild.current = false;
+      child.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    }
+  }, [open]);
+
+  function enter() {
+    focusChild.current = true;
+    if (open) child.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    else onOpen();
+  }
+
+  return (
+    <div className="row-menu-sub">
+      <button
+        ref={button}
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={open ? "open" : undefined}
+        disabled={entry.disabled}
+        title={entry.title}
+        onMouseEnter={onOpen}
+        onClick={enter}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowRight") return;
+          event.preventDefault();
+          enter();
+        }}
+      >
+        <span>{entry.label}</span>
+        <span className="row-menu-arrow" aria-hidden="true">
+          ▸
+        </span>
+      </button>
+      {open && (
+        <MenuPanel
+          panelRef={child}
+          entries={entry.entries}
+          label={entry.label}
+          style={{ [place.left ? "right" : "left"]: "100%", top: -5 - place.lift }}
+          onClose={onClose}
+          onBack={() => {
+            onShut();
+            button.current?.focus();
+          }}
+        />
       )}
     </div>
   );

@@ -6,7 +6,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
+import ContextMenu, { useContextMenu, type MenuEntry, type MenuItem } from "./ContextMenu";
 import PaneNote from "./PaneNote";
 import { quote, type ShellKind } from "../lib/shell";
 import type { BranchGraph as Graph, BranchSummary, GraphCommit, Squashed } from "../lib/types";
@@ -37,10 +37,45 @@ interface Props {
   shell: ShellKind;
 }
 
-/** A local branch pointing at a commit, and whether you are on it. */
+/**
+ * A branch pointing at a commit, named as `git switch` takes it, and whether
+ * you are on it. `remote` is set when the chip was a remote ref: the name is
+ * then the local branch git finds or makes from it.
+ */
 export interface TipOf {
   name: string;
   isHead: boolean;
+  remote?: string;
+}
+
+/**
+ * Check out a branch, which types `git switch`. The label says Check out
+ * because that is the verb a person reaches for; the command is `switch`
+ * because it never detaches by accident, and the tooltip names it.
+ *
+ * From a remote ref, `git switch feature` switches to a local `feature` when
+ * there is one and makes one tracking `origin/feature` when there is not. The
+ * local one may be behind, which the tooltip says rather than guessing.
+ */
+export function checkoutItem(
+  tip: TipOf,
+  shell: ShellKind,
+  onCommand: (command: string, typeOnly: boolean) => void,
+  label = `Check out ${tip.name}`,
+): MenuItem {
+  const command = `git switch ${quote(tip.name, shell)}`;
+  return {
+    label,
+    title: tip.isHead
+      ? tip.remote
+        ? `You are on ${tip.name}. git pull brings it up to ${tip.remote}.`
+        : "You are on it."
+      : tip.remote
+        ? `${command}\n\nSwitches to your ${tip.name}, or makes one tracking ${tip.remote} when there is none. A ${tip.name} you already have stays where it is.`
+        : command,
+    disabled: tip.isHead,
+    run: (typeOnly) => onCommand(command, typeOnly),
+  };
 }
 
 /** What the commit menu needs from the surface that opens it. */
@@ -62,16 +97,17 @@ export type ResetMode = "soft" | "mixed" | "hard";
  * The commit menu, shared with the history pane's rows.
  *
  * `git checkout <sha>` detaches HEAD even when the sha is a branch tip, which
- * is how right-clicking main's newest commit left Jacob detached at the commit
- * he was already looking at. A commit that is the tip of a local branch offers
- * `git switch <branch>` for each, and the detached checkout says so in its
- * label rather than in the tooltip.
+ * is how right-clicking main's newest commit once left HEAD detached at the
+ * commit main already named. A commit that is the tip of a branch offers to
+ * check that branch out, one item for one branch and a submenu for several,
+ * and the detached checkout says so in its label rather than in the tooltip.
  *
  * Revert, cherry-pick and reset are the three commands a person runs with a
  * sha they would otherwise copy out of the list, which is the argument the
  * surface holds and the prompt does not. Cherry-pick is off for a commit HEAD
  * already reaches, since git would pause on an empty commit rather than say
- * so. Reset asks first, once per mode, so the dialog can say what each keeps.
+ * so. Reset is rare enough to sit behind a submenu, and asks first, once per
+ * mode, so the dialog can say what each keeps.
  */
 export function commitMenu(
   commit: { id: string; short: string; summary: string; isMerge?: boolean; inHead: boolean },
@@ -91,6 +127,27 @@ export function commitMenu(
     { mode: "mixed", keeps: "keeps every change, unstaged" },
     { mode: "hard", keeps: "throws the changes away" },
   ];
+  const detached: MenuItem = {
+    label: "Check out detached",
+    title: `${checkout}\n\nLeaves HEAD at this commit and on no branch. git switch - comes back.`,
+    run: (typeOnly) => onCommand(checkout, typeOnly),
+  };
+  // One branch reads as one item. Several would push the rest of the menu
+  // down a line each, so they go behind Check out, with the detached
+  // checkout last among them.
+  const checkouts: MenuEntry[] =
+    tips.length < 2
+      ? [...tips.map((tip) => checkoutItem(tip, shell, onCommand)), detached]
+      : [
+          {
+            label: "Check out",
+            entries: [
+              ...tips.map((tip) => checkoutItem(tip, shell, onCommand, tip.name)),
+              "-",
+              { ...detached, label: "Detached" },
+            ],
+          },
+        ];
   return [
     { label: "Show", title: show, run: (typeOnly) => onCommand(show, typeOnly) },
     {
@@ -98,20 +155,8 @@ export function commitMenu(
       title: `git tag <name> ${commit.short}\n\nAsks for the name first, and offers the push.`,
       run: () => onTag(commit),
     },
-    ...tips.map((tip): MenuEntry => {
-      const command = `git switch ${quote(tip.name, shell)}`;
-      return {
-        label: `Switch to ${tip.name}`,
-        title: tip.isHead ? "You are on it." : command,
-        disabled: tip.isHead,
-        run: (typeOnly) => onCommand(command, typeOnly),
-      };
-    }),
-    {
-      label: "Check out detached",
-      title: `${checkout}\n\nLeaves HEAD at this commit and on no branch. git switch - comes back.`,
-      run: (typeOnly) => onCommand(checkout, typeOnly),
-    },
+    "-",
+    ...checkouts,
     "-",
     {
       label: "Revert this commit",
@@ -126,18 +171,19 @@ export function commitMenu(
       disabled: commit.inHead,
       run: (typeOnly) => onCommand(pick, typeOnly),
     },
-    { label: `Reset ${onto} to here`, heading: true },
-    ...resets.map(
-      (r): MenuEntry => ({
-        label: `${r.mode}: ${r.keeps}`,
-        title: headBranch
-          ? `git reset --${r.mode} ${commit.short}\n\nAsks first.`
-          : "Detached: there is no branch to move.",
-        danger: r.mode === "hard",
-        disabled: !headBranch,
-        run: () => onReset(commit, r.mode),
-      }),
-    ),
+    {
+      label: `Reset ${onto} to here`,
+      title: headBranch ? undefined : "Detached: there is no branch to move.",
+      disabled: !headBranch,
+      entries: resets.map(
+        (r): MenuEntry => ({
+          label: `${r.mode[0].toUpperCase()}${r.mode.slice(1)}: ${r.keeps}`,
+          title: `git reset --${r.mode} ${commit.short}\n\nAsks first.`,
+          danger: r.mode === "hard",
+          run: () => onReset(commit, r.mode),
+        }),
+      ),
+    },
     "-",
     { label: "Copy SHA", title: commit.id, run: () => onCopy(commit.id, "the commit id") },
     { label: "Copy message", run: () => onCopy(commit.summary, "the message") },

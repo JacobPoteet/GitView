@@ -437,6 +437,7 @@
 :root[data-theme="win98"] .palette-item.active,
 :root[data-theme="win98"] .row-menu button:hover:not(:disabled),
 :root[data-theme="win98"] .row-menu button.danger:hover:not(:disabled),
+:root[data-theme="win98"] .row-menu-sub > button.open:not(:disabled),
 :root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected,
 :root[data-theme="win98"] .changes-pane:focus-within .change-row.open,
 :root[data-theme="win98"] .settings-nav button.on {
