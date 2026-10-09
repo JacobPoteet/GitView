@@ -597,6 +597,17 @@ function receive(session: Session, chunk: string) {
 const SAVE_EVERY = 15_000;
 
 /**
+ * The mouse tracking modes a full-screen program can leave on, plus SGR
+ * reporting and focus events, all turned off. Claude's `?1003h` survived into
+ * files saved before the save left modes out, and a plain PowerShell that
+ * inherits mouse tracking hands every drag to the shell instead of selecting.
+ */
+const MOUSE_OFF = "\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l";
+
+/** Where an older save switched to the alternate screen; what follows is not scrollback. */
+const ALT_SCREEN = "\x1b[?1049h";
+
+/**
  * The buffer and the blocks, written out for the next launch. Debounced, so a
  * build that settles every few hundred milliseconds does not write twenty
  * thousand lines each time. Only a session with a shell behind it: a closed
@@ -639,7 +650,11 @@ async function saveSession(session: Session): Promise<void> {
     });
   }
   try {
-    await api.scrollbackWrite(session.id, session.serialize.serialize(), blocks);
+    // The normal buffer only, and no modes. What is on the alternate screen and
+    // the mouse tracking that comes with it belong to a program that will not be
+    // running when the next launch reads this back.
+    const text = session.serialize.serialize({ excludeAltBuffer: true, excludeModes: true });
+    await api.scrollbackWrite(session.id, text, blocks);
   } catch {
     // A write that failed is a scrollback that is not restored, and nothing
     // the shell is doing depends on it.
@@ -685,7 +700,8 @@ async function restoreSession(session: Session): Promise<void> {
     return;
   }
   if (!stored || !stored.text) return;
-  await new Promise<void>((resolve) => session.term.write(stored.text, resolve));
+  const text = stored.text.split(ALT_SCREEN)[0] + MOUSE_OFF;
+  await new Promise<void>((resolve) => session.term.write(text, resolve));
   for (const saved of stored.blocks) {
     const marker = markerAt(session, saved.line);
     if (!marker) continue;
