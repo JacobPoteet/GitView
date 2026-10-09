@@ -255,6 +255,9 @@ export interface FileDiff {
   error: string | null;
 }
 
+/** Which copies of a branch a delete reaches. */
+export type BranchScope = "local" | "remote" | "both";
+
 /**
  * A local branch whose content is already on the trunk under another commit.
  *

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
-import type { BranchSummary, RepoState, Squashed } from "../lib/types";
+import type { BranchScope, BranchSummary, RepoState, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 
@@ -11,7 +11,7 @@ interface Props {
   squashed: Squashed[];
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Deleting asks first, and the app owns the dialog. */
-  onDeleteBranch: (name: string) => void;
+  onDeleteBranch: (name: string, scope: BranchScope) => void;
   onCopy: (text: string, what: string) => void;
 }
 
@@ -81,6 +81,8 @@ export default function BranchMenu({
   function rowMenu(branch: BranchSummary): MenuEntry[] {
     const switchTo = `git switch ${quote(branch.name, shell)}`;
     const held = branch.worktree;
+    const remote = branch.upstream?.split("/")[0] || "origin";
+    const hasRemote = repo.remoteUrl !== null;
     return [
       {
         label: "Check out",
@@ -99,17 +101,43 @@ export default function BranchMenu({
       ...(held ? [{ label: "Copy worktree path", run: () => onCopy(held, "the worktree path") }] : []),
       "-",
       {
-        label: "Delete branch",
+        label: "Delete local branch",
         danger: true,
         disabled: branch.isHead,
         title: branch.isHead
           ? "You are on it. Check out another branch first."
           : held
             ? `Checked out in the worktree at ${held}. Asks first, and names both commands: the worktree goes, then the branch.`
-            : "Asks first, and names the command.",
+            : "Here only. Asks first, and names the command.",
         run: () => {
           setOpen(false);
-          onDeleteBranch(branch.name);
+          onDeleteBranch(branch.name, "local");
+        },
+      },
+      {
+        label: `Delete ${remote}/${branch.name}`,
+        danger: true,
+        disabled: !hasRemote,
+        title: hasRemote
+          ? `On ${remote} only; the local branch stays. Asks first, and names the command.`
+          : "No remote to delete from.",
+        run: () => {
+          setOpen(false);
+          onDeleteBranch(branch.name, "remote");
+        },
+      },
+      {
+        label: "Delete local and remote",
+        danger: true,
+        disabled: branch.isHead || !hasRemote,
+        title: branch.isHead
+          ? "You are on it. Check out another branch first."
+          : hasRemote
+            ? "Both copies, one confirmation, both commands named."
+            : "No remote to delete from.",
+        run: () => {
+          setOpen(false);
+          onDeleteBranch(branch.name, "both");
         },
       },
     ];
