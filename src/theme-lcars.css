@@ -1,0 +1,811 @@
+/**
+ * The LCARS theme, after the Library Computer Access/Retrieval System Michael
+ * Okuda drew for The Next Generation.
+ *
+ * Everything here sits under :root[data-theme="lcars"], so the default theme
+ * never sees a rule from this file. Nothing is copied from another LCARS
+ * project: louh/lcars is GPL-3.0 and Pi-hole's theme is EUPL, and GitView is
+ * MIT. What came from them is the method, which is old and common: a band is a
+ * hard-stopped gradient with black gaps in it, and an elbow is a coloured block
+ * with a large outer radius and a black block over it with a small one, which
+ * leaves the concave inner corner. The palette is the TNG set, and the face is
+ * Antonio (OFL), the free stand-in for the show's Helvetica Ultra Compressed.
+ *
+ * Shape and colour come from the tokens in styles.css, redefined in the first
+ * block. The rest is in two parts: the default layout in LCARS dress (pills,
+ * bars, fields, menus), then the frame, where the theme changes how the app is
+ * built: the rail's left edge is the coloured column, it sweeps into the
+ * sidebar's header at the top and into the status bar at the bottom, and every
+ * pane's heading is a bar.
+ *
+ * Three rules hold throughout. Chrome is uppercase and anything a prompt would
+ * accept keeps its case, which is the one place this theme departs from the
+ * app's "no label is uppercase". Text on a coloured band is black. Orange is
+ * the frame's colour and the accent is periwinkle, because the gold that means
+ * "this repository wants attention" would be lost beside an orange accent.
+ */
+
+:root[data-theme="lcars"] {
+  color-scheme: dark;
+
+  /* The TNG palette. */
+  --lc-orange: #ff9933;
+  --lc-gold: #ffcc66;
+  --lc-peach: #ffcc99;
+  --lc-lilac: #cc99cc;
+  --lc-periwinkle: #9999ff;
+  --lc-plum: #664466;
+  --lc-ice: #99ccff;
+  --lc-red: #ff6655;
+
+  /* The frame. The strip is the column down the rail's left edge, the fillet
+     is the radius of the inner corner where the strip turns into a band, and
+     the gap is the black between two blocks of one band. */
+  --lc-strip: 28px;
+  --lc-fillet: 20px;
+  --lc-head: 40px;
+  --lc-gap: 4px;
+  --lc-band: 26px;
+
+  --bg: #000000;
+  --bg-raised: #0d0a10;
+  --bg-hover: #1c1522;
+  --bg-active: #2a2140;
+  --bg-inset: #000000;
+
+  --line: #3e3048;
+  --line-strong: var(--lc-plum);
+
+  --text: #ffe4c4;
+  --text-dim: var(--lc-lilac);
+  --text-faint: #9988bb;
+
+  --accent: var(--lc-periwinkle);
+  --accent-soft: rgb(153 153 255 / 0.16);
+  --accent-line: rgb(153 153 255 / 0.5);
+
+  --green: #66cc99;
+  --amber: var(--lc-gold);
+  --red: var(--lc-red);
+  --blue: var(--lc-ice);
+
+  /* Lanes keep clear of red and amber, and of the frame's orange too. */
+  --lane-1: var(--lc-periwinkle);
+  --lane-2: var(--lc-ice);
+  --lane-3: #66cc99;
+  --lane-4: var(--lc-lilac);
+  --lane-5: #66bbbb;
+  --lane-6: #ccccff;
+  --age-0: #aaaaff;
+  --age-1: #9999ee;
+  --age-2: #8888d0;
+  --age-3: #7a7ab4;
+  --age-4: #6c6c98;
+  --age-5: #605f7c;
+
+  --radius: 12px;
+  --radius-lg: 20px;
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-pill: 999px;
+  --blur: 0px;
+  --shadow-dialog: none;
+  --shadow-menu: none;
+  --shadow-popover: none;
+  --shadow-tip: none;
+
+  /* Antonio is condensed: at the default's 13 px it reads two sizes smaller
+     than Inter does, so the scale moves up a step. */
+  --fs-micro: 11px;
+  --fs-meta: 13px;
+  --fs-small: 14px;
+  --fs-body: 15px;
+  --fs-title: 18px;
+  --fs-display: 28px;
+  --font-ui: "Antonio Variable", "Antonio", "Arial Narrow", sans-serif;
+}
+
+/* Inter's cv05 and ss03 mean nothing to Antonio; the tabular figures stay. */
+:root[data-theme="lcars"] body {
+  font-feature-settings: "tnum";
+  letter-spacing: 0.01em;
+}
+
+:root[data-theme="lcars"] ::selection {
+  background: var(--lc-periwinkle);
+  color: #000;
+}
+
+/* ------------------------------------------------------------------ uppercase */
+
+/* Chrome is uppercase. What a prompt would accept, which the default sets in
+   the mono face, keeps its case, so a branch called `fixLogin` is still that. */
+:root[data-theme="lcars"] .btn,
+:root[data-theme="lcars"] .pane-tab-bar,
+:root[data-theme="lcars"] .task-head,
+:root[data-theme="lcars"] .sidebar-head .brand,
+:root[data-theme="lcars"] .status-bar,
+:root[data-theme="lcars"] .confirm h2,
+:root[data-theme="lcars"] .settings-nav button,
+:root[data-theme="lcars"] .settings-page h3,
+:root[data-theme="lcars"] .terminal-tab,
+:root[data-theme="lcars"] .theme-name,
+:root[data-theme="lcars"] .row-menu-heading,
+:root[data-theme="lcars"] .graph-bar,
+:root[data-theme="lcars"] .group-label,
+:root[data-theme="lcars"] .change-section-head,
+:root[data-theme="lcars"] .commit-body-toggle,
+:root[data-theme="lcars"] .commit-amend {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* A button does not inherit text-transform from the browser's own sheet, so
+   the ones inside an uppercase strip are told to. */
+:root[data-theme="lcars"] :is(.status-bar, .pane-tab-bar, .change-section-head, .block-bar) button {
+  text-transform: uppercase;
+}
+
+:root[data-theme="lcars"] :is(code, kbd, pre, samp),
+:root[data-theme="lcars"] :is(
+    .tab-path,
+    .commit-short,
+    .graph-summary,
+    .graph-label,
+    .graph-ref,
+    .branch-name,
+    .chip,
+    .path,
+    .head-pr,
+    .block-command,
+    .batch-step-label,
+    .change-path,
+    .history-sha,
+    .history-ref,
+    .inbox-number,
+    .inbox-command
+  ) {
+  text-transform: none;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+/* A button is a pill with black text, which is what an LCARS control was. */
+:root[data-theme="lcars"] .btn {
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--lc-lilac);
+  color: #000;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 3px 14px;
+}
+
+:root[data-theme="lcars"] .btn:hover:not(:disabled) {
+  background: var(--lc-peach);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .btn:active:not(:disabled) {
+  background: #fff0dd;
+}
+
+:root[data-theme="lcars"] .btn.accent {
+  background: var(--lc-orange);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .btn.accent:hover:not(:disabled) {
+  background: var(--lc-gold);
+}
+
+:root[data-theme="lcars"] .btn.danger {
+  background: var(--lc-red);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .btn.danger:hover:not(:disabled) {
+  background: #ff9988;
+}
+
+/* Latched: History while the history is open, the chosen theme. */
+:root[data-theme="lcars"] .btn[aria-pressed="true"]:not(.changes-toggle) {
+  background: var(--lc-gold);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .btn:disabled,
+:root[data-theme="lcars"] .btn.accent:disabled,
+:root[data-theme="lcars"] .btn.danger:disabled {
+  background: #2a2030;
+  color: #776688;
+}
+
+:root[data-theme="lcars"] .btn code,
+:root[data-theme="lcars"] .btn .btn-count {
+  color: inherit;
+  opacity: 1;
+}
+
+:root[data-theme="lcars"] .inbox-modes,
+:root[data-theme="lcars"] .diff-sides {
+  background: transparent;
+  gap: var(--lc-gap);
+  padding: 0;
+}
+
+:root[data-theme="lcars"] .inbox-modes button,
+:root[data-theme="lcars"] .diff-sides button {
+  background: var(--lc-plum);
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+:root[data-theme="lcars"] .inbox-modes button:first-child,
+:root[data-theme="lcars"] .diff-sides button:first-child {
+  border-radius: var(--r-pill) 0 0 var(--r-pill);
+}
+
+:root[data-theme="lcars"] .inbox-modes button:last-child,
+:root[data-theme="lcars"] .diff-sides button:last-child {
+  border-radius: 0 var(--r-pill) var(--r-pill) 0;
+}
+
+:root[data-theme="lcars"] .inbox-modes button.on,
+:root[data-theme="lcars"] .diff-sides button.on {
+  background: var(--lc-gold);
+  color: #000;
+}
+
+/* ------------------------------------------------------------------ fields */
+
+:root[data-theme="lcars"] .sidebar-search {
+  border: 2px solid var(--lc-plum);
+  border-radius: var(--r-pill);
+  background: #000;
+}
+
+:root[data-theme="lcars"] .sidebar-search:focus-within {
+  border-color: var(--lc-periwinkle);
+}
+
+/* ------------------------------------------------------------------ windows */
+
+/* A dialog is a black panel in an orange frame, and its title is the band
+   across the top of the frame. */
+:root[data-theme="lcars"] .confirm {
+  background: #000;
+  border: 3px solid var(--lc-orange);
+  border-radius: var(--radius-lg);
+}
+
+:root[data-theme="lcars"] .confirm h2 {
+  align-items: center;
+  margin: 0 0 4px;
+  padding: 6px 12px 6px 16px;
+  background: var(--lc-orange);
+  color: #000;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+:root[data-theme="lcars"] .confirm h2 .pane-close {
+  margin-top: 0;
+  color: #000;
+}
+
+:root[data-theme="lcars"] .confirm h2 .pane-close:hover {
+  background: #000;
+  color: var(--lc-orange);
+}
+
+:root[data-theme="lcars"] .palette {
+  background: #000;
+  border: 3px solid var(--lc-periwinkle);
+  border-radius: var(--radius-lg);
+}
+
+:root[data-theme="lcars"] .confirm-backdrop,
+:root[data-theme="lcars"] .palette-backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+/* ------------------------------------------------------------------ menus */
+
+:root[data-theme="lcars"] .row-menu,
+:root[data-theme="lcars"] .branch-pop,
+:root[data-theme="lcars"] .tour-card {
+  background: #000;
+  border: 2px solid var(--lc-lilac);
+  border-radius: var(--radius);
+}
+
+:root[data-theme="lcars"] .row-menu button:hover:not(:disabled),
+:root[data-theme="lcars"] .row-menu-sub > button.open:not(:disabled),
+:root[data-theme="lcars"] .palette-item.active {
+  background: var(--lc-lilac);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .row-menu button.danger:hover:not(:disabled) {
+  background: var(--lc-red);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .palette-item.active * {
+  color: #000;
+}
+
+/* ------------------------------------------------------------------ settings */
+
+:root[data-theme="lcars"] .settings-nav button {
+  border-radius: var(--r-pill);
+}
+
+:root[data-theme="lcars"] .settings-nav button.on {
+  background: var(--lc-orange);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .theme-option.on {
+  border-color: var(--lc-orange);
+}
+
+/* ================================================================== the frame */
+
+/* ------------------------------------------------------------------ the column and its elbows */
+
+/* The rail's left edge is the LCARS column. ::before is the coloured strip with
+   the outer curve at its top; ::after is the black block over its right-hand
+   part, whose radius is the inner corner where the strip turns into the
+   header's band. The column runs in blocks, black gaps between, and its last
+   block is the status band's colour, so the bottom elbow reads as one piece. */
+:root[data-theme="lcars"] .rail {
+  position: relative;
+  padding-left: var(--lc-strip);
+  background: #000;
+  border-right: none;
+}
+
+:root[data-theme="lcars"] .rail::before,
+:root[data-theme="lcars"] .rail::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+:root[data-theme="lcars"] .rail::before {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--lc-strip) + var(--lc-fillet));
+  border-top-left-radius: calc(var(--lc-strip) + var(--lc-fillet)) var(--lc-head);
+  background: linear-gradient(
+    to bottom,
+    var(--lc-orange) 0 calc(var(--lc-head) + 56px),
+    #000 0 calc(var(--lc-head) + 56px + var(--lc-gap)),
+    var(--lc-lilac) 0 calc(var(--lc-head) + 120px),
+    #000 0 calc(var(--lc-head) + 120px + var(--lc-gap)),
+    var(--lc-plum) 0 calc(100% - 96px),
+    #000 0 calc(100% - 96px + var(--lc-gap)),
+    var(--lc-peach) 0 calc(100% - 48px),
+    #000 0 calc(100% - 48px + var(--lc-gap)),
+    var(--lc-orange) 0
+  );
+}
+
+:root[data-theme="lcars"] .rail::after {
+  top: var(--lc-head);
+  bottom: 0;
+  left: var(--lc-strip);
+  width: var(--lc-fillet);
+  background: #000;
+  border-radius: var(--lc-fillet) 0 0 var(--lc-fillet);
+}
+
+:root[data-theme="lcars"] .rail > .sidebar,
+:root[data-theme="lcars"] .rail > .task-pane {
+  position: relative;
+  z-index: 1;
+}
+
+/* The header is the top band. Its first fillet's width is left clear, so the
+   strip's outer curve shows through rather than the header's square corner. */
+:root[data-theme="lcars"] .sidebar-head {
+  height: var(--lc-head);
+  padding: 0 8px 0 calc(var(--lc-fillet) + 4px);
+  background: linear-gradient(to right, transparent var(--lc-fillet), var(--lc-orange) 0);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .sidebar-head .brand {
+  color: #000;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+:root[data-theme="lcars"] .sidebar-head .brand-mark {
+  --accent: #000;
+  color: #000;
+}
+
+:root[data-theme="lcars"] .sidebar-head .icon-btn {
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: #000;
+}
+
+:root[data-theme="lcars"] .sidebar-head .icon-btn:hover,
+:root[data-theme="lcars"] .sidebar-head .icon-btn.busy {
+  background: #000;
+  color: var(--lc-orange);
+}
+
+:root[data-theme="lcars"] .sidebar-search {
+  margin-top: 10px;
+}
+
+/* ------------------------------------------------------------------ the bottom band */
+
+/* The status bar is the bottom band. Its first block is the column's last,
+   turning the corner with the outer curve; then a gap, and the band runs on in
+   peach to a rounded end. The gap sits before the first word, because a long
+   command hint crossed one placed at the rail's edge. Text on it is black. */
+:root[data-theme="lcars"] .status-bar {
+  --lc-corner: calc(var(--lc-strip) + var(--lc-fillet));
+  height: var(--lc-band);
+  padding-left: calc(var(--lc-corner) + var(--lc-gap) + 10px);
+  padding-right: 6px;
+  border-top: none;
+  border-radius: 0 var(--r-pill) var(--r-pill) var(--lc-corner);
+  background: linear-gradient(
+    to right,
+    var(--lc-orange) 0 var(--lc-corner),
+    #000 0 calc(var(--lc-corner) + var(--lc-gap)),
+    var(--lc-peach) 0
+  );
+  color: #000;
+  letter-spacing: 0.05em;
+}
+
+:root[data-theme="lcars"] .status-bar *:not(kbd):not(button) {
+  color: #000;
+}
+
+/* The shell count is green in the default, inline. On the band it is black. */
+:root[data-theme="lcars"] .status-bar > .status-link[style] {
+  color: #000 !important;
+}
+
+:root[data-theme="lcars"] .status-bar kbd {
+  background: #000;
+  color: var(--lc-peach);
+  border-color: #000;
+}
+
+:root[data-theme="lcars"] .status-bar > button.sync-all {
+  align-self: stretch;
+  margin: 3px 0;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: #000;
+  color: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .status-bar > button.sync-all:hover:not(:disabled) {
+  background: var(--lc-plum);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ pane bars */
+
+/* Every pane's heading is a bar: a coloured pill with its name in black. The
+   changes pane's is peach, the panes that share the main column are
+   periwinkle, and the tasks are lilac, so three bars on screen are three
+   colours and a glance tells them apart. */
+:root[data-theme="lcars"] .pane-tab-bar,
+:root[data-theme="lcars"] .task-head {
+  height: var(--lc-band);
+  margin: 6px 8px 4px;
+  padding: 0 6px 0 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--lc-periwinkle);
+  color: #000;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+:root[data-theme="lcars"] .changes-pane > .pane-tab-bar {
+  background: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .task-head {
+  background: var(--lc-lilac);
+}
+
+:root[data-theme="lcars"] .pane-tab-bar *,
+:root[data-theme="lcars"] .task-head > :not(button),
+:root[data-theme="lcars"] .task-head > :not(button) * {
+  color: #000;
+}
+
+/* The separators are inline in --line-strong, which is the plum: on a bar
+   they go black with the rest. */
+:root[data-theme="lcars"] .pane-tab-bar [style*="--line-strong"] {
+  color: #000 !important;
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .btn,
+:root[data-theme="lcars"] .task-head .btn {
+  height: 20px;
+  padding: 0 10px;
+  background: #000;
+  color: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .btn:hover:not(:disabled),
+:root[data-theme="lcars"] .task-head .btn:hover:not(:disabled) {
+  background: var(--lc-plum);
+  color: var(--text);
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .btn *,
+:root[data-theme="lcars"] .task-head .btn * {
+  color: inherit;
+}
+
+/* The history and terminal filters sit on a bar: a black pill cut into it,
+   with the bar's black text turned back to peach inside. */
+:root[data-theme="lcars"] .pane-tab-bar .history-filter {
+  height: 20px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: #000;
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .history-filter,
+:root[data-theme="lcars"] .pane-tab-bar .history-filter * {
+  color: var(--lc-peach);
+  font-weight: 400;
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .history-filter input::placeholder {
+  color: #9988bb;
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .pane-close,
+:root[data-theme="lcars"] .task-head button:not(.btn) {
+  border-radius: var(--r-pill);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .pane-close:hover,
+:root[data-theme="lcars"] .task-head button:not(.btn):hover {
+  background: #000;
+  color: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .pane-tab-bar .pane-close:hover *,
+:root[data-theme="lcars"] .task-head button:not(.btn):hover * {
+  color: inherit;
+}
+
+:root[data-theme="lcars"] .task-pane {
+  border-top: none;
+  background: transparent;
+}
+
+/* ------------------------------------------------------------------ the shell's tabs */
+
+/* The terminal's bar is a row of blocks rather than one bar: each shell a
+   plum pill, the one on screen orange, and its path in peach on black. */
+:root[data-theme="lcars"] .terminal-pane {
+  background: #000;
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar {
+  background: transparent;
+  padding: 0;
+  gap: var(--lc-gap);
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar * {
+  color: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar > span:not([class]) {
+  display: none;
+}
+
+:root[data-theme="lcars"] .terminal-tab {
+  height: var(--lc-band);
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 0;
+  background: var(--lc-plum);
+  color: var(--lc-peach);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+:root[data-theme="lcars"] .terminal-tab:first-child {
+  border-radius: var(--r-pill) 0 0 var(--r-pill);
+  padding-left: 18px;
+}
+
+:root[data-theme="lcars"] .terminal-tab:hover:not(.on) {
+  background: var(--lc-lilac);
+  color: #000;
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar .terminal-tab.on {
+  background: var(--lc-orange);
+  color: #000;
+}
+
+/* The Claude tab before it is clicked: an unlit block. A dimmed label on the
+   plum measured 2.6:1; lilac on the dark block is 6.5. */
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar .terminal-tab.asleep:not(:hover) {
+  background: var(--bg-active);
+  color: var(--lc-lilac);
+}
+
+:root[data-theme="lcars"] .terminal-tab.add {
+  border-radius: 0 var(--r-pill) var(--r-pill) 0;
+  padding: 0 14px 0 10px;
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar .terminal-tab.add:hover {
+  color: #000;
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar .tab-path {
+  margin-left: 8px;
+  color: var(--lc-peach);
+  font-weight: 400;
+}
+
+/* A path or a sha on any bar is read, not a heading, so it takes the
+   regular weight the bar's name does not. */
+:root[data-theme="lcars"] .pane-tab-bar :is(.tab-path, .commit-short) {
+  font-weight: 400;
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar .pane-close {
+  color: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .terminal-pane > .pane-tab-bar .pane-close:hover {
+  background: var(--lc-plum);
+}
+
+/* ------------------------------------------------------------------ the repository's head */
+
+/* The repository's name is the screen's title, orange, and under the toolbar a
+   divider runs in two blocks, as the bars under an LCARS title do. */
+:root[data-theme="lcars"] .main > .repo-head {
+  border-bottom: none;
+  padding-bottom: 18px;
+  background: linear-gradient(
+      to right,
+      var(--lc-lilac) 0 62%,
+      #000 0 calc(62% + var(--lc-gap)),
+      var(--lc-periwinkle) 0
+    )
+    left bottom 4px / 100% 8px no-repeat;
+}
+
+:root[data-theme="lcars"] .repo-title h1 {
+  color: var(--lc-orange);
+  font-size: var(--fs-display);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* ------------------------------------------------------------------ the branch strip */
+
+/* The strip's heading is a short cap, its summary on black, then the bar
+   running out to the edge. */
+:root[data-theme="lcars"] .graph {
+  border-bottom: none;
+}
+
+:root[data-theme="lcars"] .graph-bar {
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+:root[data-theme="lcars"] .graph-bar::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 14px;
+  border-radius: var(--r-pill) 0 0 var(--r-pill);
+  background: var(--lc-lilac);
+}
+
+:root[data-theme="lcars"] .graph-toggle {
+  padding: 0;
+  color: var(--lc-peach);
+}
+
+:root[data-theme="lcars"] .graph-toggle::after {
+  content: "";
+  flex: 1;
+  min-width: 12px;
+  height: 14px;
+  border-radius: 0 var(--r-pill) var(--r-pill) 0;
+  background: var(--lc-lilac);
+}
+
+/* ------------------------------------------------------------------ the changes column */
+
+:root[data-theme="lcars"] .changes-pane {
+  border-left: none;
+  background: #000;
+}
+
+/* ------------------------------------------------------------------ the splash */
+
+/* Black, the name in orange over a segmented bar with a block sweeping it. */
+:root[data-theme="lcars"] .splash {
+  background: #000;
+}
+
+:root[data-theme="lcars"] .splash-prompt {
+  width: 320px;
+  align-items: stretch;
+}
+
+:root[data-theme="lcars"] .splash-line {
+  justify-content: flex-end;
+  font-family: var(--font-ui);
+  color: var(--lc-orange);
+  letter-spacing: 0.08em;
+}
+
+:root[data-theme="lcars"] .splash-chev,
+:root[data-theme="lcars"] .splash-word,
+:root[data-theme="lcars"] .splash-cursor {
+  display: none;
+}
+
+:root[data-theme="lcars"] .splash-line::before {
+  content: "GITVIEW";
+}
+
+:root[data-theme="lcars"] .splash-track {
+  height: 14px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--lc-plum) 0 30%,
+    #000 0 calc(30% + var(--lc-gap)),
+    var(--lc-lilac) 0 70%,
+    #000 0 calc(70% + var(--lc-gap)),
+    var(--lc-plum) 0
+  );
+}
+
+:root[data-theme="lcars"] .splash-track::after {
+  background: var(--lc-orange);
+}
+
+/* ------------------------------------------------------------------ scrollbars */
+
+:root[data-theme="lcars"] ::-webkit-scrollbar-thumb {
+  background: var(--lc-plum);
+  background-clip: content-box;
+}
+
+:root[data-theme="lcars"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--lc-lilac);
+  background-clip: content-box;
+}

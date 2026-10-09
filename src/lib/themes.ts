@@ -133,7 +133,46 @@ const WIN98: Theme = {
   },
 };
 
-export const THEMES: Theme[] = [GITVIEW, WIN98];
+const LCARS: Theme = {
+  id: "lcars",
+  label: "LCARS",
+  hint: "Orange elbows and pill buttons on black, after The Next Generation.",
+  // The TNG palette on black. Red stays a red for a failed command, and green,
+  // which LCARS hardly used, is a soft one so a diff's added lines still read.
+  terminal: {
+    background: "#000000",
+    foreground: "#FFE4C4",
+    cursor: "#FF9933",
+    cursorAccent: "#000000",
+    selectionBackground: "#3D2F55",
+    black: "#1A1420",
+    red: "#FF6655",
+    green: "#66CC99",
+    yellow: "#FFCC66",
+    blue: "#9999FF",
+    magenta: "#CC99CC",
+    cyan: "#99CCFF",
+    white: "#E0D0C0",
+    brightBlack: "#776688",
+    brightRed: "#FF9988",
+    brightGreen: "#99EEBB",
+    brightYellow: "#FFDD99",
+    brightBlue: "#BBBBFF",
+    brightMagenta: "#EEBBEE",
+    brightCyan: "#BBDDFF",
+    brightWhite: "#FFFFFF",
+  },
+  search: {
+    matchBackground: "#664466",
+    matchBorder: "#CC99CC",
+    matchOverviewRuler: "#CC99CC",
+    activeMatchBackground: "#FF9933",
+    activeMatchBorder: "#FFCC66",
+    activeMatchColorOverviewRuler: "#FFCC66",
+  },
+};
+
+export const THEMES: Theme[] = [GITVIEW, WIN98, LCARS];
 
 export const DEFAULT_THEME = GITVIEW.id;
 
