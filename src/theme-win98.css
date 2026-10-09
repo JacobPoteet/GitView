@@ -11,8 +11,8 @@
  * Shape and colour come from the tokens in styles.css, redefined in the first
  * block. The rest is what a token cannot say, in two parts: the default layout
  * wearing bevels (buttons, fields, windows, menus, marks), then the places
- * where the theme changes how the app is built (one window, pane headers, flat
- * toolbar buttons, sunken fields, tabs, status fields, the splash).
+ * where the theme changes how the app is built (one window, pane headers,
+ * sunken fields, tabs, status fields, the splash).
  *
  * Three rules hold throughout. A selection is the navy bar with white text in
  * the list that has the focus, and silver in one that does not. A mark (a chip,
@@ -90,9 +90,12 @@
   --accent-soft: rgb(0 0 128 / 0.12);
   --accent-line: rgb(0 0 128 / 0.55);
 
-  /* Darkened to clear 4.5:1 on silver and on the selected row; the first picks
-     measured 3.9 to 4.1. */
-  --green: #004800;
+  /* Amber and red darkened to clear 4.5:1 on silver; the first picks measured
+     3.9 to 4.1. Green is the VGA palette's own, because no text wears it here:
+     it fills a dot, rings the head node and marks a diff's added lines, all on
+     white or as a fill, where it measures 5.1:1. The darker #004800 it replaces
+     was in no 98 palette and read as olive. */
+  --green: #008000;
   --amber: #5e3b00;
   --red: #8c0000;
   --blue: #0000a0;
@@ -514,18 +517,41 @@
   border: 1px dashed var(--w98-shadow);
 }
 
-/* The reference is black text on silver with navy for selection. The default
-   uses green for "live" and "ok" on labels as well as marks. Here the marks
-   (chips, dots, diff signs, badges) keep their colour, and a label, a count or
-   a head ref that only names something goes back to the text colour, framed in
-   black where the default framed it in green. */
+/* The reference is black text on silver with navy for selection. Windows 98
+   put colour in its icons and almost never in its text, so nothing here is
+   green text: a label, a count, a chip or a head ref that the default greens
+   goes back to the text colour, framed in black where the default framed it in
+   green. Green stays on fills: a dot, the head node, a diff's added line. */
 :root[data-theme="win98"] .btn .btn-count,
+:root[data-theme="win98"] .chip.ahead,
+:root[data-theme="win98"] .agent.done,
+:root[data-theme="win98"] .change-mark.new,
+:root[data-theme="win98"] .diff-tally .add,
+:root[data-theme="win98"] .inbox-badge.approved,
+:root[data-theme="win98"] .inbox-badge.ok,
+:root[data-theme="win98"] .inbox-desk-size .add,
 :root[data-theme="win98"] .history-row.head .history-sha,
 :root[data-theme="win98"] .setting-hint.ok,
 :root[data-theme="win98"] .block-bar.ok .block-status,
 :root[data-theme="win98"] .batch-code.ok,
 :root[data-theme="win98"] .inbox-checks.ok {
   color: var(--text);
+}
+
+/* The badges keep their rim, in the bevel grey rather than a green one. */
+:root[data-theme="win98"] .inbox-badge.approved,
+:root[data-theme="win98"] .inbox-badge.ok {
+  border-color: var(--w98-shadow);
+}
+
+/* The checked-out commit is told by its bold summary and its framed ref. The
+   default also tints the row green, which on white is a stray band of mint. */
+:root[data-theme="win98"] .history-row.head {
+  background: var(--bg);
+}
+
+:root[data-theme="win98"] .history-row.head:hover:not(:disabled) {
+  background: var(--bg-hover);
 }
 
 :root[data-theme="win98"] .graph-ref.head,
@@ -599,7 +625,7 @@
 /* ------------------------------------------------------------------ pane headers */
 
 /* A pane's heading is the strip Explorer put over its Folders pane: silver,
-   black text, a one-pixel raised edge, and a flat close button. It is not a
+   black text, a one-pixel raised edge, and a small close button. It is not a
    title bar. A title bar meant the active window, and with three of them navy
    at once the colour stopped pointing at anything. Navy is kept for what it
    meant in 1998: a selection, a dialog's title and progress. */
@@ -645,18 +671,12 @@
   font-weight: 700;
 }
 
-/* ------------------------------------------------------------------ flat buttons */
+/* ------------------------------------------------------------------ header buttons */
 
-/* The buttons on a header and on the toolbar are IE4's flat toolbar buttons:
-   nothing drawn until the pointer is over one, a thin raised edge then, and a
-   thin sunken one while pressed. Five raised buttons in a row were most of the
-   toolbar's noise. A dialog's buttons stay fully raised; that is where 98 kept
-   them. */
-:root[data-theme="win98"] {
-  --flat-hover: inset -1px -1px var(--w98-shadow), inset 1px 1px var(--w98-light);
-  --flat-down: inset -1px -1px var(--w98-light), inset 1px 1px var(--w98-shadow);
-}
-
+/* The buttons on a header are raised squares, the same as a title bar's. They
+   were flat until hovered, as IE4's toolbar drew them, but IE4's had icons to
+   say they were buttons; a flat word read as a label. The toolbar's text
+   buttons keep the ordinary raised .btn. */
 :root[data-theme="win98"] .sidebar-head .icon-btn,
 :root[data-theme="win98"] .pane-tab-bar .pane-close,
 :root[data-theme="win98"] .task-head button {
@@ -666,48 +686,23 @@
   padding: 0;
   display: grid;
   place-items: center;
-  background: transparent;
+  background: var(--w98-surface);
   color: var(--text);
   border: none;
-  box-shadow: none;
-}
-
-:root[data-theme="win98"] .repo-head .btn,
-:root[data-theme="win98"] .pane-tab-bar .btn {
-  background: transparent;
-  box-shadow: none;
+  box-shadow: var(--raised);
 }
 
 :root[data-theme="win98"] .sidebar-head .icon-btn:hover:not(:disabled),
 :root[data-theme="win98"] .pane-tab-bar .pane-close:hover:not(:disabled),
-:root[data-theme="win98"] .task-head button:hover:not(:disabled),
-:root[data-theme="win98"] .repo-head .btn:hover:not(:disabled),
-:root[data-theme="win98"] .pane-tab-bar .btn:hover:not(:disabled) {
+:root[data-theme="win98"] .task-head button:hover:not(:disabled) {
   color: var(--text);
   background: var(--w98-surface);
-  box-shadow: var(--flat-hover);
 }
 
 :root[data-theme="win98"] .sidebar-head .icon-btn:active:not(:disabled),
 :root[data-theme="win98"] .pane-tab-bar .pane-close:active:not(:disabled),
-:root[data-theme="win98"] .task-head button:active:not(:disabled),
-:root[data-theme="win98"] .repo-head .btn:active:not(:disabled),
-:root[data-theme="win98"] .pane-tab-bar .btn:active:not(:disabled) {
-  box-shadow: var(--flat-down);
-}
-
-:root[data-theme="win98"] .repo-head .btn:disabled,
-:root[data-theme="win98"] .pane-tab-bar .btn:disabled {
-  background: transparent;
-  box-shadow: none;
-}
-
-/* A latched flat button (History while the history is open) is sunken over
-   the checker, as a latched toolbar button was. */
-:root[data-theme="win98"] .repo-head .btn[aria-pressed="true"]:not(.changes-toggle),
-:root[data-theme="win98"] .pane-tab-bar .btn[aria-pressed="true"] {
-  background: var(--w98-dither);
-  box-shadow: var(--flat-down);
+:root[data-theme="win98"] .task-head button:active:not(:disabled) {
+  box-shadow: var(--pressed);
 }
 
 /* A text button on a header (stage, History, Prune merged) shrinks to the
@@ -721,7 +716,7 @@
 
 /* ------------------------------------------------------------------ the repository's toolbar */
 
-/* A coolbar: flat buttons on silver with an etched groove under it. */
+/* The toolbar: its buttons on silver, with an etched groove under it. */
 :root[data-theme="win98"] .main > .repo-head {
   margin: 3px 3px 0;
   border-bottom: 1px solid var(--w98-shadow);
