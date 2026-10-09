@@ -102,6 +102,7 @@ import {
   type DiffTarget,
   type FileChange,
   type RepoPref,
+  type BranchScope,
   type RepoState,
   type Squashed,
   type Task,
@@ -1720,8 +1721,25 @@ export default function App() {
    * is finished work git cannot see; anything else is unmerged work, and the
    * dialog says how many commits that is rather than calling it safe.
    */
-  function deleteBranchConfirmation(repo: RepoState, name: string, found: Squashed[]): Confirmation {
+  function deleteBranchConfirmation(
+    repo: RepoState,
+    name: string,
+    found: Squashed[],
+    scope: BranchScope = "local",
+  ): Confirmation {
     const branch = repo.branches.find((b) => b.name === name);
+    const remote = branch?.upstream?.split("/")[0] || "origin";
+    const remoteCommand = `git push ${remote} --delete ${quote(name, shell)}`;
+    const remoteBody = `${remote}/${name} is deleted on the remote itself, so anyone else with a clone loses it the next time they fetch with prune. The local branch is not touched.`;
+    if (scope === "remote") {
+      return {
+        title: `Delete ${remote}/${name}`,
+        body: remoteBody,
+        command: remoteCommand,
+        confirmLabel: "Delete on remote",
+        onConfirm: () => emit(remoteCommand),
+      };
+    }
     const squash = found.find((s) => s.branch === name);
     const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
     const arg = quote(name, shell);
@@ -1740,18 +1758,22 @@ export default function App() {
       body = `${name} is not contained in ${trunk}${ahead > 0 ? `: it is ${ahead} ${ahead === 1 ? "commit" : "commits"} ahead of it` : ""}. -d would refuse, so this is -D, which deletes the branch whether or not anything else holds those commits. The output prints the commit it was at, and git reflog keeps it reachable for a while, but nothing here has checked that the work is anywhere else.`;
     }
 
+    const both = scope === "both";
+    const commands = both ? [command, remoteCommand] : [command];
+    if (both) body = `${body} ${remoteBody}`;
+
     const holder = branch?.worktree
       ? repo.worktrees.find((w) => w.path === branch.worktree)
       : undefined;
     const release = holder ? releaseCommand(holder, shell) : null;
-    if (holder && release) return releaseConfirmation(name, holder, release, command, body);
+    if (holder && release) return releaseConfirmation(name, holder, release, commands, body);
 
     return {
-      title: `Delete ${name}`,
+      title: both ? `Delete ${name} and ${remote}/${name}` : `Delete ${name}`,
       body,
-      command,
-      confirmLabel: "Delete branch",
-      onConfirm: () => emit(command),
+      command: commands.join("\n"),
+      confirmLabel: both ? "Delete both" : "Delete branch",
+      onConfirm: () => emit(commands.length === 1 ? commands[0] : commands),
     };
   }
 
@@ -1771,7 +1793,7 @@ export default function App() {
     name: string,
     holder: WorktreeSummary,
     release: string,
-    command: string,
+    commands: string[],
     reason: string,
   ): Confirmation {
     const row = repos.find((r) => r.path.toLowerCase() === holder.path.toLowerCase());
@@ -1796,7 +1818,7 @@ export default function App() {
     return {
       title: `Delete ${name}`,
       body: `${why}${shells}${outside} ${reason}`,
-      command: `${release}\n${command}`,
+      command: [release, ...commands].join("\n"),
       confirmLabel: holder.prunable ? "Prune and delete" : "Remove worktree and delete",
       onConfirm: async () => {
         for (const id of own) {
@@ -1807,14 +1829,18 @@ export default function App() {
             return next;
           });
         }
-        await emit([release, command]);
+        await emit([release, ...commands]);
       },
     };
   }
 
   const askDeleteBranch = useCallback(
-    (name: string) => {
+    (name: string, scope: BranchScope = "local") => {
       if (!selected) return;
+      if (scope === "remote") {
+        setConfirmation(deleteBranchConfirmation(selected, name, squashed, scope));
+        return;
+      }
       // The main checkout, or a worktree somebody locked, has no command to
       // offer: the one is switched off the branch in its own shell, the other
       // was locked on purpose. Say where it is held rather than type a delete
@@ -1830,7 +1856,7 @@ export default function App() {
         );
         return;
       }
-      setConfirmation(deleteBranchConfirmation(selected, name, squashed));
+      setConfirmation(deleteBranchConfirmation(selected, name, squashed, scope));
     },
     // `deleteBranchConfirmation` is a function of this render, so the lint
     // rule wants it as a dependency and it would change every time. What it

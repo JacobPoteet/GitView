@@ -21,6 +21,7 @@ import {
   type HistoryRef,
   type HistoryRow,
   type Squashed,
+  type BranchScope,
 } from "../lib/types";
 
 interface Props {
@@ -58,7 +59,7 @@ interface Props {
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Deleting asks first, and the app owns the dialog. */
-  onDeleteBranch: (name: string) => void;
+  onDeleteBranch: (name: string, scope: BranchScope) => void;
   /** Tagging asks for a name first, and the app owns that dialog too. */
   onTag: (commit: { id: string; short: string; summary: string }) => void;
   onReset: (commit: { id: string; short: string; summary: string }, mode: ResetMode) => void;
@@ -266,6 +267,13 @@ export default function HistoryPane({
       return [
         checkoutItem(tip, shell, onCommand),
         { label: "Copy branch name", run: () => onCopy(ref.name, "the branch name") },
+        "-",
+        {
+          label: `Delete ${ref.name}`,
+          danger: true,
+          title: "On the remote only. Asks first, and names the command.",
+          run: () => onDeleteBranch(tip.name, "remote"),
+        },
       ];
     }
     if (ref && tip) {
@@ -275,11 +283,25 @@ export default function HistoryPane({
         { label: "Copy branch name", run: () => onCopy(ref.name, "the branch name") },
         "-",
         {
-          label: `Delete ${ref.name}`,
+          label: "Delete local branch",
           danger: true,
           disabled: current,
-          title: current ? "You are on it. Check out another branch first." : "Asks first, and names the command.",
-          run: () => onDeleteBranch(ref.name),
+          title: current ? "You are on it. Check out another branch first." : "Here only. Asks first, and names the command.",
+          run: () => onDeleteBranch(ref.name, "local"),
+        },
+        {
+          label: "Delete on origin",
+          danger: true,
+          disabled: !hasRemote,
+          title: hasRemote ? "On the remote only; the local branch stays. Asks first, and names the command." : "No remote to delete from.",
+          run: () => onDeleteBranch(ref.name, "remote"),
+        },
+        {
+          label: "Delete local and origin",
+          danger: true,
+          disabled: current || !hasRemote,
+          title: current ? "You are on it. Check out another branch first." : hasRemote ? "Both copies, one confirmation, both commands named." : "No remote to delete from.",
+          run: () => onDeleteBranch(ref.name, "both"),
         },
       ];
     }
