@@ -11,13 +11,14 @@
  * Shape and colour come from the tokens in styles.css, redefined in the first
  * block. The rest is what a token cannot say, in two parts: the default layout
  * wearing bevels (buttons, fields, windows, menus, marks), then the places
- * where the theme changes how the app is built (title bars, sunken fields,
- * tabs, status fields, the splash).
+ * where the theme changes how the app is built (one window, pane headers, flat
+ * toolbar buttons, sunken fields, tabs, status fields, the splash).
  *
- * Three rules hold throughout. A selection is the navy bar with white text,
- * wherever it is. A mark (a chip, a dot, a ref) is white with a hairline and
- * keeps its colour in the text, because a tint mixed into silver is mud. Content
- * a user reads (a list, a diff, a history) sits in a white sunken field.
+ * Three rules hold throughout. A selection is the navy bar with white text in
+ * the list that has the focus, and silver in one that does not. A mark (a chip,
+ * a dot, a ref) is white with a hairline and keeps its colour in the text,
+ * because a tint mixed into silver is mud. Content a user reads (a list, a
+ * diff, a history) sits in a white sunken field.
  */
 
 @font-face {
@@ -71,16 +72,19 @@
   --bg: #c0c0c0;
   --bg-raised: #c0c0c0;
   --bg-hover: #dfdfdf;
-  --bg-active: #b4bce4;
+  /* Not a lavender: 98 had none. A pressed or chosen surface is the face grey. */
+  --bg-active: #dfdfdf;
   --bg-inset: #ffffff;
 
   --line: #808080;
   --line-strong: #404040;
 
   --text: #000000;
-  --text-dim: #1a1a1a;
-  /* Under dim by a step. 5.7:1 on the silver. */
-  --text-faint: #333333;
+  /* Two real steps under black, so a label reads as secondary to the text beside
+     it. Dim is 7.3:1 on the silver and faint 5.0:1; both clear 4.5 on the face
+     grey too. The near-blacks they replace read as the same black. */
+  --text-dim: #303030;
+  --text-faint: #484848;
 
   --accent: #000080;
   --accent-soft: rgb(0 0 128 / 0.12);
@@ -419,21 +423,30 @@
 :root[data-theme="win98"] .palette-item.active,
 :root[data-theme="win98"] .row-menu button:hover:not(:disabled),
 :root[data-theme="win98"] .row-menu button.danger:hover:not(:disabled),
-:root[data-theme="win98"] .repo-row-wrap.selected,
-:root[data-theme="win98"] .change-row.open,
+:root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected,
+:root[data-theme="win98"] .changes-pane:focus-within .change-row.open,
 :root[data-theme="win98"] .settings-nav button.on {
   background: var(--w98-blue);
   color: var(--w98-light);
 }
 
 :root[data-theme="win98"] .palette-item.active *,
-:root[data-theme="win98"] .change-row.open *,
-:root[data-theme="win98"] .repo-row-wrap.selected *:not(.chip):not(.chip *):not(.dot) {
+:root[data-theme="win98"] .changes-pane:focus-within .change-row.open *,
+:root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected *:not(.chip):not(.chip *):not(.dot) {
   color: var(--w98-light);
 }
 
-/* The fleet's selected row also carries the focus rectangle, as a list did. */
-:root[data-theme="win98"] .repo-row-wrap.selected {
+/* A list that does not have the focus draws its selection silver with black
+   text, as a 98 tree view did. Only the list you are in is navy, so the colour
+   says where the keyboard is as well as what is chosen. */
+:root[data-theme="win98"] .repo-row-wrap.selected,
+:root[data-theme="win98"] .change-row.open {
+  background: var(--w98-surface);
+  color: var(--text);
+}
+
+/* The focused list's selected row also carries the focus rectangle. */
+:root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected {
   outline: 1px dotted var(--w98-light);
   outline-offset: -2px;
 }
@@ -451,7 +464,7 @@
 }
 
 /* A dot keeps its colour on the navy bar, so it gets a white rim to stand on. */
-:root[data-theme="win98"] .repo-row-wrap.selected .dot {
+:root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected .dot {
   box-shadow: 0 0 0 1px var(--w98-light);
 }
 
@@ -560,49 +573,49 @@
 
 /* ================================================================== how the app is built */
 
-/* ------------------------------------------------------------------ windows round the columns */
+/* ------------------------------------------------------------------ one window */
 
-/* Each column is a window: a raised frame, its title bar inside the frame, and
-   the white field inside that. Without the frame a white list sat loose on the
-   silver while the terminal sat in a box, and the columns read as three
-   different things. The splitters keep the gap between the frames. */
+/* The app is one window, the way Explorer was: the native frame is its frame,
+   and the columns are panes inside it, each a sunken field, with plain silver
+   between them where the splitters are. Framing each column as a window of its
+   own put two bevels against each other at every column edge, and four
+   windows abutting read as a grid of boxes rather than one program. The gap is
+   the inner fields' 3px margins, so two of them make a 6px splitter bar. */
 :root[data-theme="win98"] .sidebar,
 :root[data-theme="win98"] .task-pane,
 :root[data-theme="win98"] .main,
 :root[data-theme="win98"] .changes-pane {
   background: var(--w98-surface);
-  box-shadow: var(--window-bevel);
+  box-shadow: none;
   border: none;
-  margin: 2px;
+  margin: 0;
 }
 
-/* The rail held both windows on a white ground; it is the gap between them now. */
 :root[data-theme="win98"] .rail {
   border: none;
   background: var(--bg);
 }
 
-/* The main window has no title bar of its own, so the repository's toolbar
-   sits inside the frame's padding like the others' title bars. */
-:root[data-theme="win98"] .main > .repo-head {
-  margin: 3px 3px 0;
-}
+/* ------------------------------------------------------------------ pane headers */
 
-/* ------------------------------------------------------------------ title bars */
-
-/* Each column's heading is a window title bar: navy gradient, white bold text. */
+/* A pane's heading is the strip Explorer put over its Folders pane: silver,
+   black text, a one-pixel raised edge, and a flat close button. It is not a
+   title bar. A title bar meant the active window, and with three of them navy
+   at once the colour stopped pointing at anything. Navy is kept for what it
+   meant in 1998: a selection, a dialog's title and progress. */
 :root[data-theme="win98"] .sidebar-head,
 :root[data-theme="win98"] .task-head,
 :root[data-theme="win98"] .pane-tab-bar {
-  background: var(--w98-title);
-  color: var(--w98-light);
-  font-weight: 700;
+  background: var(--w98-surface);
+  color: var(--text);
+  font-weight: 400;
   border-bottom: none;
-  margin: 3px 3px 0;
+  box-shadow: inset -1px -1px var(--w98-shadow), inset 1px 1px var(--w98-light);
+  margin: 3px 3px 2px;
 }
 
 :root[data-theme="win98"] .sidebar-head {
-  height: 22px;
+  height: 24px;
   padding: 0 2px 0 4px;
 }
 
@@ -611,7 +624,7 @@
 }
 
 :root[data-theme="win98"] .pane-tab-bar {
-  height: 20px;
+  height: 22px;
   padding: 0 2px 0 4px;
 }
 
@@ -621,55 +634,120 @@
 :root[data-theme="win98"] .pane-tab-bar span,
 :root[data-theme="win98"] .pane-tab-bar .tab-path,
 :root[data-theme="win98"] .pane-tab-bar > span:first-child {
-  color: var(--w98-light);
+  color: var(--text);
 }
 
-/* The logo is drawn in the accent, which is the title bar's own navy. */
-:root[data-theme="win98"] .sidebar-head .brand-mark {
-  --accent: var(--w98-light);
+/* The header's name is bold. With the navy gone, weight is what tells one pane
+   from the next. */
+:root[data-theme="win98"] .sidebar-head .brand,
+:root[data-theme="win98"] .task-head > :first-child,
+:root[data-theme="win98"] .pane-tab-bar > span:first-child {
+  font-weight: 700;
 }
 
-/* The little buttons on a title bar: silver, black glyph, 18 by 16. */
+/* ------------------------------------------------------------------ flat buttons */
+
+/* The buttons on a header and on the toolbar are IE4's flat toolbar buttons:
+   nothing drawn until the pointer is over one, a thin raised edge then, and a
+   thin sunken one while pressed. Five raised buttons in a row were most of the
+   toolbar's noise. A dialog's buttons stay fully raised; that is where 98 kept
+   them. */
+:root[data-theme="win98"] {
+  --flat-hover: inset -1px -1px var(--w98-shadow), inset 1px 1px var(--w98-light);
+  --flat-down: inset -1px -1px var(--w98-light), inset 1px 1px var(--w98-shadow);
+}
+
 :root[data-theme="win98"] .sidebar-head .icon-btn,
 :root[data-theme="win98"] .pane-tab-bar .pane-close,
 :root[data-theme="win98"] .task-head button {
-  width: 18px;
-  height: 16px;
+  width: 20px;
+  height: 18px;
   min-height: 0;
   padding: 0;
   display: grid;
   place-items: center;
-  background: var(--w98-surface);
+  background: transparent;
   color: var(--text);
   border: none;
-  box-shadow: var(--raised);
+  box-shadow: none;
 }
 
-:root[data-theme="win98"] .sidebar-head .icon-btn:hover,
-:root[data-theme="win98"] .pane-tab-bar .pane-close:hover {
+:root[data-theme="win98"] .repo-head .btn,
+:root[data-theme="win98"] .pane-tab-bar .btn {
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-theme="win98"] .sidebar-head .icon-btn:hover:not(:disabled),
+:root[data-theme="win98"] .pane-tab-bar .pane-close:hover:not(:disabled),
+:root[data-theme="win98"] .task-head button:hover:not(:disabled),
+:root[data-theme="win98"] .repo-head .btn:hover:not(:disabled),
+:root[data-theme="win98"] .pane-tab-bar .btn:hover:not(:disabled) {
   color: var(--text);
   background: var(--w98-surface);
+  box-shadow: var(--flat-hover);
 }
 
-:root[data-theme="win98"] .sidebar-head .icon-btn:active,
-:root[data-theme="win98"] .pane-tab-bar .pane-close:active {
-  box-shadow: var(--pressed);
+:root[data-theme="win98"] .sidebar-head .icon-btn:active:not(:disabled),
+:root[data-theme="win98"] .pane-tab-bar .pane-close:active:not(:disabled),
+:root[data-theme="win98"] .task-head button:active:not(:disabled),
+:root[data-theme="win98"] .repo-head .btn:active:not(:disabled),
+:root[data-theme="win98"] .pane-tab-bar .btn:active:not(:disabled) {
+  box-shadow: var(--flat-down);
 }
 
-/* A text button on a title bar (stage, History, Prune merged) shrinks to the
+:root[data-theme="win98"] .repo-head .btn:disabled,
+:root[data-theme="win98"] .pane-tab-bar .btn:disabled {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* A latched flat button (History while the history is open) is sunken over
+   the checker, as a latched toolbar button was. */
+:root[data-theme="win98"] .repo-head .btn[aria-pressed="true"]:not(.changes-toggle),
+:root[data-theme="win98"] .pane-tab-bar .btn[aria-pressed="true"] {
+  background: var(--w98-dither);
+  box-shadow: var(--flat-down);
+}
+
+/* A text button on a header (stage, History, Prune merged) shrinks to the
    bar's height rather than hanging out of it. */
 :root[data-theme="win98"] .pane-tab-bar .btn {
   min-height: 0;
-  height: 16px;
+  height: 18px;
   padding: 0 6px;
   font-weight: 400;
 }
 
 /* ------------------------------------------------------------------ the repository's toolbar */
 
-:root[data-theme="win98"] .repo-head {
+/* A coolbar: flat buttons on silver with an etched groove under it. */
+:root[data-theme="win98"] .main > .repo-head {
+  margin: 3px 3px 0;
   border-bottom: 1px solid var(--w98-shadow);
   box-shadow: 0 1px 0 var(--w98-light);
+}
+
+/* ------------------------------------------------------------------ the branch strip */
+
+/* The strip's rails are content you read, so they sit in a white field like
+   the lists do; the line above them stays on silver as the field's caption.
+   Its dots knock out of --bg, so --bg turns white inside, as in the history. */
+:root[data-theme="win98"] .graph {
+  background: var(--w98-surface);
+  border-bottom: none;
+}
+
+:root[data-theme="win98"] .graph-body {
+  --bg: var(--w98-light);
+  background: var(--bg);
+  box-shadow: var(--field);
+  margin: 0 3px 3px;
+  padding: 2px 2px 6px;
+}
+
+:root[data-theme="win98"] .graph-gutter {
+  border-right-color: var(--w98-face);
 }
 
 /* ------------------------------------------------------------------ sunken fields */
@@ -691,6 +769,12 @@
   margin: 0 3px 3px;
   padding: 2px 6px;
   border-top: none;
+}
+
+/* A list with nothing in it is drawn as a disabled list view: still sunken,
+   but silver, so an empty working tree is not the largest white area on screen. */
+:root[data-theme="win98"] .change-list:has(> .empty:only-child) {
+  background: var(--w98-surface);
 }
 
 /* The diff and the history are fields too. Their rows mix tints into --bg and
@@ -733,6 +817,7 @@
 
 :root[data-theme="win98"] .terminal-pane > .pane-tab-bar {
   background: transparent;
+  box-shadow: none;
   color: var(--text);
   font-weight: 400;
   height: 24px;
@@ -781,11 +866,13 @@
   color: var(--text);
 }
 
-/* Only the screen itself is black; the pane and its tabs stay silver. */
+/* Only the screen itself is black; the pane and its tabs stay silver. The
+   field's inner line is near black and vanished into the screen, so a two-pixel
+   silver ring sits inside it, the frame the MS-DOS Prompt window drew round its text. */
 :root[data-theme="win98"] .terminal-host {
   margin: 0 3px 3px;
   background: #000;
-  box-shadow: var(--field);
+  box-shadow: var(--field), inset 0 0 0 4px var(--w98-surface);
 }
 
 /* ------------------------------------------------------------------ the status bar */
@@ -832,6 +919,12 @@
 :root[data-theme="win98"] .status-bar > :not(.spacer):not(button.sync-all):empty {
   padding: 0;
   box-shadow: none;
+}
+
+/* The default gives the empty note's 16px gap back with a negative margin; the
+   gap here is 2px, so -16px slid the command hint over the field before it. */
+:root[data-theme="win98"] .status-bar .status-note:empty {
+  margin-left: -2px;
 }
 
 /* ------------------------------------------------------------------ the theme picker */
