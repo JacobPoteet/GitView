@@ -13,8 +13,12 @@ import "@fontsource/fira-code/latin-400.css";
 import "@fontsource/fira-code/latin-700.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-700.css";
+// The LCARS theme's face, Antonio (OFL), the free stand-in for the show's
+// Helvetica Ultra Compressed. Only the LCARS theme names it.
+import "@fontsource-variable/antonio/wght.css";
 import "./styles.css";
 import "./theme-win98.css";
+import "./theme-lcars.css";
 import { settings, subscribeSettings } from "./lib/settings";
 import { applyTheme } from "./lib/themes";
 
