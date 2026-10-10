@@ -70,6 +70,10 @@ impl PtyManager {
         // Lets a shell profile detect the host without guessing.
         cmd.env("GITVIEW", "1");
         cmd.env("TERM", "xterm-256color");
+        // Where a Claude hook passed with `--settings` reports. See `agent.rs`.
+        if let Some((key, value)) = crate::agent::env_for(id) {
+            cmd.env(key, value);
+        }
         let integration = is_powershell(&shell);
         if integration {
             // An encoded command rather than a path to dot-source. A script file
@@ -198,6 +202,7 @@ impl PtyManager {
         if let Some(session) = self.sessions.lock().remove(id) {
             session.alive.store(false, Ordering::SeqCst);
             *session.channel.lock() = None;
+            crate::agent::unregister(id);
         }
     }
 

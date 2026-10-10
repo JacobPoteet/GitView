@@ -169,6 +169,8 @@ export const api = {
   /** Folders worth watching that nobody has added yet, with what each holds. */
   settingsSuggestRoots: () => invoke<RootSuggestion[]>("settings_suggest_roots"),
   /** Seconds since the epoch at which the fleet was last fetched, or 0. */
+  /** Writes the hooks Claude reports its state through and returns the file's path. */
+  agentHooksFile: () => invoke<string>("agent_hooks_file"),
   settingsFetchedAt: () => invoke<number>("settings_fetched_at"),
   settingsSetFetchedAt: (at: number) => invoke<void>("settings_set_fetched_at", { at }),
   appInfo: () => invoke<AppInfo>("app_info"),

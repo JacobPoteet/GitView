@@ -738,6 +738,14 @@ function GeneralSection({ gh, claude }: { gh: boolean; claude: string | null }) 
         checked={ai.claudeTab}
         onChange={(on) => updateSettings("ai", { claudeTab: on })}
       />
+      <Toggle
+        id="setting-ai-claude-hooks"
+        label="Read Claude's state from hooks"
+        hint="The tab types claude --settings with GitView's own hooks. Nothing is written to ~/.claude."
+        checked={ai.claudeHooks}
+        disabled={!ai.claudeTab}
+        onChange={(on) => updateSettings("ai", { claudeHooks: on })}
+      />
       <ResetSection category="launch" keys={["fetch", "refreshOnFocus", "checkUpdate"]} />
     </>
   );

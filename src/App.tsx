@@ -83,6 +83,7 @@ import {
   openUrlCommand,
   pushCommand,
   quote,
+  claudeCommand,
   releaseCommand,
   shellKind,
   tagCommand,
@@ -1487,11 +1488,19 @@ export default function App() {
     (id: string) => {
       const path = sessionRepo(id);
       if (isClaude(id) && !sessionsFor(path).includes(id)) {
-        setPendingCommand({ path, to: id, command: "claude", typeOnly: false });
+        // With hooks on, the line names the file it loads. If the file cannot
+        // be written the tab still starts, on the title reader.
+        const start = (file: string | null) =>
+          setPendingCommand({ path, to: id, command: claudeCommand(file, shell), typeOnly: false });
+        if (settings().ai.claudeHooks) {
+          api.agentHooksFile().then(start, () => start(null));
+        } else {
+          start(null);
+        }
       }
       selectTab(id);
     },
-    [selectTab],
+    [selectTab, shell],
   );
 
   /**

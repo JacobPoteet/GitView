@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksForInput, settle, strongest, titleActivity } from "./agent";
+import { asksForInput, hookState, settle, strongest, titleActivity } from "./agent";
 
 describe("titleActivity", () => {
   it("reads the titles Claude Code 2.1.282 set, in the order it set them", () => {
@@ -87,5 +87,21 @@ describe("strongest", () => {
     expect(strongest(["done", "waiting", "running"])).toBe("waiting");
     expect(strongest([null, undefined, "running"])).toBe("running");
     expect(strongest([])).toBeNull();
+  });
+});
+
+describe("hookState", () => {
+  it("maps each hook the file asks for to a state", () => {
+    expect(hookState("UserPromptSubmit")).toBe("running");
+    expect(hookState("PreToolUse")).toBe("running");
+    expect(hookState("PermissionRequest")).toBe("waiting");
+    expect(hookState("Notification")).toBe("waiting");
+    expect(hookState("Stop")).toBe("done");
+    expect(hookState("StopFailure")).toBe("done");
+    expect(hookState("SessionEnd")).toBeNull();
+  });
+
+  it("ignores an event it does not know", () => {
+    expect(hookState("PostToolUse")).toBeUndefined();
   });
 });

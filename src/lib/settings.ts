@@ -114,6 +114,12 @@ export interface Settings {
      * it is clicked, then opens a shell there and types `claude`.
      */
     claudeTab: boolean;
+    /**
+     * The Claude tab types `claude --settings` with hooks that report working,
+     * waiting and done, instead of GitView reading the title. Nothing is written
+     * to `~/.claude`; the hooks exist for that one run.
+     */
+    claudeHooks: boolean;
   };
   tour: {
     /** The step on screen, an index into `STEPS` in `lib/tour.ts`. */
@@ -140,7 +146,7 @@ export const DEFAULTS: Settings = {
   layout: { sidebar: 296, changes: 300, shell: 47, tasks: null, changesHidden: false },
   inbox: { mode: "repo", collapsed: [] },
   github: { poll: true, busyMinutes: 1, idleMinutes: 10, launchStaleMinutes: 10, mergeMethod: {} },
-  ai: { claudeTab: false },
+  ai: { claudeTab: false, claudeHooks: false },
   tour: { step: 0, done: false },
 };
 
