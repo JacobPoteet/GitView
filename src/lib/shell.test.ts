@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  claudeCommand,
   cloneCommand,
   cloneName,
   clonePath,
@@ -225,5 +226,12 @@ describe("releaseCommand", () => {
     expect(isClaudeWorktree(worktree().path)).toBe(true);
     expect(isClaudeWorktree("F:/GitHub/app/.claude/worktrees/x")).toBe(true);
     expect(isClaudeWorktree("F:\\GitHub\\app.worktrees\\x")).toBe(false);
+  });
+});
+
+describe("claudeCommand", () => {
+  it("is bare claude without hooks and names the file with them", () => {
+    expect(claudeCommand(null, "powershell")).toBe("claude");
+    expect(claudeCommand("C:/d/h.json", "powershell")).toBe("claude --settings 'C:/d/h.json'");
   });
 });

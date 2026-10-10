@@ -362,6 +362,14 @@ export function installUpdateCommand(
 }
 
 /**
+ * What the Claude tab types. With hooks on it names the settings file, so the
+ * line says what the run loads and `~/.claude` stays as it was.
+ */
+export function claudeCommand(hooksFile: string | null, kind: ShellKind): string {
+  return hooksFile ? `claude --settings ${quote(hooksFile, kind)}` : "claude";
+}
+
+/**
  * The folder `git clone` would make for a URL, or null when there is no name
  * to be had from it.
  *

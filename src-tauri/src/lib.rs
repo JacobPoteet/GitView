@@ -4,6 +4,7 @@
 //! reads a repository goes through `fleet`, anything that reaches a remote goes
 //! through `gitops`, and the terminal lives in `pty`.
 
+pub mod agent;
 pub mod blame;
 pub mod cache;
 pub mod diff;
@@ -503,6 +504,12 @@ async fn scrollback_clear() -> Result<(), String> {
 
 /// Ends the process. The window's close is intercepted so the frontend can
 /// save every scrollback first; this is what it calls once it has.
+/// The settings file the Claude tab passes to `claude --settings`.
+#[tauri::command]
+fn agent_hooks_file() -> Result<String, String> {
+    agent::hooks_file()
+}
+
 #[tauri::command]
 fn app_quit(app: tauri::AppHandle) {
     app.exit(0);
@@ -732,6 +739,7 @@ pub fn run() {
                     window.set_title("GitView (Dev)")?;
                 }
             }
+            agent::watch(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -777,6 +785,7 @@ pub fn run() {
             scrollback_size,
             scrollback_clear,
             app_quit,
+            agent_hooks_file,
             settings_roots,
             settings_set_roots,
             settings_suggest_roots,

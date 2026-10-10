@@ -15,7 +15,7 @@ import { settings, subscribeSettings, terminalFontStack } from "../lib/settings"
 import { themeFor } from "../lib/themes";
 import { isClaimed } from "../lib/keys";
 import { claudeId, isClaude, nextSessionId, sessionLabel, sessionsOf } from "../lib/sessions";
-import { asksForInput, settle, titleActivity, type AgentState } from "../lib/agent";
+import { asksForInput, hookState, settle, titleActivity, type AgentState } from "../lib/agent";
 
 /**
  * Sessions live in this module rather than in component state, so switching to
@@ -68,6 +68,8 @@ interface Session {
   /** What an agent in this shell is doing, from `title` and the screen. See `lib/agent.ts`. */
   agent: AgentState | null;
   agentTimer: number | undefined;
+  /** A Claude hook has reported in this run, so the title is no longer read. */
+  hooked: boolean;
 }
 
 const sessions = new Map<string, Session>();
@@ -554,6 +556,7 @@ function getSession(id: string): Session {
     title: "",
     agent: null,
     agentTimer: undefined,
+    hooked: false,
   };
 
   // Registering the handler on the parser rather than scanning the raw chunk
@@ -1262,6 +1265,7 @@ function screenRows(session: Session): string[] {
  */
 function readAgent(session: Session) {
   window.clearTimeout(session.agentTimer);
+  if (session.hooked) return;
   const activity = titleActivity(session.title);
   if (activity !== "idle") {
     setAgent(session, settle(session.agent, activity, false));
@@ -1272,6 +1276,18 @@ function readAgent(session: Session) {
     setAgent(session, settle(session.agent, "idle", asksForInput(screenRows(session))));
   }, 200);
 }
+
+// Claude's hooks, tailed by Rust from the file each shell's environment names.
+// The first one heard hands the session over from the title reader; SessionEnd
+// hands it back, for a `claude` typed later without hooks.
+listen<{ id: string; event: string }>("agent-event", ({ payload }) => {
+  const session = sessions.get(payload.id);
+  const state = hookState(payload.event);
+  if (!session || state === undefined) return;
+  window.clearTimeout(session.agentTimer);
+  session.hooked = state !== null;
+  setAgent(session, state);
+}).catch(() => undefined);
 
 /** Marks a session as looked at, which is what clears a finished turn. */
 function seen(id: string | null) {

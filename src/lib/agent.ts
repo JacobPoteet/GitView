@@ -17,6 +17,11 @@
  * Nothing is sent to Claude and nothing is written to its settings. Orca gets
  * the same three states from hooks it adds to `~/.claude/settings.json`, which
  * is a write to somebody's profile. See the Decision Log.
+ *
+ * The Claude tab can do better when the AI settings ask for it: it types
+ * `claude --settings` with hooks of GitView's own, and `hookState` reads what
+ * they report. A shell that has heard one hook stops reading the title, and
+ * goes back to it when `SessionEnd` says the run is over.
  */
 
 /** Running, waiting on an answer, or finished while nobody was looking. */
@@ -61,6 +66,28 @@ export function settle(
   if (asking) return "waiting";
   if (previous === "running" || previous === "waiting") return "done";
   return previous;
+}
+
+/**
+ * What a hook event means. Undefined for one that says nothing, so a hook added
+ * to the file later changes no state until it is read here; null clears.
+ */
+export function hookState(event: string): AgentState | null | undefined {
+  switch (event) {
+    case "UserPromptSubmit":
+    case "PreToolUse":
+      return "running";
+    case "PermissionRequest":
+    case "Notification":
+      return "waiting";
+    case "Stop":
+    case "StopFailure":
+      return "done";
+    case "SessionEnd":
+      return null;
+    default:
+      return undefined;
+  }
 }
 
 const RANK: Record<AgentState, number> = { running: 1, done: 2, waiting: 3 };
