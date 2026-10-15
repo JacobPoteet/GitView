@@ -205,6 +205,29 @@ async fn repo_commit_file(path: String, sha: String, file: String) -> Result<Fil
     blocking(move || diff::read_commit_file(&PathBuf::from(&path), &sha, &file)).await
 }
 
+/// The bytes of one side of an image, as a raw response rather than JSON, so a
+/// twenty megabyte photograph is not base64 inside a string on the way over.
+#[tauri::command]
+async fn repo_diff_image(
+    path: String,
+    file: String,
+    staged: bool,
+    sha: Option<String>,
+    new_side: bool,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = blocking(move || {
+        diff::read_image(
+            &PathBuf::from(&path),
+            &file,
+            staged,
+            sha.as_deref(),
+            new_side,
+        )
+    })
+    .await??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Who last touched each line of a file, as of a commit. See blame.rs.
 #[tauri::command]
 async fn repo_blame(path: String, sha: String, file: String) -> Result<blame::Blame, String> {
@@ -753,6 +776,7 @@ pub fn run() {
             repo_diff,
             repo_commit,
             repo_commit_file,
+            repo_diff_image,
             repo_blame,
             diff_hunk_patch,
             commit_file_export,

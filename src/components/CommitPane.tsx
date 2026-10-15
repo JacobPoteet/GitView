@@ -114,7 +114,11 @@ export default function CommitPane({
           <bdi>{file ?? ""}</bdi>
         </span>
 
-        {diff && !diff.empty && !diff.binary && !diff.error && (
+        {diff &&
+          !diff.empty &&
+          !diff.binary &&
+          !diff.error &&
+          (!diff.image || diff.additions + diff.deletions > 0) && (
           <span className="diff-tally" title="This file">
             <span className="add">+{diff.additions}</span>
             <span className="del">−{diff.deletions}</span>
@@ -201,6 +205,7 @@ export default function CommitPane({
         {diff && (
           <DiffHunks
             diff={diff}
+            imageSource={{ repoPath: target.repoPath, staged: false, sha: target.id }}
             restCommand={show}
             emptyNote="This file is not in the commit."
             blame={blameOn ? blameLines : undefined}

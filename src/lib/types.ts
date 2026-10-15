@@ -238,6 +238,14 @@ export interface DiffHunk {
 }
 
 /** One file's diff, on one side of the index. */
+/** An image the webview can draw, with the size of each side in bytes. The bytes are `repoDiffImage`. */
+export interface ImageInfo {
+  mime: string;
+  /** Null when the file does not exist on that side. */
+  oldSize: number | null;
+  newSize: number | null;
+}
+
 export interface FileDiff {
   path: string;
   /** Where a rename came from. Null for everything else. */
@@ -248,6 +256,8 @@ export interface FileDiff {
   additions: number;
   deletions: number;
   hunks: DiffHunk[];
+  /** Set for a file with an image extension. An SVG has hunks as well. */
+  image: ImageInfo | null;
   /** The read stopped at the backend's line cap. */
   truncated: boolean;
   /** Nothing on this side, which a row can outlive its diff by a moment. */

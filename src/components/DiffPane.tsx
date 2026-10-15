@@ -142,7 +142,7 @@ export default function DiffPane({
           </span>
         )}
 
-        {diff && !diff.empty && !diff.binary && (
+        {diff && !diff.empty && !diff.binary && (!diff.image || diff.additions + diff.deletions > 0) && (
           <span className="diff-tally">
             <span className="add">+{diff.additions}</span>
             <span className="del">−{diff.deletions}</span>
@@ -182,6 +182,7 @@ export default function DiffPane({
         {diff && (
           <DiffHunks
             diff={diff}
+            imageSource={{ repoPath: target.repoPath, staged: target.staged, sha: null }}
             restCommand={`git diff -- ${target.file}`}
             emptyNote={`Nothing on the ${target.staged ? "staged" : "unstaged"} side of this file.`}
             hunkAction={(index, header) => (

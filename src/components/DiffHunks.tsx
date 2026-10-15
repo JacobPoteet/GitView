@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import PaneNote from "./PaneNote";
+import ImageDiff, { type ImageSource } from "./ImageDiff";
 import { ageBucket, relativeTime, type BlameHunk, type FileDiff } from "../lib/types";
 
 /**
@@ -27,6 +28,8 @@ interface Props {
   blame?: Map<number, BlameHunk>;
   /** A sha in the gutter was clicked. */
   onBlameCommit?: (commit: { id: string; short: string }) => void;
+  /** Where to read an image's bytes from. Only read when the file is one. */
+  imageSource?: ImageSource;
 }
 
 /**
@@ -57,6 +60,7 @@ export default function DiffHunks({
   emptyNote,
   blame,
   onBlameCommit,
+  imageSource,
 }: Props) {
   // The gutter says the sha and the age once per run of lines from one
   // commit, on the first line of the run, and holds its tint for the rest:
@@ -67,7 +71,11 @@ export default function DiffHunks({
     <>
       {diff.error && <PaneNote kind="error">{diff.error}</PaneNote>}
 
-      {!diff.error && diff.binary && (
+      {!diff.error && diff.image && imageSource && (
+        <ImageDiff diff={diff} source={imageSource} />
+      )}
+
+      {!diff.error && diff.binary && !(diff.image && imageSource) && (
         <p className="empty">Binary. git has no text to show for this one.</p>
       )}
 
@@ -76,7 +84,7 @@ export default function DiffHunks({
       {/* Modified with no hunks: the line endings or the mode changed and
           not a line. `git diff` prints nothing for it either, and a blank
           pane looked like a read that never finished. */}
-      {!diff.error && !diff.binary && !diff.empty && diff.hunks.length === 0 && (
+      {!diff.error && !diff.binary && !diff.empty && diff.hunks.length === 0 && !diff.image && (
         <p className="empty">
           No line differs. Line endings or the file mode changed, which
           <code> git diff</code> shows nothing for either.
