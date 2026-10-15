@@ -59,6 +59,18 @@ export const api = {
     invoke<Blame>("repo_blame", { path, sha, file }),
   repoCommitFile: (path: string, sha: string, file: string) =>
     invoke<FileDiff>("repo_commit_file", { path, sha, file }),
+  /**
+   * The bytes of one side of an image. Raw rather than base64, so a large
+   * photograph is not a string on the way over. `sha` reads a commit against
+   * its first parent; without it `staged` picks the side of the index.
+   */
+  repoDiffImage: (
+    path: string,
+    file: string,
+    staged: boolean,
+    sha: string | null,
+    newSide: boolean,
+  ) => invoke<ArrayBuffer>("repo_diff_image", { path, file, staged, sha, newSide }),
   /** The commit's copy of a file, written under the data folder. Returns the path. */
   commitFileExport: (path: string, sha: string, file: string) =>
     invoke<string>("commit_file_export", { path, sha, file }),

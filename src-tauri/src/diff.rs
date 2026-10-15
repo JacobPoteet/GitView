@@ -29,6 +29,11 @@ const MAX_LINES: usize = 6000;
 /// and the renderer has to lay all of it out before it can clip it.
 const MAX_LINE: usize = 1000;
 
+/// The largest image either side of a diff will hand to the pane. Twenty
+/// megabytes is a large photograph; past it the pane states the sizes and says
+/// it did not load them, the way the row cap does for text.
+pub const MAX_IMAGE: u64 = 20 * 1024 * 1024;
+
 /// git's own wording for the marker, written here rather than taken from
 /// libgit2, whose content for those origins is the line the marker follows.
 const NO_NEWLINE: &str = "No newline at end of file";
@@ -64,6 +69,19 @@ pub struct DiffHunk {
     pub lines: Vec<DiffLine>,
 }
 
+/// What the pane needs to decide how to draw an image: its type, and how big
+/// each side is. The bytes are a second read, `read_image`, because a diff with
+/// twenty megabytes of base64 in it would be sent again on every refresh.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageInfo {
+    pub mime: String,
+    /// Absent when the file does not exist on that side: an added image has no
+    /// old one and a deleted image has no new one.
+    pub old_size: Option<u64>,
+    pub new_size: Option<u64>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FileDiff {
@@ -80,6 +98,9 @@ pub struct FileDiff {
     pub additions: usize,
     pub deletions: usize,
     pub hunks: Vec<DiffHunk>,
+    /// Set when the file is an image the webview can draw. An SVG is text and
+    /// keeps its hunks as well; a raster image is binary and has only this.
+    pub image: Option<ImageInfo>,
     /// The read stopped at `MAX_LINES` and the pane says so.
     pub truncated: bool,
     /// The file has no diff on this side at all, which is not an error: a row
@@ -100,6 +121,7 @@ impl FileDiff {
             additions: 0,
             deletions: 0,
             hunks: Vec::new(),
+            image: None,
             truncated: false,
             empty: true,
             error: None,
@@ -111,6 +133,53 @@ impl FileDiff {
         diff.error = Some(message);
         diff
     }
+}
+
+/// The type the webview should be told, from the extension alone. Sniffing the
+/// bytes would be sturdier, but the name is what the user sees in the list and
+/// a `.png` that is not one is a file the pane is right to fail on.
+fn image_mime(path: &str) -> Option<&'static str> {
+    let ext = path.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        "svg" => "image/svg+xml",
+        _ => return None,
+    })
+}
+
+/// How many bytes one side of a delta holds. `workdir` is true for the unstaged
+/// read's new side, which is the file on disk rather than an object: libgit2
+/// does not always have an id for it.
+fn side_size(repo: &Repository, file: git2::DiffFile<'_>, workdir: bool) -> Option<u64> {
+    if !file.exists() {
+        return None;
+    }
+    if workdir {
+        let full = repo.workdir()?.join(file.path()?);
+        return std::fs::metadata(full).ok().map(|m| m.len());
+    }
+    repo.odb()
+        .ok()?
+        .read_header(file.id())
+        .ok()
+        .map(|(size, _)| size as u64)
+}
+
+fn image_info(repo: &Repository, delta: &git2::DiffDelta<'_>, workdir: bool) -> Option<ImageInfo> {
+    let name = slashed(delta.new_file().path()).or_else(|| slashed(delta.old_file().path()))?;
+    let mime = image_mime(&name)?;
+    Some(ImageInfo {
+        mime: mime.to_string(),
+        // The old side is always an object: the index or a tree.
+        old_size: side_size(repo, delta.old_file(), false),
+        new_size: side_size(repo, delta.new_file(), workdir),
+    })
 }
 
 fn status_name(delta: Delta) -> &'static str {
@@ -196,7 +265,14 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
         return FileDiff::empty(file, staged);
     };
 
-    expand(&diff, idx, delta, FileDiff::empty(file, staged))
+    expand(
+        &repo,
+        &diff,
+        idx,
+        delta,
+        !staged,
+        FileDiff::empty(file, staged),
+    )
 }
 
 /// One delta out of a diff, turned into the rows the pane draws.
@@ -204,9 +280,11 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
 /// Shared by the working-tree reads and the commit read, which build different
 /// diffs and want the same file out of them.
 fn expand(
+    repo: &Repository,
     diff: &git2::Diff<'_>,
     idx: usize,
     delta: git2::DiffDelta<'_>,
+    workdir: bool,
     mut out: FileDiff,
 ) -> FileDiff {
     let file = out.path.clone();
@@ -218,6 +296,7 @@ fn expand(
     if matches!(delta.status(), Delta::Renamed | Delta::Copied) {
         out.old_path = slashed(delta.old_file().path());
     }
+    out.image = image_info(repo, &delta, workdir);
     if delta.old_file().is_binary() || delta.new_file().is_binary() {
         out.binary = true;
         return out;
@@ -481,7 +560,70 @@ pub fn read_commit_file(repo_path: &Path, sha: &str, file: &str) -> FileDiff {
     let Some(delta) = diff.get_delta(idx) else {
         return FileDiff::empty(file, false);
     };
-    expand(&diff, idx, delta, FileDiff::empty(file, false))
+    expand(
+        &repo,
+        &diff,
+        idx,
+        delta,
+        false,
+        FileDiff::empty(file, false),
+    )
+}
+
+/// The raw bytes of one side of an image, for the pane to draw.
+///
+/// `sha` names a commit, read against its first parent; without one the side of
+/// the index `staged` names is read. `new_side` picks the right-hand file of the
+/// delta and false the left. Over `MAX_IMAGE` is refused here as well as in the
+/// pane, since the pane's check is on a size that may have changed since.
+pub fn read_image(
+    repo_path: &Path,
+    file: &str,
+    staged: bool,
+    sha: Option<&str>,
+    new_side: bool,
+) -> Result<Vec<u8>, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let diff = match sha {
+        Some(sha) => build_commit(&repo, sha).map(|(_, diff)| diff),
+        None => build(&repo, staged),
+    }
+    .map_err(|e| e.message().to_string())?;
+    let idx = locate(&diff, file).ok_or_else(|| format!("{file} has no diff on this side."))?;
+    let delta = diff
+        .get_delta(idx)
+        .ok_or("The diff changed under the read.")?;
+    let side = if new_side {
+        delta.new_file()
+    } else {
+        delta.old_file()
+    };
+    if !side.exists() {
+        let which = if new_side { "new" } else { "old" };
+        return Err(format!("{file} has no {which} side."));
+    }
+    let on_disk = new_side && sha.is_none() && !staged;
+    let size = side_size(&repo, side, on_disk).ok_or("The size could not be read.")?;
+    let side = if new_side {
+        delta.new_file()
+    } else {
+        delta.old_file()
+    };
+    if size > MAX_IMAGE {
+        return Err(format!(
+            "{file} is {size} bytes, over the {MAX_IMAGE} byte preview limit."
+        ));
+    }
+    if on_disk {
+        let rel = side.path().ok_or("The file has no path.")?;
+        let root = repo
+            .workdir()
+            .ok_or("The repository has no working tree.")?;
+        return std::fs::read(root.join(rel)).map_err(|e| e.to_string());
+    }
+    repo.find_blob(side.id())
+        .map(|blob| blob.content().to_vec())
+        .map_err(|e| e.message().to_string())
 }
 
 /// Writes the file as one commit had it and hands back the path.
@@ -1221,5 +1363,85 @@ two
 
         let missing = export_commit_file(&fixture.dir, &first, "src/b.txt");
         assert!(missing.is_err());
+    }
+
+    /// Bytes that git calls binary: a PNG signature, then a NUL.
+    fn png(tail: u8) -> Vec<u8> {
+        let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0];
+        bytes.push(tail);
+        bytes
+    }
+
+    /// An untracked image has no old side, a committed one edited in place has
+    /// both, and the working tree's copy is the file on disk. Each side comes
+    /// back byte for byte, which is what the pane hands to an `<img>`.
+    #[test]
+    fn an_image_reads_back_on_each_side_it_has() {
+        let fixture = Fixture::new("image");
+        std::fs::write(fixture.dir.join("logo.png"), png(1)).unwrap();
+
+        let added = read_file(&fixture.dir, "logo.png", false);
+        // libgit2 only learns an untracked file is binary once it has read it,
+        // so `binary` is not asserted: the pane keys on `image`.
+        assert!(added.hunks.iter().all(|h| h.lines.is_empty()) || added.binary);
+        let info = added.image.expect("an image");
+        assert_eq!(info.mime, "image/png");
+        assert_eq!(info.old_size, None);
+        assert_eq!(info.new_size, Some(11));
+        assert!(read_image(&fixture.dir, "logo.png", false, None, false).is_err());
+        assert_eq!(
+            read_image(&fixture.dir, "logo.png", false, None, true).unwrap(),
+            png(1)
+        );
+
+        fixture.stage("logo.png");
+        fixture.commit("first");
+        std::fs::write(fixture.dir.join("logo.png"), png(2)).unwrap();
+
+        let changed = read_file(&fixture.dir, "logo.png", false);
+        let info = changed.image.expect("an image");
+        assert_eq!((info.old_size, info.new_size), (Some(11), Some(11)));
+        assert_eq!(
+            read_image(&fixture.dir, "logo.png", false, None, false).unwrap(),
+            png(1)
+        );
+        assert_eq!(
+            read_image(&fixture.dir, "logo.png", false, None, true).unwrap(),
+            png(2)
+        );
+
+        fixture.stage("logo.png");
+        fixture.commit("second");
+        let head = fixture.repo.head().unwrap().target().unwrap().to_string();
+        assert_eq!(
+            read_image(&fixture.dir, "logo.png", false, Some(&head), false).unwrap(),
+            png(1)
+        );
+        assert_eq!(
+            read_image(&fixture.dir, "logo.png", false, Some(&head), true).unwrap(),
+            png(2)
+        );
+
+        std::fs::remove_file(fixture.dir.join("logo.png")).unwrap();
+        let gone = read_file(&fixture.dir, "logo.png", false);
+        assert_eq!(gone.status, "deleted");
+        let info = gone.image.expect("an image");
+        assert_eq!((info.old_size, info.new_size), (Some(11), None));
+        assert!(read_image(&fixture.dir, "logo.png", false, None, true).is_err());
+    }
+
+    /// An SVG is text, so it keeps its hunks and gains the image beside them.
+    /// A text file with no image extension gains nothing.
+    #[test]
+    fn an_svg_keeps_its_hunks_and_a_text_file_has_no_image() {
+        let fixture = Fixture::new("svg");
+        fixture.write("a.svg", "<svg/>\n");
+        fixture.write("a.txt", "one\n");
+
+        let svg = read_file(&fixture.dir, "a.svg", false);
+        assert!(!svg.binary);
+        assert!(!svg.hunks.is_empty());
+        assert_eq!(svg.image.expect("an image").mime, "image/svg+xml");
+        assert!(read_file(&fixture.dir, "a.txt", false).image.is_none());
     }
 }

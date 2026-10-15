@@ -4157,6 +4157,158 @@ button.inbox-check-name.link:hover {
   font-size: var(--fs-meta);
 }
 
+/* Images in the diff pane. The checkerboard is two gradients on the token
+   colours, so every theme gets one without a rule of its own. */
+.image-diff {
+  padding: 10px 12px 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+}
+
+.image-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.image-spacer {
+  flex: 1;
+}
+
+.image-modes {
+  display: flex;
+  gap: 2px;
+}
+
+.image-modes button,
+.image-fit {
+  padding: 1px 7px;
+  border-radius: var(--r-xs);
+  color: var(--text-faint);
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.image-modes button:hover,
+.image-fit:hover {
+  color: var(--text);
+}
+
+.image-modes button.on {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.image-slider {
+  width: 160px;
+  accent-color: var(--accent);
+}
+
+.image-pair {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.image-pair figure {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.image-diff figure {
+  margin: 0;
+}
+
+.image-solo figure {
+  max-width: 100%;
+}
+
+.image-frame {
+  width: fit-content;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  line-height: 0;
+}
+
+.image-frame img.fit {
+  max-width: 100%;
+  height: auto;
+}
+
+.image-frame img.actual {
+  max-width: none;
+}
+
+.checker {
+  background-color: var(--bg-inset);
+  background-image:
+    linear-gradient(45deg, var(--bg-raised) 25%, transparent 25%, transparent 75%, var(--bg-raised) 75%),
+    linear-gradient(45deg, var(--bg-raised) 25%, transparent 25%, transparent 75%, var(--bg-raised) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
+.image-diff figcaption,
+.image-caption-row {
+  margin: 6px 0 0;
+  font-size: var(--fs-meta);
+  color: var(--text-faint);
+}
+
+.image-caption-row {
+  display: flex;
+  gap: 16px;
+}
+
+.image-name {
+  color: var(--text-dim);
+}
+
+.image-stackwrap {
+  overflow: auto;
+}
+
+.image-stack {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.image-stack.dark {
+  background: black;
+}
+
+.image-stack img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.image-stack img.blend {
+  mix-blend-mode: difference;
+}
+
+.image-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.image-failure {
+  color: var(--red);
+}
+
 .diff-note {
   padding: 12px;
   color: var(--text-faint);
