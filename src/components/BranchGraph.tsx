@@ -27,6 +27,8 @@ interface Props {
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Opens the commit pane on a node. The click itself types nothing. */
   onOpen: (commit: { id: string; short: string }) => void;
+  /** The commit open in the right-hand column, which its node is marked for. */
+  openId: string | null;
   onCopy: (text: string, what: string) => void;
   /** Opens the tag dialog on a commit. The app owns it, as it owns the delete. */
   onTag: (commit: { id: string; short: string; summary: string }) => void;
@@ -246,6 +248,7 @@ export default function BranchGraph({
   onToggle,
   onCommand,
   onOpen,
+  openId,
   onCopy,
   onTag,
   onReset,
@@ -369,6 +372,7 @@ export default function BranchGraph({
                     detached={graph.detached}
                     onCommand={onCommand}
                     onOpen={onOpen}
+                    open={node.commit.id === openId}
                     onMenu={menu.open}
                   />
                 ))}
@@ -432,6 +436,7 @@ function Node({
   detached,
   onCommand,
   onOpen,
+  open,
   onMenu,
 }: {
   node: Placed;
@@ -439,6 +444,7 @@ function Node({
   detached: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpen: (commit: { id: string; short: string }) => void;
+  open: boolean;
   onMenu: (event: ReactMouseEvent, commit: GraphCommit) => void;
 }) {
   const { commit } = node;
@@ -448,7 +454,8 @@ function Node({
   const command = `git --no-pager show --stat ${commit.short}`;
   return (
     <button
-      className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}${commit.signature ? " signed" : ""}`}
+      className={`graph-node ${node.lane}${node.tip ? " tip" : ""}${node.head ? " head" : ""}${commit.isMerge ? " merge" : ""}${commit.signature ? " signed" : ""}${open ? " open" : ""}`}
+      aria-current={open ? "true" : undefined}
       style={{ left: node.x, top: node.y }}
       onClick={(event) =>
         event.shiftKey ? onCommand(command, true) : onOpen({ id: commit.id, short: commit.short })

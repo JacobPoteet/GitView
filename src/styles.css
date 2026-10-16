@@ -1755,6 +1755,34 @@ select:focus-visible,
   background: var(--green);
 }
 
+/* The commit open in the right-hand column. The accent, never a lane colour,
+   so it reads on any branch, and never the green that already means HEAD or the
+   red and amber that mean something went wrong. A ring and a halo round the
+   node, and its caption at full strength. */
+.graph-node.open .graph-dot {
+  background: color-mix(in oklch, var(--accent) 22%, var(--bg));
+  box-shadow:
+    inset 0 0 0 2.4px var(--accent),
+    0 0 0 4px color-mix(in oklch, var(--accent) 28%, transparent);
+  transform: scale(1.12);
+}
+
+.graph-node.trunk.open .graph-dot,
+.graph-node.fork.open .graph-dot {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0;
+}
+
+.graph-node.open .graph-caption .sha {
+  color: var(--accent);
+}
+
+.graph-node.open .graph-caption .msg {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .graph-caption {
   display: flex;
   flex-direction: column;
@@ -4491,6 +4519,40 @@ button.inbox-check-name.link:hover {
 
 .history-row:disabled {
   cursor: default;
+}
+
+/* The commit open in the right-hand column. A solid wash, for the reason the
+   HEAD tint is one, and a bar down the left edge that is drawn above the
+   sticky canvas: the wash alone gets lost among six lane colours, and the bar
+   is what the eye finds in a page of forty. HEAD keeps its green sha, so a row
+   that is both still says so. */
+.history-row.open,
+.history-row.open:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent) 24%, var(--bg));
+}
+
+.history-row.open::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--accent);
+  z-index: 2;
+}
+
+.history-row.open .history-summary {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.history-row.open .history-sha {
+  color: var(--accent);
+}
+
+.history-row.open.head .history-sha {
+  color: var(--green);
 }
 
 /* Empty. It reserves the width the canvas is drawing into, so the text starts

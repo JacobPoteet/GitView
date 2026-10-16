@@ -2448,6 +2448,7 @@ ${landing} ${cleanup}${warning}${closing}`,
       }}
       onCommand={emit}
       onOpen={openCommit}
+      openId={commitTarget?.id ?? null}
       onDeleteBranch={askDeleteBranch}
       onTag={askTag}
       onReset={askReset}
@@ -2717,6 +2718,7 @@ gh pr view ${branchPr.number} --web`}
               onToggle={toggleGraph}
               onCommand={emit}
               onOpen={openCommit}
+              openId={commitTarget?.id ?? null}
               onCopy={copy}
               onTag={askTag}
               onReset={askReset}
