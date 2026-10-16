@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import type { Blame, BlameHunk, CommitDiff, CommitTarget, FileDiff } from "../lib/types";
+import type { Blame, BlameHunk, CommitTarget, FileDiff } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
 import DiffHunks from "./DiffHunks";
 import PaneNote from "./PaneNote";
@@ -8,13 +8,12 @@ import CloseButton from "./CloseButton";
 
 interface Props {
   target: CommitTarget;
-  /** Null while the read is in flight. App owns it, because the column on the right draws its files. */
-  commit: CommitDiff | null;
-  /** The file whose hunks to show, picked in that column. */
-  file: string | null;
+  /** The file whose hunks to show, picked in the column on the right. */
+  file: string;
   /** No live shell means the `show` button has nowhere to type. */
   disabled: boolean;
   shell: ShellKind;
+  /** Closes the diff and leaves the commit up in the column on the right. */
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
   /** A sha in the blame gutter was clicked: open that commit in this pane, on the same file. */
@@ -22,9 +21,12 @@ interface Props {
 }
 
 /**
- * One commit, over the main column: its message, then the hunks of the file
- * picked in the right-hand column, which lists the commit's files while this
- * pane is up.
+ * One file of a commit, over the main column: its hunks, and nothing else.
+ *
+ * The message, the author and the file list are in the right-hand column
+ * (`CommitFilesPane`), where a click on another commit replaces them without
+ * this pane being up. This pane exists only while a file is picked there, so a
+ * commit on its own never covers the graph or the shell.
  *
  * Until this pane existed a click on a commit typed `git show --stat` at the
  * prompt, which printed a file list and left the diff another command away.
@@ -37,7 +39,6 @@ interface Props {
  */
 export default function CommitPane({
   target,
-  commit,
   file,
   disabled,
   shell,
@@ -58,7 +59,7 @@ export default function CommitPane({
   const [blame, setBlame] = useState<Blame | null>(null);
   useEffect(() => {
     setBlame(null);
-    if (!blameOn || !file) return;
+    if (!blameOn) return;
     let cancelled = false;
     api
       .repoBlame(target.repoPath, target.id, file)
@@ -86,7 +87,6 @@ export default function CommitPane({
   useEffect(() => {
     setDiff(null);
     setFailure(null);
-    if (!file) return;
     let cancelled = false;
     api
       .repoCommitFile(target.repoPath, target.id, file)
@@ -101,17 +101,15 @@ export default function CommitPane({
     };
   }, [target.repoPath, target.id, file, attempt]);
 
-  const show = file
-    ? `git --no-pager show ${target.short} -- ${quote(file, shell)}`
-    : `git --no-pager show --stat ${target.short}`;
+  const show = `git --no-pager show ${target.short} -- ${quote(file, shell)}`;
 
   return (
     <section className="diff-pane commit-pane">
       <div className="pane-tab-bar">
         <span>Commit</span>
         <span className="commit-short">{target.short}</span>
-        <span className="tab-path" title={file ?? ""}>
-          <bdi>{file ?? ""}</bdi>
+        <span className="tab-path" title={file}>
+          <bdi>{file}</bdi>
         </span>
 
         {diff &&
@@ -125,20 +123,18 @@ export default function CommitPane({
           </span>
         )}
 
-        {file && (
-          <button
-            className="btn tiny"
-            onClick={() => setBlameOn((on) => !on)}
-            title={
-              blameOn
-                ? "Hide who last touched each line."
-                : `Who last touched each line, as of ${target.short}. git blame ${target.short} -- ${file}, read in process.`
-            }
-            aria-pressed={blameOn}
-          >
-            blame
-          </button>
-        )}
+        <button
+          className="btn tiny"
+          onClick={() => setBlameOn((on) => !on)}
+          title={
+            blameOn
+              ? "Hide who last touched each line."
+              : `Who last touched each line, as of ${target.short}. git blame ${target.short} -- ${file}, read in process.`
+          }
+          aria-pressed={blameOn}
+        >
+          blame
+        </button>
         <button
           className="btn tiny accent"
           disabled={disabled}
@@ -154,42 +150,8 @@ export default function CommitPane({
         <CloseButton onClick={onClose} />
       </div>
 
-      {commit?.error && <PaneNote kind="error">{commit.error}</PaneNote>}
-
-      {commit && !commit.error && (
-        <div className="commit-head">
-          <div className="commit-summary">{commit.summary || "(no message)"}</div>
-          {commit.body && <pre className="commit-body">{commit.body}</pre>}
-          <div className="commit-meta">
-            <span>{commit.author}</span>
-            <span>{new Date(commit.time * 1000).toLocaleString()}</span>
-            <span className="diff-tally" title="Over the whole commit">
-              <span className="add">+{commit.additions}</span>
-              <span className="del">−{commit.deletions}</span>
-            </span>
-            {commit.parents.length === 0 && <span>root commit</span>}
-            {commit.parents.map((parent, index) => (
-              <span
-                key={parent}
-                title={
-                  index === 0
-                    ? "The diff is against this parent."
-                    : "Not diffed against. git show -m would."
-                }
-              >
-                {commit.parents.length > 1 ? `parent ${index + 1}` : "parent"} {parent}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="diff-body">
-        {!commit && <PaneNote kind="loading">Reading…</PaneNote>}
-        {commit && !commit.error && !file && commit.files.length === 0 && (
-          <p className="empty">This commit changed no files.</p>
-        )}
-        {file && !diff && !failure && <PaneNote kind="loading">Reading…</PaneNote>}
+        {!diff && !failure && <PaneNote kind="loading">Reading…</PaneNote>}
         {failure && (
           <PaneNote kind="error" onRetry={() => setAttempt((n) => n + 1)}>
             {failure}
@@ -209,7 +171,7 @@ export default function CommitPane({
             restCommand={show}
             emptyNote="This file is not in the commit."
             blame={blameOn ? blameLines : undefined}
-            onBlameCommit={(commit) => onOpenCommit({ ...commit, file: file ?? undefined })}
+            onBlameCommit={(commit) => onOpenCommit({ ...commit, file })}
           />
         )}
       </div>

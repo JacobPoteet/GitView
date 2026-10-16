@@ -709,12 +709,12 @@ export default function App() {
       .then((next) => {
         if (cancelled) return;
         setCommit(next);
-        // The first file opens on its own, so a one-file commit reads as a
-        // diff without a second click. A commit opened from a file's blame
-        // gutter opens on that file, since that is the line being followed.
+        // No file opens on its own: a click on a commit only fills the column
+        // on the right, so walking from commit to commit leaves the graph and
+        // the shell where they are. A commit opened from a file's blame gutter
+        // opens on that file, since that is the line being followed.
         const asked = commitTarget.file;
-        const wanted = asked && next.files.some((f) => f.path === asked) ? asked : null;
-        setCommitFile(wanted ?? next.files[0]?.path ?? null);
+        setCommitFile(asked && next.files.some((f) => f.path === asked) ? asked : null);
       })
       .catch((err) => {
         if (!cancelled) setNote(String(err));
@@ -1040,6 +1040,8 @@ export default function App() {
         if (inboxOpen) {
           setInboxOpen(false);
           setInboxFocus(null);
+        } else if (commitTarget && commitFile) {
+          setCommitFile(null);
         } else if (commitTarget) {
           setCommitTarget(null);
         } else if (historyOpen) {
@@ -1057,6 +1059,7 @@ export default function App() {
   }, [
     batch?.running,
     commitTarget,
+    commitFile,
     inboxOpen,
     confirmation,
     settingsOpen,
@@ -2416,14 +2419,13 @@ ${landing} ${cleanup}${warning}${closing}`,
       onError={setNote}
       onCopy={copy}
     />
-  ) : commitTarget && selected ? (
+  ) : commitTarget && commitFile && selected ? (
     <CommitPane
       target={commitTarget}
-      commit={commit}
       file={commitFile}
       disabled={!shellReady}
       shell={shell}
-      onClose={() => setCommitTarget(null)}
+      onClose={() => setCommitFile(null)}
       onCommand={emit}
       onOpenCommit={openCommit}
     />
@@ -2815,7 +2817,7 @@ gh pr view ${branchPr.number} --web`}
           file={commitFile}
           disabled={!shellReady}
           shell={shell}
-          onPick={setCommitFile}
+          onPick={(path) => setCommitFile((current) => (current === path ? null : path))}
           onCommand={emit}
           onCopy={copy}
           onNote={setNote}

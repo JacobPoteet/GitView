@@ -36,8 +36,14 @@ const MARK: Record<FileChange["state"], string> = {
 };
 
 /**
- * The right-hand column while a commit is open: the files that commit touched,
- * in place of the working tree.
+ * The right-hand column while a commit is open: its message, then the files it
+ * touched, in place of the working tree. The message sits above the list the
+ * way GitKraken's does, so it is as wide as the column and a long subject wraps
+ * rather than leaving the middle of the app half empty.
+ *
+ * Opening a commit fills this column and nothing else. The main column shows a
+ * diff only once a row here is picked, which is what lets a click on another
+ * commit replace this one without closing anything first.
  *
  * The list sat inside the commit pane at first, over the hunks, and took a
  * third of the main column from the diff on any commit past a handful of
@@ -116,6 +122,34 @@ export default function CommitFilesPane({
         )}
         <CloseButton onClick={onClose} label="Back to the working tree" />
       </div>
+
+      {commit && !commit.error && (
+        <div className="commit-details">
+          <div className="commit-summary">{commit.summary || "(no message)"}</div>
+          {commit.body && <pre className="commit-message">{commit.body}</pre>}
+          <div className="commit-meta">
+            <span>{commit.author}</span>
+            <span>{new Date(commit.time * 1000).toLocaleString()}</span>
+            <span className="diff-tally" title="Over the whole commit">
+              <span className="add">+{commit.additions}</span>
+              <span className="del">−{commit.deletions}</span>
+            </span>
+            {commit.parents.length === 0 && <span>root commit</span>}
+            {commit.parents.map((parent, index) => (
+              <span
+                key={parent}
+                title={
+                  index === 0
+                    ? "The diff is against this parent."
+                    : "Not diffed against. git show -m would."
+                }
+              >
+                {commit.parents.length > 1 ? `parent ${index + 1}` : "parent"} {parent}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="change-list">
         {!commit && <PaneNote kind="loading">Reading…</PaneNote>}

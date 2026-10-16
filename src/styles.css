@@ -4321,19 +4321,22 @@ button.inbox-check-name.link:hover {
 }
 
 /* ----------------------------------------------------------------- commit */
-/* One commit over the main column: the message, the files it touched, and the
-   selected file's hunks. The file list is a fixed band and the diff takes the
-   rest, because the list is short and the diff is long. Reuses `.diff-pane`
-   for the frame and `.change-mark` / `.change-path` for the rows. */
+/* One file of a commit over the main column, reusing `.diff-pane` for the
+   frame. The message and the file list are in the right-hand column. */
 
 .commit-pane .commit-short {
   flex: none;
   color: var(--text-dim);
 }
 
-.commit-head {
-  flex: none;
-  padding: 10px 14px 8px;
+/* The message block at the top of the right-hand column, above the file list.
+   It takes what it needs up to a third of the column and scrolls inside that,
+   so a pasted stack trace in a body cannot push the files off screen. */
+.commit-details {
+  flex: 0 1 auto;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 10px 12px 8px;
   border-bottom: 1px solid var(--line);
   font-family: var(--font-ui);
 }
@@ -4341,13 +4344,13 @@ button.inbox-check-name.link:hover {
 .commit-summary {
   font-size: var(--fs-body);
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
-.commit-body {
+.commit-message {
   margin: 6px 0 0;
-  max-height: 120px;
-  overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-family: var(--font-ui);
   font-size: var(--fs-small);
   line-height: 1.45;
@@ -4357,11 +4360,12 @@ button.inbox-check-name.link:hover {
 .commit-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-top: 6px;
+  gap: 4px 12px;
+  margin-top: 8px;
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
   color: var(--text-faint);
+  overflow-wrap: anywhere;
 }
 
 /* The file list lives in the right-hand column while a commit is open, see
