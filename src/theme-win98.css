@@ -577,6 +577,27 @@
   box-shadow: inset 0 0 0 1px var(--text);
 }
 
+/* The open commit is a selected list row, as Explorer draws one: navy, with
+   white text, and no bar. */
+:root[data-theme="win98"] .history-row.open,
+:root[data-theme="win98"] .history-row.open:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+:root[data-theme="win98"] .history-row.open::after {
+  display: none;
+}
+
+:root[data-theme="win98"] .history-row.open .history-summary,
+:root[data-theme="win98"] .history-row.open .history-sha,
+:root[data-theme="win98"] .history-row.open.head .history-sha {
+  color: #fff;
+}
+
+:root[data-theme="win98"] .graph-node.open .graph-caption .sha {
+  color: var(--accent);
+}
+
 /* The default's dots and tips glow: a translucent ring of their own colour. A
    bevelled theme has no soft light, so the ring goes and the dot stands flat. */
 :root[data-theme="win98"] .dot.live,
@@ -602,6 +623,13 @@
 :root[data-theme="win98"] .graph-node.fork.head .graph-dot,
 :root[data-theme="win98"] .graph-node.trunk.head .graph-dot {
   background: var(--w98-light);
+}
+
+/* After the dot rules above, which are as specific and would flatten it. */
+:root[data-theme="win98"] .graph-node.open .graph-dot {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--w98-light);
+  transform: none;
 }
 
 /* Faint text that the default dims by mixing it with transparent. On silver

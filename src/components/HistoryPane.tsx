@@ -31,6 +31,8 @@ interface Props {
   disabled: boolean;
   /** Opens the commit pane on a row. The click itself types nothing. */
   onOpen: (commit: { id: string; short: string }) => void;
+  /** The commit open in the right-hand column, which its row is marked for. */
+  openId: string | null;
   /**
    * Branches that were squash-merged, and the commit each one became.
    *
@@ -185,6 +187,7 @@ export default function HistoryPane({
   onClose,
   onCommand,
   onOpen,
+  openId,
   onDeleteBranch,
   onTag,
   onReset,
@@ -629,6 +632,7 @@ export default function HistoryPane({
               disabled={disabled}
               onCommand={onCommand}
               onOpen={onOpen}
+              open={row.id === openId}
               onMenu={menu.open}
             />
           ))}
@@ -661,6 +665,7 @@ function Row({
   disabled,
   onCommand,
   onOpen,
+  open,
   onMenu,
 }: {
   row: HistoryRow;
@@ -674,6 +679,7 @@ function Row({
   disabled: boolean;
   onCommand: (command: string, typeOnly: boolean) => void;
   onOpen: (commit: { id: string; short: string }) => void;
+  open: boolean;
   onMenu: (event: ReactMouseEvent, target: Target) => void;
 }) {
   // A click opens the commit pane and types nothing: reading a commit is a
@@ -685,7 +691,8 @@ function Row({
 
   return (
     <button
-      className={`history-row${row.isMerge ? " merge" : ""}${row.isHead ? " head" : ""}`}
+      className={`history-row${row.isMerge ? " merge" : ""}${row.isHead ? " head" : ""}${open ? " open" : ""}`}
+      aria-current={open ? "true" : undefined}
       style={{ top, height: ROW }}
       onClick={(event) => {
         if (event.shiftKey) {
