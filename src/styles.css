@@ -4522,24 +4522,11 @@ button.inbox-check-name.link:hover {
 }
 
 /* The commit open in the right-hand column. A solid wash, for the reason the
-   HEAD tint is one, and a bar down the left edge that is drawn above the
-   sticky canvas: the wash alone gets lost among six lane colours, and the bar
-   is what the eye finds in a page of forty. HEAD keeps its green sha, so a row
-   that is both still says so. */
+   HEAD tint is one. HEAD keeps its green sha, so a row that is both still
+   says so. */
 .history-row.open,
 .history-row.open:hover:not(:disabled) {
   background: color-mix(in oklch, var(--accent) 24%, var(--bg));
-}
-
-.history-row.open::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--accent);
-  z-index: 2;
 }
 
 .history-row.open .history-summary {

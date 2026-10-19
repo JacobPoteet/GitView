@@ -584,10 +584,6 @@
   background: var(--accent);
 }
 
-:root[data-theme="win98"] .history-row.open::after {
-  display: none;
-}
-
 :root[data-theme="win98"] .history-row.open .history-summary,
 :root[data-theme="win98"] .history-row.open .history-sha,
 :root[data-theme="win98"] .history-row.open.head .history-sha {
