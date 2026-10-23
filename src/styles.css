@@ -551,6 +551,87 @@ select:focus-visible,
   width: 8px;
 }
 
+/* The rail's project mode. The head is the fleet's, with the repository's name
+   where the brand was and a way back on its left, so every theme that dresses
+   `.sidebar-head` dresses this one too. */
+.files-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 0 8px 12px;
+}
+
+/* Names are what a prompt would accept, so mono, one size under the fleet's
+   rows: a tree is read down its left edge and wants the density. */
+.tree-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 22px;
+  padding: 2px 6px 2px calc(4px + var(--depth, 0) * 12px);
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+  transition: background 0.12s var(--ease);
+}
+
+.tree-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.tree-row.dir {
+  color: var(--text);
+}
+
+/* Faint by colour, the way a `.gitignore`d file is in every editor. The faint
+   token alone sat ten points under a file's own colour and read as the same
+   grey, so it is mixed a third of the way into the rail behind it. */
+.tree-row.ignored {
+  color: color-mix(in oklch, var(--text-faint), var(--bg-inset) 35%);
+}
+
+/* The file the diff pane is showing, lit like its row in the changes column. */
+.tree-row.open {
+  background: var(--accent-soft);
+}
+
+.tree-twisty {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  color: var(--text-faint);
+}
+
+.tree-twisty svg {
+  transition: transform 0.12s var(--ease);
+}
+
+.tree-row[aria-expanded="true"] .tree-twisty svg {
+  transform: rotate(90deg);
+}
+
+.tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .repo-row-top {
   display: flex;
   align-items: center;

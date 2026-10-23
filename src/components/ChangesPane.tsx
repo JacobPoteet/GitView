@@ -53,7 +53,7 @@ interface Props {
  */
 
 /** One letter per state, in git's own vocabulary. */
-const MARK: Record<FileChange["state"], string> = {
+export const MARK: Record<FileChange["state"], string> = {
   new: "A",
   modified: "M",
   deleted: "D",

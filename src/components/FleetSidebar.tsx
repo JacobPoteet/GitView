@@ -40,6 +40,9 @@ interface Props {
   onRefresh: () => void;
   onQuery: (value: string) => void;
   onSelect: (path: string) => void;
+  /** Swaps the rail for this repository's files. Double-click, the head's
+   *  button, or the row's menu. */
+  onOpenFiles: (path: string) => void;
   onPin: (path: string, pinned: boolean) => void;
   /** The pinned group in its new order, whole rather than as a move. */
   onReorderPins: (paths: string[]) => void;
@@ -193,6 +196,7 @@ function Row({
   slot,
   drag,
   onSelect,
+  onOpenFiles,
   onMenu,
   onDragStart,
   onDragOver,
@@ -212,6 +216,7 @@ function Row({
   slot: number;
   drag: DragRole;
   onSelect: (path: string) => void;
+  onOpenFiles: (path: string) => void;
   onMenu: (event: ReactMouseEvent, repo: RepoState) => void;
   onDragStart: (path: string) => void;
   onDragOver: (path: string) => void;
@@ -262,6 +267,7 @@ function Row({
       <button
         className={`repo-row${home ? " home" : ""}`}
         onClick={() => onSelect(repo.path)}
+        onDoubleClick={() => onOpenFiles(repo.path)}
         // The row carries `draggable` itself. Chromium will not start a
         // parent's drag from inside a button, which is why this used to need a
         // grip, but the button's own drag starts anywhere on it. A press that
@@ -377,6 +383,7 @@ export function drawnOrder(groups: ReturnType<typeof groupRepos>): RepoState[] {
 
 export default function FleetSidebar({
   repos,
+  onOpenFiles,
   prefs,
   selectedPath,
   liveSessions,
@@ -453,6 +460,7 @@ export default function FleetSidebar({
       orderable={inPinnedGroup && orderable}
       drag={inPinnedGroup ? roleFor(repo.path) : "none"}
       onSelect={onSelect}
+      onOpenFiles={onOpenFiles}
       onMenu={menu.open}
       onDragStart={setDragging}
       onDragOver={setOver}
@@ -476,6 +484,8 @@ export default function FleetSidebar({
     const hidden = prefs.get(repo.path)?.hidden === true;
     const live = liveSessions.has(repo.path);
     return [
+      { label: "Show files", title: "Ctrl+Shift+E, or double-click the row", run: () => onOpenFiles(repo.path) },
+      "-",
       {
         label: pinned ? "Unpin" : "Pin to the top",
         run: () => onPin(repo.path, !pinned),
@@ -517,6 +527,29 @@ export default function FleetSidebar({
           </svg>
           GitView
         </span>
+        {/* The way into one project, beside the way back out of it: the files
+            view puts its back button in this same corner. */}
+        <button
+          className="icon-btn"
+          onClick={() => selectedPath && onOpenFiles(selectedPath)}
+          disabled={!selectedPath}
+          title={
+            selectedPath
+              ? `Files of ${repos.find((r) => r.path === selectedPath)?.name ?? "this repository"} (Ctrl+Shift+E)`
+              : "Files: select a repository first"
+          }
+          aria-label="Show files"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M3 2.5v9.5h4M3 7h4M9 5.5h4.5M9 11.5h4.5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
         {/* The inbox belongs here rather than in the repository header: it is a
             question about the whole fleet, and the header only exists once one
             repository is open, which is the moment you least need it. */}
