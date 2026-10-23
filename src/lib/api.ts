@@ -23,6 +23,7 @@ import type {
   Task,
   UpdateCheck,
 } from "./types";
+import type { Tree } from "./tree";
 
 export const api = {
   fleetCached: () => invoke<RepoState[]>("fleet_cached"),
@@ -43,6 +44,13 @@ export const api = {
    */
   repoSquashed: (path: string) => invoke<Squashed[]>("repo_squashed", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
+  /**
+   * Folders of the working tree, one listing each, for the rail's project
+   * mode. `deep` walks every folder under them that is not ignored, up to a
+   * cap. See tree.rs.
+   */
+  repoTree: (path: string, dirs: string[], deep = false) =>
+    invoke<Tree>("repo_tree", { path, dirs, deep }),
   /**
    * One page of the whole DAG. Lanes come packed, see history.rs. With a
    * filter the page is the matches, flat, and `total` counts them.

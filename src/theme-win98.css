@@ -440,6 +440,7 @@
 :root[data-theme="win98"] .row-menu-sub > button.open:not(:disabled),
 :root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected,
 :root[data-theme="win98"] .changes-pane:focus-within .change-row.open,
+:root[data-theme="win98"] .tree-list:focus-within .tree-row.open,
 :root[data-theme="win98"] .settings-nav button.on {
   background: var(--w98-blue);
   color: var(--w98-light);
@@ -447,6 +448,7 @@
 
 :root[data-theme="win98"] .palette-item.active *,
 :root[data-theme="win98"] .changes-pane:focus-within .change-row.open *,
+:root[data-theme="win98"] .tree-list:focus-within .tree-row.open *,
 :root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected *:not(.chip):not(.chip *):not(.dot) {
   color: var(--w98-light);
 }
@@ -455,13 +457,15 @@
    text, as a 98 tree view did. Only the list you are in is navy, so the colour
    says where the keyboard is as well as what is chosen. */
 :root[data-theme="win98"] .repo-row-wrap.selected,
-:root[data-theme="win98"] .change-row.open {
+:root[data-theme="win98"] .change-row.open,
+:root[data-theme="win98"] .tree-row.open {
   background: var(--w98-surface);
   color: var(--text);
 }
 
 /* The focused list's selected row also carries the focus rectangle. */
-:root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected {
+:root[data-theme="win98"] .repo-list:focus-within .repo-row-wrap.selected,
+:root[data-theme="win98"] .tree-list:focus-within .tree-row.open {
   outline: 1px dotted var(--w98-light);
   outline-offset: -2px;
 }
@@ -470,7 +474,8 @@
   border: none;
 }
 
-:root[data-theme="win98"] .repo-row-wrap:hover:not(.selected) {
+:root[data-theme="win98"] .repo-row-wrap:hover:not(.selected),
+:root[data-theme="win98"] .tree-row:hover:not(.open) {
   background: transparent;
 }
 

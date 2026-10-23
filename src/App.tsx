@@ -8,6 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import FleetSidebar, { drawnOrder, groupRepos } from "./components/FleetSidebar";
+import FileTree from "./components/FileTree";
 import TerminalPane, {
   blockOutput,
   closeSession,
@@ -42,7 +43,12 @@ import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
 import HistoryPane from "./components/HistoryPane";
 import OperationBar from "./components/OperationBar";
-import ContextMenu, { isEditable, type MenuAt, type MenuEntry } from "./components/ContextMenu";
+import ContextMenu, {
+  isEditable,
+  menuClosedBy,
+  type MenuAt,
+  type MenuEntry,
+} from "./components/ContextMenu";
 import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
 import InboxPane from "./components/InboxPane";
@@ -57,6 +63,7 @@ import { useTour } from "./hooks/useTour";
 import { useCommandHint } from "./hooks/useCommandHint";
 import { useInbox } from "./hooks/useInbox";
 import { useUpdate } from "./hooks/useUpdate";
+import { useFileTree } from "./hooks/useFileTree";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import { api } from "./lib/api";
 import {
@@ -185,6 +192,12 @@ export default function App() {
   const [repos, setRepos] = useState<RepoState[]>([]);
   const [prefs, setPrefs] = useState<Map<string, RepoPref>>(new Map());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  /**
+   * What the left rail shows: every repository, or the selected one's files.
+   * Held apart from the selection, so Ctrl+1 in the files walks the tree from
+   * one project to the next rather than dropping back to the fleet.
+   */
+  const [railMode, setRailMode] = useState<"fleet" | "files">("fleet");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [changes, setChanges] = useState<FileChange[]>([]);
   /** Why the working tree could not be read. An empty list says "nothing to commit", so a failure needs its own word. */
@@ -466,6 +479,8 @@ export default function App() {
     armAfter,
     settled: inboxSettled,
   } = useInbox(info, setNote);
+  const filesShown = railMode === "files" && selectedPath !== null;
+  const fileTree = useFileTree(selectedPath, filesShown, changes, setNote);
   /**
    * The history is on screen only while the inbox, which outranks it, is not.
    * `historyOpen` alone stays true underneath, which is what puts the history
@@ -967,6 +982,9 @@ export default function App() {
       } else if (chord === "Ctrl+Alt+B") {
         event.preventDefault();
         setChangesShown(settings().layout.changesHidden);
+      } else if (chord === "Ctrl+Shift+E") {
+        event.preventDefault();
+        if (selectedPath) setRailMode((mode) => (mode === "files" ? "fleet" : "files"));
       } else if (chord === "Ctrl+H") {
         event.preventDefault();
         if (selectedPath) toggleHistory();
@@ -1010,8 +1028,9 @@ export default function App() {
         // says closed by the time the event gets here.
         if (target instanceof Element && target.closest(".palette")) return;
         // A right-click menu closes itself on Escape too, and the pane it was
-        // opened over stays. Read from the DOM for the same reason.
-        if (document.querySelector(".row-menu")) return;
+        // opened over stays. The DOM answers when this listener runs first,
+        // and the event when the menu's did; see `menuClosedBy`.
+        if (document.querySelector(".row-menu") || menuClosedBy(event)) return;
         // Escape peels one layer, the one the eye is on, in the order they
         // draw: a dialog, then the inbox, then a commit, then the history, then
         // a diff. It used to close everything under a dialog or the inbox in
@@ -1047,8 +1066,12 @@ export default function App() {
         } else if (historyOpen) {
           setHistoryOpen(false);
           setHistorySeed(null);
-        } else {
+        } else if (diffTarget) {
           setDiffTarget(null);
+        } else {
+          // The rail is the bottom layer: with nothing open over the shell,
+          // Escape steps back out of one project to all of them.
+          setRailMode("fleet");
         }
       }
     }
@@ -1073,6 +1096,7 @@ export default function App() {
     selectedPath,
     tabOf,
     historyOpen,
+    diffTarget,
     toggleHistory,
     info?.gh.version,
     setBatchOpen,
@@ -2031,6 +2055,13 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       }
 
       items.push({
+        id: "action:files",
+        label: `Files of ${selected.name}`,
+        kind: "fleet",
+        hint: "the folders, in the left rail · Ctrl+Shift+E",
+        run: () => setRailMode("files"),
+      });
+      items.push({
         id: "action:history",
         label: `History of ${selected.name}`,
         kind: "fleet",
@@ -2519,30 +2550,50 @@ ${landing} ${cleanup}${warning}${closing}`,
         className="rail"
         style={layout.tasks === null ? undefined : ({ "--tasks-pct": layout.tasks } as CSSProperties)}
       >
-        <FleetSidebar
-          repos={repos}
-          watching={roots.length > 0}
-          prefs={prefs}
-          github={repoGithub}
-          inboxWaiting={inboxWaiting}
-          onOpenInbox={info?.gh.version ? () => setInboxOpen(true) : null}
-          selectedPath={selectedPath}
-          liveSessions={livePaths}
-          agents={agents}
-          query={query}
-          scanning={scanning}
-          refreshing={refreshing}
-          onRefresh={refreshAll}
-          onQuery={setQuery}
-          onSelect={setSelectedPath}
-          onPin={setPinned}
-          onReorderPins={reorderPins}
-          onHide={setHidden}
-          onCopy={copy}
-          onCloseShell={askCloseShell}
-          onManageRoots={() => setSettingsOpen("folders")}
-          onOpenSettings={() => setSettingsOpen("terminal")}
-        />
+        {filesShown && selected ? (
+          <FileTree
+            repo={selected}
+            tree={fileTree}
+            changes={changes}
+            openFile={diffTarget?.file ?? null}
+            disabled={!shellReady}
+            shell={shell}
+            onBack={() => setRailMode("fleet")}
+            onOpenDiff={openDiff}
+            onFileHistory={openFileHistory}
+            onCommand={emit}
+            onCopy={copy}
+          />
+        ) : (
+          <FleetSidebar
+            repos={repos}
+            watching={roots.length > 0}
+            prefs={prefs}
+            github={repoGithub}
+            inboxWaiting={inboxWaiting}
+            onOpenInbox={info?.gh.version ? () => setInboxOpen(true) : null}
+            selectedPath={selectedPath}
+            liveSessions={livePaths}
+            agents={agents}
+            query={query}
+            scanning={scanning}
+            refreshing={refreshing}
+            onRefresh={refreshAll}
+            onQuery={setQuery}
+            onSelect={setSelectedPath}
+            onOpenFiles={(path) => {
+              setSelectedPath(path);
+              setRailMode("files");
+            }}
+            onPin={setPinned}
+            onReorderPins={reorderPins}
+            onHide={setHidden}
+            onCopy={copy}
+            onCloseShell={askCloseShell}
+            onManageRoots={() => setSettingsOpen("folders")}
+            onOpenSettings={() => setSettingsOpen("terminal")}
+          />
+        )}
         {/* Zero tall, so the handle can sit on the tasks panel's top border
             whatever height its list gives it. */}
         <div className="rail-split">

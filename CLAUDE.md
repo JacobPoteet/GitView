@@ -65,10 +65,11 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | `src/lib/themes.ts` | The theme registry and `applyTheme`. A theme's terminal palette, and the id the settings store |
 | `src/theme-win98.css` | The Windows 98 theme. Scoped to its attribute, so the default never sees a rule from it |
 | `src/theme-lcars.css` | The LCARS theme, the same way. Its elbows are pseudo-elements on `.rail` and a gradient on the status bar, so no component knows about them |
-| `src/hooks/` | State that left `App.tsx`: `useInbox`, `useBatch`, `useUpdate`, `useTour`, `useCommandHint`. Each owns its state and returns what the render needs; a feature that grows a handful of state goes here rather than into `App` |
+| `src/hooks/` | State that left `App.tsx`: `useInbox`, `useBatch`, `useUpdate`, `useTour`, `useCommandHint`, `useFileTree`. Each owns its state and returns what the render needs; a feature that grows a handful of state goes here rather than into `App` |
 | `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
 | `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
 | `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index, and one commit against its first parent |
+| `src-tauri/src/tree.rs` | The rail's file tree: one folder of the working tree per listing, from the disk, with `.gitignore` asked through `git2` only for what the index does not track |
 | `src-tauri/src/blame.rs` | Who last wrote each line of a file, as of a commit. Hunks, not lines, capped at 6000 like the diff |
 | `src-tauri/src/history.rs` | The whole DAG, a page at a time, with its lanes already packed |
 | `src-tauri/src/signing.rs` | Whether a commit carries a signature and of which scheme. Presence only, never verification |

@@ -82,6 +82,23 @@ export function useContextMenu<T>() {
 }
 
 /**
+ * Escape presses a menu closed itself on.
+ *
+ * `App` peels a layer on Escape and has to leave everything alone when the
+ * press was the menu's. Looking for `.row-menu` in the DOM only works while
+ * `App`'s window listener runs first: once it re-registers after the menu's,
+ * the menu's close is flushed in the microtask between the two listeners, and
+ * the menu is gone by the time `App` looks. The diff behind a menu closed
+ * along with it, and with the files in the rail, the rail went back to the
+ * fleet. Whichever listener runs first, the event itself says.
+ */
+const closedOnEscape = new WeakSet<Event>();
+
+export function menuClosedBy(event: Event): boolean {
+  return closedOnEscape.has(event);
+}
+
+/**
  * The menu itself, in viewport coordinates.
  *
  * Anything that is not the menu closes it: a click elsewhere, Escape, a list
@@ -130,7 +147,9 @@ export default function ContextMenu({
       onClose();
     }
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      closedOnEscape.add(event);
+      onClose();
     }
     window.addEventListener("mousedown", dismiss);
     window.addEventListener("keydown", onKey);

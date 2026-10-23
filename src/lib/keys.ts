@@ -24,13 +24,14 @@ export const SHORTCUTS: Shortcut[] = [
   { chord: "Ctrl+1 to Ctrl+9", does: "Select the first nine repositories, in the order the sidebar draws them" },
   { chord: "Ctrl+`", does: "Focus the terminal" },
   { chord: "Ctrl+Shift+C", does: "Focus the commit subject" },
+  { chord: "Ctrl+Shift+E", does: "Show the open repository's files in the left rail, or every repository again" },
   { chord: "Ctrl+H", does: "Open or close the history" },
   { chord: "Ctrl+I", does: "Open or close the inbox" },
   { chord: "Ctrl+,", does: "Open or close the settings" },
   { chord: "Ctrl+Alt+B", does: "Hide or show the changes column" },
   { chord: "Ctrl+F", does: "Search, in whichever surface has focus: the scrollback, the history, or the repositories" },
   { chord: "Ctrl+Enter", does: "Commit, from the subject or the description" },
-  { chord: "Escape", does: "Close the layer on top, one per press, or leave the field" },
+  { chord: "Escape", does: "Close the layer on top, one per press, or leave the field. Under everything, the files go back to every repository" },
 ];
 
 /** The chords `App` acts on, as `chordOf` spells them. `Ctrl+Enter` belongs to the commit box. */
@@ -47,6 +48,7 @@ const CLAIMED = new Set([
   "Ctrl+9",
   "Ctrl+`",
   "Ctrl+Shift+C",
+  "Ctrl+Shift+E",
   "Ctrl+H",
   "Ctrl+I",
   "Ctrl+,",

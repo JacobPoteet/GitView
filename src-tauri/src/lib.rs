@@ -20,6 +20,7 @@ pub mod settings;
 pub mod signing;
 pub mod squash;
 pub mod tasks;
+pub mod tree;
 pub mod update;
 
 use std::path::PathBuf;
@@ -176,6 +177,13 @@ async fn fleet_scan(
 #[tauri::command]
 async fn repo_changes(path: String) -> Result<Vec<FileChange>, String> {
     blocking(move || fleet::read_changes(&PathBuf::from(&path))).await?
+}
+
+/// Folders of the working tree for the rail's project mode, one listing each.
+/// `deep` walks every folder under them that is not ignored. See tree.rs.
+#[tauri::command]
+async fn repo_tree(path: String, dirs: Vec<String>, deep: bool) -> Result<tree::Tree, String> {
+    blocking(move || tree::read(&PathBuf::from(&path), &dirs, deep)).await?
 }
 
 /// One file's diff, on one side of the index.
@@ -773,6 +781,7 @@ pub fn run() {
             repo_history,
             repo_squashed,
             repo_changes,
+            repo_tree,
             repo_diff,
             repo_commit,
             repo_commit_file,
