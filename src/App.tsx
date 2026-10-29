@@ -234,6 +234,12 @@ export default function App() {
    * filter was cleared; see HistoryPane's `seed`.
    */
   const [historySeed, setHistorySeed] = useState<{ query: string; epoch: number } | null>(null);
+  /**
+   * The path the history's filter field names, as the pane reports it, so the
+   * file tree can light that row. Read off the field rather than the seed,
+   * because the field is what the person can edit afterwards.
+   */
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   /** The whole history, with no filter left over from a file's. */
   const openHistory = useCallback(() => {
     setHistorySeed(null);
@@ -244,6 +250,9 @@ export default function App() {
     // None here has one, and the filter would still match on the first
     // half; the field is a filter rather than a form.
     setHistorySeed((was) => ({ query: `path:${file}`, epoch: (was?.epoch ?? 0) + 1 }));
+    // The pane reports this itself once it reads the seed; setting it here
+    // lights the tree row in the same render as the click.
+    setHistoryPath(file);
     setCommitTarget(null);
     setDiffTarget(null);
     setHistoryOpen(true);
@@ -767,16 +776,21 @@ export default function App() {
   const openDiff = useCallback(
     (file: string, staged: boolean) => {
       if (!selectedPath) return;
-      // The commit pane outranks the diff in the column, so a click in the
-      // changes column while a commit is up would otherwise do nothing visible.
+      // The commit pane and the history both outrank the diff in the column,
+      // so a click in the changes column or the file tree while either is up
+      // would otherwise do nothing visible. A click on the file already open
+      // closes it, but only when the diff was the pane on screen to close.
+      const covered = historyOpen || (commitTarget !== null && commitFile !== null);
       setCommitTarget(null);
+      setHistoryOpen(false);
+      setHistorySeed(null);
       setDiffTarget((current) =>
-        current && current.file === file && current.staged === staged
+        current && current.file === file && current.staged === staged && !covered
           ? null
           : { repoPath: selectedPath, file, staged },
       );
     },
-    [selectedPath],
+    [selectedPath, historyOpen, commitTarget, commitFile],
   );
 
   const openCommit = useCallback(
@@ -2352,6 +2366,19 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
   }, [selected, shell, shellReady, emit]);
 
   /**
+   * The file or folder the main column's pane is about, which the file tree
+   * lights. It follows the pane's precedence below, so the lit row is always
+   * the one on screen.
+   */
+  const panePath = inboxOpen
+    ? null
+    : commitTarget && commitFile && selected
+      ? commitFile
+      : historyOpen && selected
+        ? historyPath
+        : (diffTarget?.file ?? null);
+
+  /**
    * The pane sharing the main column with the terminal, or nothing.
    *
    * One at a time, and never on top of the shell. These three used to be
@@ -2489,6 +2516,7 @@ ${landing} ${cleanup}${warning}${closing}`,
       onCopy={copy}
       onError={setNote}
       seed={historySeed}
+      onPathFilter={setHistoryPath}
     />
   ) : diffTarget ? (
     <DiffPane
@@ -2555,7 +2583,7 @@ ${landing} ${cleanup}${warning}${closing}`,
             repo={selected}
             tree={fileTree}
             changes={changes}
-            openFile={diffTarget?.file ?? null}
+            openPath={panePath}
             disabled={!shellReady}
             shell={shell}
             onBack={() => setRailMode("fleet")}

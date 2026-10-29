@@ -603,7 +603,8 @@ select:focus-visible,
   color: color-mix(in oklch, var(--text-faint), var(--bg-inset) 35%);
 }
 
-/* The file the diff pane is showing, lit like its row in the changes column. */
+/* The file or folder the main column is about (a diff, a commit's file, a
+   history filtered to a path), lit like the open row in the changes column. */
 .tree-row.open {
   background: var(--accent-soft);
 }

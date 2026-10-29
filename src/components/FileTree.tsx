@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import PaneNote from "./PaneNote";
 import { MARK } from "./ChangesPane";
@@ -11,8 +11,12 @@ interface Props {
   repo: RepoState;
   tree: Tree;
   changes: FileChange[];
-  /** The file the diff pane is showing, lit the way its changes row is. */
-  openFile: string | null;
+  /**
+   * The file or folder the main column is showing: the diff's file, the
+   * commit's picked file, or the history's `path:` filter. Lit the way the
+   * changes column lights its open row.
+   */
+  openPath: string | null;
   /** The shell is not at a prompt yet, so nothing that types can run. */
   disabled: boolean;
   shell: ShellKind;
@@ -40,7 +44,7 @@ export default function FileTree({
   repo,
   tree,
   changes,
-  openFile,
+  openPath,
   disabled,
   shell,
   onBack,
@@ -50,6 +54,16 @@ export default function FileTree({
   onCopy,
 }: Props) {
   const menu = useContextMenu<TreeEntry>();
+  const list = useRef<HTMLDivElement | null>(null);
+
+  // A file opened from the changes column or the commit's list can be lit
+  // below the fold. Only on a change of path, so a scroll away from it stays.
+  useEffect(() => {
+    if (!openPath) return;
+    list.current
+      ?.querySelector<HTMLElement>(`[data-path="${CSS.escape(openPath)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [openPath]);
 
   function activate(entry: TreeEntry, deep: boolean) {
     if (entry.dir) {
@@ -182,6 +196,7 @@ export default function FileTree({
       </div>
 
       <div
+        ref={list}
         className="tree-list"
         role="tree"
         // The rows are buttons and take the focus themselves; this lets a
@@ -207,11 +222,11 @@ export default function FileTree({
                 role="treeitem"
                 aria-level={depth + 1}
                 aria-expanded={entry.dir ? open : undefined}
-                aria-selected={!entry.dir && entry.path === openFile}
+                aria-selected={entry.path === openPath}
                 data-path={entry.path}
                 className={
                   `tree-row${entry.dir ? " dir" : ""}${entry.ignored ? " ignored" : ""}` +
-                  (!entry.dir && entry.path === openFile ? " open" : "")
+                  (entry.path === openPath ? " open" : "")
                 }
                 style={{ "--depth": depth } as CSSProperties}
                 onClick={(event) => activate(entry, event.ctrlKey || event.metaKey)}
