@@ -242,6 +242,20 @@ async fn repo_blame(path: String, sha: String, file: String) -> Result<blame::Bl
     blocking(move || blame::read_blame(&PathBuf::from(&path), &sha, &file)).await
 }
 
+/// The same gutter for the file view: the file on disk, with its uncommitted
+/// lines left unattributed. See `blame.rs`.
+#[tauri::command]
+async fn repo_blame_worktree(path: String, file: String) -> Result<blame::Blame, String> {
+    blocking(move || blame::read_blame_worktree(&PathBuf::from(&path), &file)).await
+}
+
+/// One file as it is on disk, whole, with what is uncommitted marked. The file
+/// tree's click opens this. See `diff.rs`.
+#[tauri::command]
+async fn repo_file(path: String, file: String) -> Result<FileDiff, String> {
+    blocking(move || diff::read_worktree(&PathBuf::from(&path), &file)).await
+}
+
 /// Writes one file as a commit had it, under GitView's data folder, and hands
 /// back the path for the frontend to type `Invoke-Item` on. See `diff.rs`.
 #[tauri::command]
@@ -787,6 +801,8 @@ pub fn run() {
             repo_commit_file,
             repo_diff_image,
             repo_blame,
+            repo_blame_worktree,
+            repo_file,
             diff_hunk_patch,
             commit_file_export,
             repo_prefs,

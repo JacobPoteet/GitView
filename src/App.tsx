@@ -9,6 +9,7 @@ import {
 } from "react";
 import FleetSidebar, { drawnOrder, groupRepos } from "./components/FleetSidebar";
 import FileTree from "./components/FileTree";
+import { sideFor } from "./lib/tree";
 import TerminalPane, {
   blockOutput,
   closeSession,
@@ -41,6 +42,7 @@ import ChangesPane from "./components/ChangesPane";
 import CommitFilesPane from "./components/CommitFilesPane";
 import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
+import FilePane from "./components/FilePane";
 import HistoryPane from "./components/HistoryPane";
 import OperationBar from "./components/OperationBar";
 import ContextMenu, {
@@ -108,6 +110,7 @@ import {
   type CommitDiff,
   type CommitTarget,
   type DiffTarget,
+  type FileTarget,
   type FileChange,
   type RepoPref,
   type BranchScope,
@@ -220,6 +223,15 @@ export default function App() {
    * because the side has to be able to follow a file that has just been staged.
    */
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
+  /**
+   * The file the file view is open on, from a click in the file tree.
+   *
+   * The bottom of the main column's layers: the diff, the history and a
+   * commit all draw over it and leave it set, so closing what was opened from
+   * its header puts the file back, the way closing a commit puts the history
+   * back. A click on another file in the tree clears what covers it.
+   */
+  const [fileTarget, setFileTarget] = useState<FileTarget | null>(null);
   /**
    * Whether the scrolling history is up.
    *
@@ -773,6 +785,23 @@ export default function App() {
     }
   }, [changes, diffTarget, selectedPath]);
 
+  useEffect(() => {
+    if (fileTarget && fileTarget.repoPath !== selectedPath) setFileTarget(null);
+  }, [fileTarget, selectedPath]);
+
+  /** A file in the tree, read-only, with everything over it closed. */
+  const openFile = useCallback(
+    (file: string) => {
+      if (!selectedPath) return;
+      setCommitTarget(null);
+      setHistoryOpen(false);
+      setHistorySeed(null);
+      setDiffTarget(null);
+      setFileTarget({ repoPath: selectedPath, file });
+    },
+    [selectedPath],
+  );
+
   const openDiff = useCallback(
     (file: string, staged: boolean) => {
       if (!selectedPath) return;
@@ -1082,6 +1111,8 @@ export default function App() {
           setHistorySeed(null);
         } else if (diffTarget) {
           setDiffTarget(null);
+        } else if (fileTarget) {
+          setFileTarget(null);
         } else {
           // The rail is the bottom layer: with nothing open over the shell,
           // Escape steps back out of one project to all of them.
@@ -1111,6 +1142,7 @@ export default function App() {
     tabOf,
     historyOpen,
     diffTarget,
+    fileTarget,
     toggleHistory,
     info?.gh.version,
     setBatchOpen,
@@ -2376,7 +2408,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
       ? commitFile
       : historyOpen && selected
         ? historyPath
-        : (diffTarget?.file ?? null);
+        : (diffTarget?.file ?? fileTarget?.file ?? null);
 
   /**
    * The pane sharing the main column with the terminal, or nothing.
@@ -2533,6 +2565,19 @@ ${landing} ${cleanup}${warning}${closing}`,
       onCommand={emit}
       onError={setNote}
     />
+  ) : fileTarget ? (
+    <FilePane
+      target={fileTarget}
+      diffSide={sideFor(changes, fileTarget.file)}
+      disabled={!shellReady}
+      shell={shell}
+      reloadKey={changes}
+      onOpenDiff={(staged) => openDiff(fileTarget.file, staged)}
+      onFileHistory={() => openFileHistory(fileTarget.file)}
+      onOpenCommit={openCommit}
+      onClose={() => setFileTarget(null)}
+      onCommand={emit}
+    />
   ) : null;
 
   return (
@@ -2587,6 +2632,7 @@ ${landing} ${cleanup}${warning}${closing}`,
             disabled={!shellReady}
             shell={shell}
             onBack={() => setRailMode("fleet")}
+            onOpenFile={openFile}
             onOpenDiff={openDiff}
             onFileHistory={openFileHistory}
             onCommand={emit}

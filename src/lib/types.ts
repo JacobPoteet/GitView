@@ -251,7 +251,8 @@ export interface FileDiff {
   /** Where a rename came from. Null for everything else. */
   oldPath: string | null;
   staged: boolean;
-  status: FileChange["state"];
+  /** `unchanged` comes only from the file view, for a file with nothing uncommitted. */
+  status: FileChange["state"] | "unchanged";
   binary: boolean;
   additions: number;
   deletions: number;
@@ -442,6 +443,12 @@ export interface DiffTarget {
   repoPath: string;
   file: string;
   staged: boolean;
+}
+
+/** The file the file view is open on. Carries the repository so a selection change closes it. */
+export interface FileTarget {
+  repoPath: string;
+  file: string;
 }
 
 /** What one sweep did, including any preferences that followed a renamed folder. */

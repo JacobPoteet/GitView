@@ -21,6 +21,8 @@ interface Props {
   disabled: boolean;
   shell: ShellKind;
   onBack: () => void;
+  /** The file view, read-only, which is what a click on a file opens. */
+  onOpenFile: (file: string) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
   onFileHistory: (path: string) => void;
   onCommand: (command: string, typeOnly: boolean) => void;
@@ -30,11 +32,10 @@ interface Props {
 /**
  * The rail's project mode: one repository's folders, where the fleet was.
  *
- * GitView is not an editor, so a file here is something to ask git about. A
- * changed file opens its diff, the way its row in the changes column does, and
- * any other file or folder opens the history filtered to its path. Opening the
- * file itself is on the right-click menu, typed as `Invoke-Item` like the
- * changes column's Open.
+ * A click on a file opens it read-only in the file view, where its diff, its
+ * history and its blame are a button each. GitView is still not an editor:
+ * editing it is Open, on the view and on the right-click menu, typed as
+ * `Invoke-Item` like the changes column's Open.
  *
  * There is no `cd` here on purpose. Every command GitView types names its
  * paths from the repository's root, so a prompt standing anywhere else would
@@ -48,6 +49,7 @@ export default function FileTree({
   disabled,
   shell,
   onBack,
+  onOpenFile,
   onOpenDiff,
   onFileHistory,
   onCommand,
@@ -66,13 +68,8 @@ export default function FileTree({
   }, [openPath]);
 
   function activate(entry: TreeEntry, deep: boolean) {
-    if (entry.dir) {
-      tree.toggle(entry.path, deep);
-      return;
-    }
-    const staged = sideFor(changes, entry.path);
-    if (staged === null) onFileHistory(entry.path);
-    else onOpenDiff(entry.path, staged);
+    if (entry.dir) tree.toggle(entry.path, deep);
+    else onOpenFile(entry.path);
   }
 
   function entryMenu(entry: TreeEntry): MenuEntry[] {
@@ -273,6 +270,6 @@ function rowTitle(entry: TreeEntry, changed: boolean): string {
   if (entry.dir) {
     return `${entry.path}${ignored}\n\nCtrl+click opens or closes every folder inside`;
   }
-  const does = changed ? "Open the diff" : `History of this file: git log -- ${entry.path}`;
-  return `${entry.path}${ignored}\n\n${does}`;
+  const changes = changed ? "\nNot committed yet: the view marks what changed" : "";
+  return `${entry.path}${ignored}${changes}\n\nClick to view it`;
 }

@@ -65,6 +65,11 @@ export const api = {
   /** Who last touched each line of a file, as of a commit. Hunks, not lines. */
   repoBlame: (path: string, sha: string, file: string) =>
     invoke<Blame>("repo_blame", { path, sha, file }),
+  /** Blame for the file on disk. An uncommitted line comes back with an empty `id`. */
+  repoBlameWorktree: (path: string, file: string) =>
+    invoke<Blame>("repo_blame_worktree", { path, file }),
+  /** One file on disk, whole, as a single hunk with what is uncommitted marked. */
+  repoFile: (path: string, file: string) => invoke<FileDiff>("repo_file", { path, file }),
   repoCommitFile: (path: string, sha: string, file: string) =>
     invoke<FileDiff>("repo_commit_file", { path, sha, file }),
   /**

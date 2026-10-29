@@ -390,6 +390,148 @@ fn expand(
     out
 }
 
+// ----------------------------------------------------- one working-tree file
+
+/// Context wide enough that a changed file comes back as one hunk holding all
+/// of it. Not `u32::MAX`: xdiff keeps the context in a C `long`, which is 32
+/// bits on Windows, and adds it to line numbers.
+const WHOLE: u32 = 1 << 24;
+
+/// git's own test for binary: a NUL anywhere in the first 8000 bytes.
+const SNIFF: u64 = 8000;
+
+/// One file as it is on disk, whole, for the file view.
+///
+/// The rows are a diff's rows so the pane draws them with `DiffHunks`. A file
+/// with something uncommitted is HEAD against the working tree, through the
+/// index, with context wide enough to hold the whole file, so its `+` and `-`
+/// rows say what changed since the last commit, staged or not. Anything else
+/// has no delta and is read off the disk as one hunk of context, which covers
+/// an ignored file as well as an unchanged one.
+///
+/// No pathspec, for the reason `build` gives: a renamed file would come back
+/// as an untracked one with every line marked new.
+pub fn read_worktree(repo_path: &Path, file: &str) -> FileDiff {
+    let repo = match Repository::open(repo_path) {
+        Ok(repo) => repo,
+        Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
+    };
+    let diff = match build_whole(&repo) {
+        Ok(diff) => diff,
+        Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
+    };
+    if let Some(idx) = locate(&diff, file) {
+        if let Some(delta) = diff.get_delta(idx) {
+            // A delete that matched on its old path is a file no longer on disk,
+            // and the plain read says so in its own words.
+            if delta.status() != Delta::Deleted {
+                return expand(&repo, &diff, idx, delta, true, FileDiff::empty(file, false));
+            }
+        }
+    }
+    read_plain(&repo, file)
+}
+
+fn build_whole(repo: &Repository) -> Result<git2::Diff<'_>, git2::Error> {
+    let mut opts = DiffOptions::new();
+    opts.context_lines(WHOLE)
+        .include_typechange(true)
+        .include_untracked(true)
+        .show_untracked_content(true)
+        .recurse_untracked_dirs(true);
+    let tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    let mut diff = repo.diff_tree_to_workdir_with_index(tree.as_ref(), Some(&mut opts))?;
+    let mut finder = DiffFindOptions::new();
+    finder.renames(true).copies(false);
+    let _ = diff.find_similar(Some(&mut finder));
+    Ok(diff)
+}
+
+/// A file with nothing uncommitted, line by line off the disk, stopping at the
+/// cap rather than reading a two-gigabyte ignored database to throw it away.
+fn read_plain(repo: &Repository, file: &str) -> FileDiff {
+    use std::io::{BufRead, BufReader, Read};
+
+    let mut out = FileDiff::empty(file, false);
+    let Some(root) = repo.workdir() else {
+        out.error = Some("The repository has no working tree.".to_string());
+        return out;
+    };
+    let full = root.join(file);
+    out.empty = false;
+    out.status = "unchanged".to_string();
+    if let Some(mime) = image_mime(file) {
+        out.image = Some(ImageInfo {
+            mime: mime.to_string(),
+            old_size: None,
+            new_size: std::fs::metadata(&full).ok().map(|m| m.len()),
+        });
+    }
+
+    let handle = match std::fs::File::open(&full) {
+        Ok(handle) => handle,
+        Err(err) => {
+            out.error = Some(err.to_string());
+            return out;
+        }
+    };
+    let mut reader = BufReader::new(handle);
+    let mut head = Vec::new();
+    if let Err(err) = (&mut reader).take(SNIFF).read_to_end(&mut head) {
+        out.error = Some(err.to_string());
+        return out;
+    }
+    if head.contains(&0) {
+        out.binary = true;
+        return out;
+    }
+
+    let mut reader = std::io::Cursor::new(head).chain(reader);
+    let mut lines = Vec::new();
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        match reader.read_until(b'\n', &mut raw) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(err) => {
+                out.error = Some(err.to_string());
+                return out;
+            }
+        }
+        if lines.len() >= MAX_LINES {
+            out.truncated = true;
+            break;
+        }
+        let decoded = String::from_utf8_lossy(&raw);
+        let text = decoded.trim_end_matches(['\n', '\r']);
+        let clipped = text.chars().count() > MAX_LINE;
+        let n = lines.len() as u32 + 1;
+        lines.push(DiffLine {
+            origin: ' ',
+            old: Some(n),
+            new: Some(n),
+            text: if clipped {
+                text.chars().take(MAX_LINE).collect()
+            } else {
+                text.to_string()
+            },
+            clipped,
+        });
+    }
+
+    let count = lines.len() as u32;
+    out.hunks.push(DiffHunk {
+        header: String::new(),
+        old_start: 1,
+        old_lines: count,
+        new_start: 1,
+        new_lines: count,
+        lines,
+    });
+    out
+}
+
 // -------------------------------------------------------------- one commit
 
 /// One file a commit touched, as a row in the commit pane's list. The hunks
@@ -584,6 +726,21 @@ pub fn read_image(
     new_side: bool,
 ) -> Result<Vec<u8>, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    // The unstaged new side is the file on disk whether or not it has a diff,
+    // and the file view asks for an image with nothing uncommitted.
+    if sha.is_none() && !staged && new_side {
+        let root = repo
+            .workdir()
+            .ok_or("The repository has no working tree.")?;
+        let full = root.join(file);
+        let size = std::fs::metadata(&full).map_err(|e| e.to_string())?.len();
+        if size > MAX_IMAGE {
+            return Err(format!(
+                "{file} is {size} bytes, over the {MAX_IMAGE} byte preview limit."
+            ));
+        }
+        return std::fs::read(full).map_err(|e| e.to_string());
+    }
     let diff = match sha {
         Some(sha) => build_commit(&repo, sha).map(|(_, diff)| diff),
         None => build(&repo, staged),
@@ -602,8 +759,7 @@ pub fn read_image(
         let which = if new_side { "new" } else { "old" };
         return Err(format!("{file} has no {which} side."));
     }
-    let on_disk = new_side && sha.is_none() && !staged;
-    let size = side_size(&repo, side, on_disk).ok_or("The size could not be read.")?;
+    let size = side_size(&repo, side, false).ok_or("The size could not be read.")?;
     let side = if new_side {
         delta.new_file()
     } else {
@@ -613,13 +769,6 @@ pub fn read_image(
         return Err(format!(
             "{file} is {size} bytes, over the {MAX_IMAGE} byte preview limit."
         ));
-    }
-    if on_disk {
-        let rel = side.path().ok_or("The file has no path.")?;
-        let root = repo
-            .workdir()
-            .ok_or("The repository has no working tree.")?;
-        return std::fs::read(root.join(rel)).map_err(|e| e.to_string());
     }
     repo.find_blob(side.id())
         .map(|blob| blob.content().to_vec())
@@ -1443,5 +1592,102 @@ two
         assert!(!svg.hunks.is_empty());
         assert_eq!(svg.image.expect("an image").mime, "image/svg+xml");
         assert!(read_file(&fixture.dir, "a.txt", false).image.is_none());
+    }
+
+    fn texts(diff: &FileDiff, origin: char) -> Vec<String> {
+        diff.hunks
+            .iter()
+            .flat_map(|hunk| hunk.lines.iter())
+            .filter(|line| line.origin == origin)
+            .map(|line| line.text.clone())
+            .collect()
+    }
+
+    /// A committed file with nothing uncommitted is read off the disk as one
+    /// hunk of context, numbered from 1, with no marks.
+    #[test]
+    fn the_file_view_reads_an_unchanged_file_whole() {
+        let fixture = Fixture::new("whole-plain");
+        fixture.write("a.txt", "one\r\ntwo\nthree");
+        fixture.stage("a.txt");
+        fixture.commit("first");
+
+        let file = read_worktree(&fixture.dir, "a.txt");
+        assert!(file.error.is_none(), "{:?}", file.error);
+        assert_eq!(file.status, "unchanged");
+        assert_eq!(file.hunks.len(), 1);
+        assert_eq!(texts(&file, ' '), ["one", "two", "three"]);
+        let numbers: Vec<_> = file.hunks[0].lines.iter().map(|l| l.new).collect();
+        assert_eq!(numbers, [Some(1), Some(2), Some(3)]);
+    }
+
+    /// A changed file is still the whole file, in one hunk, with what is
+    /// uncommitted marked: staged and unstaged alike, against HEAD.
+    #[test]
+    fn the_file_view_marks_what_is_uncommitted_in_the_whole_file() {
+        let fixture = Fixture::new("whole-changed");
+        let body: String = (1..=40).map(|n| format!("line {n}\n")).collect();
+        fixture.write("a.txt", &body);
+        fixture.stage("a.txt");
+        fixture.commit("first");
+
+        let staged = body.replace("line 2\n", "line two\n");
+        fixture.write("a.txt", &staged);
+        fixture.stage("a.txt");
+        fixture.write("a.txt", &staged.replace("line 39\n", ""));
+
+        let file = read_worktree(&fixture.dir, "a.txt");
+        assert_eq!(file.status, "modified");
+        assert_eq!(file.hunks.len(), 1, "context wide enough for one hunk");
+        assert_eq!(texts(&file, '+'), ["line two"]);
+        assert_eq!(texts(&file, '-'), ["line 2", "line 39"]);
+        assert_eq!(texts(&file, ' ').len(), 38);
+    }
+
+    /// An untracked file is all new; a binary one says so and has no rows.
+    #[test]
+    fn the_file_view_reads_untracked_and_binary_files() {
+        let fixture = Fixture::new("whole-untracked");
+        fixture.write("new.txt", "a\nb\n");
+        std::fs::write(fixture.dir.join("blob.bin"), [1, 0, 2]).unwrap();
+        // An ignored file has no delta at all, and is read off the disk.
+        fixture.write(".gitignore", "blob.bin\n");
+
+        let new = read_worktree(&fixture.dir, "new.txt");
+        assert_eq!(texts(&new, '+'), ["a", "b"]);
+        let blob = read_worktree(&fixture.dir, "blob.bin");
+        assert!(blob.binary);
+        assert!(blob.hunks.is_empty());
+    }
+
+    /// The plain read stops at the cap and says it did.
+    #[test]
+    fn the_file_view_stops_at_the_cap() {
+        let fixture = Fixture::new("whole-cap");
+        let body: String = (0..MAX_LINES + 5).map(|n| format!("{n}\n")).collect();
+        fixture.write("big.txt", &body);
+        fixture.stage("big.txt");
+        fixture.commit("first");
+
+        let file = read_worktree(&fixture.dir, "big.txt");
+        assert!(file.truncated);
+        assert_eq!(file.hunks[0].lines.len(), MAX_LINES);
+    }
+
+    /// An image with nothing uncommitted still reads back from the disk.
+    #[test]
+    fn the_file_view_reads_an_unchanged_image() {
+        let fixture = Fixture::new("whole-image");
+        std::fs::write(fixture.dir.join("logo.png"), png(3)).unwrap();
+        fixture.stage("logo.png");
+        fixture.commit("first");
+
+        let file = read_worktree(&fixture.dir, "logo.png");
+        let info = file.image.expect("an image");
+        assert_eq!((info.old_size, info.new_size), (None, Some(11)));
+        assert_eq!(
+            read_image(&fixture.dir, "logo.png", false, None, true).unwrap(),
+            png(3)
+        );
     }
 }

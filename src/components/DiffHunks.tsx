@@ -5,7 +5,7 @@ import { ageBucket, relativeTime, type BlameHunk, type FileDiff } from "../lib/t
 
 /**
  * The rows of one file's diff: the gutters, the sign, the text, and the `@@`
- * band over each hunk. Shared by the working-tree pane and the commit pane,
+ * band over each hunk. Shared by the working-tree pane, the commit pane and the file view,
  * which read different diffs and draw the same rows.
  *
  * The hunk band takes an optional action. The working-tree pane passes the
@@ -30,6 +30,14 @@ interface Props {
   onBlameCommit?: (commit: { id: string; short: string }) => void;
   /** Where to read an image's bytes from. Only read when the file is one. */
   imageSource?: ImageSource;
+  /**
+   * The file view's reading of the rows: one hunk holding the whole file, so
+   * no `@@` band, one line number, and no sign column. A `+` row is a line not
+   * committed yet and gets a bar in the gutter rather than a green row; a `-`
+   * row is not in the file, so it is not drawn, and the line after it carries
+   * a rule where it was.
+   */
+  whole?: boolean;
 }
 
 /**
@@ -61,6 +69,7 @@ export default function DiffHunks({
   blame,
   onBlameCommit,
   imageSource,
+  whole = false,
 }: Props) {
   // The gutter says the sha and the age once per run of lines from one
   // commit, on the first line of the run, and holds its tint for the rest:
@@ -101,37 +110,63 @@ export default function DiffHunks({
           Per-hunk `min-width` gave each hunk its own, so scrolling right to
           read a 600-character line carried the short hunks off the left edge
           and out of the pane. */}
-      <div className={`diff-hunks${blame ? " blamed" : ""}`}>
+      <div className={`diff-hunks${blame ? " blamed" : ""}${whole ? " whole" : ""}`}>
         {diff.hunks.map((hunk, index) => {
           lastBlame = undefined;
           const { range, context } = splitHeader(hunk.header);
+          // In the whole file, the `-` rows before a drawn line become a rule
+          // on that line, and a run at the very end goes on the last one.
+          let gone = false;
+          let lastDrawn = -1;
+          for (let i = hunk.lines.length - 1; whole && i >= 0; i -= 1) {
+            if (hunk.lines[i].origin === " " || hunk.lines[i].origin === "+") {
+              lastDrawn = i;
+              break;
+            }
+          }
+          const goneAtEnd = whole && hunk.lines[hunk.lines.length - 1]?.origin === "-";
           return (
             <div className="diff-hunk" key={`${hunk.oldStart}:${hunk.newStart}:${index}`}>
-              <div className="diff-hunk-head">
-                {/* The band is as wide as the widest line in the file. This
-                    span is what stays on screen when one is scrolled. */}
-                <span className="stick">
-                  <span className="range">{range}</span>
-                  {context && <span className="context">{context}</span>}
-                </span>
-                {hunkAction?.(index, hunk.header)}
-              </div>
+              {!whole && (
+                <div className="diff-hunk-head">
+                  {/* The band is as wide as the widest line in the file. This
+                      span is what stays on screen when one is scrolled. */}
+                  <span className="stick">
+                    <span className="range">{range}</span>
+                    {context && <span className="context">{context}</span>}
+                  </span>
+                  {hunkAction?.(index, hunk.header)}
+                </div>
+              )}
               {hunk.lines.map((line, row) => {
+                if (whole && line.origin !== " " && line.origin !== "+") {
+                  if (line.origin === "-") gone = true;
+                  return null;
+                }
                 const who = blame && line.new != null ? blame.get(line.new) : undefined;
                 const first = who !== undefined && who !== lastBlame;
                 if (who) lastBlame = who;
+                const marks = whole
+                  ? `${line.origin === "+" ? " fresh" : ""}${gone ? " gone-above" : ""}` +
+                    (goneAtEnd && row === lastDrawn ? " gone-below" : "")
+                  : "";
+                gone = false;
+                const tone = whole ? "context" : (TONE[line.origin] ?? "context");
                 return (
-                  <div className={`diff-line ${TONE[line.origin] ?? "context"}`} key={row}>
+                  <div className={`diff-line ${tone}${marks}`} key={row}>
                     {blame && (
                       <span
                         className={`blame${who ? ` age-${ageBucket(who.time)}` : ""}`}
                         title={
-                          who
-                            ? `${who.short}  ${who.summary}\n${who.author}, ${relativeTime(who.time)}\n\nClick to open the commit.`
-                            : undefined
+                          who && !who.id
+                            ? "Not committed yet."
+                            : who
+                              ? `${who.short}  ${who.summary}\n${who.author}, ${relativeTime(who.time)}\n\nClick to open the commit.`
+                              : undefined
                         }
                       >
-                        {who && first && (
+                        {who && first && !who.id && <span className="blame-age">uncommitted</span>}
+                        {who && first && who.id && (
                           <button
                             className="blame-sha"
                             onClick={() => onBlameCommit?.({ id: who.id, short: who.short })}
@@ -139,12 +174,21 @@ export default function DiffHunks({
                             {who.short}
                           </button>
                         )}
-                        {who && first && <span className="blame-age">{relativeTime(who.time)}</span>}
+                        {who && first && who.id && (
+                          <span className="blame-age">{relativeTime(who.time)}</span>
+                        )}
                       </span>
                     )}
-                    <span className="ln">{line.old ?? ""}</span>
+                    {!whole && <span className="ln">{line.old ?? ""}</span>}
                     <span className="ln">{line.new ?? ""}</span>
-                    <span className="sign">{line.origin === "\\" ? "\\" : line.origin}</span>
+                    {whole ? (
+                      <span
+                        className="mark"
+                        title={line.origin === "+" ? "Not committed yet" : undefined}
+                      />
+                    ) : (
+                      <span className="sign">{line.origin === "\\" ? "\\" : line.origin}</span>
+                    )}
                     <span className="text">
                       {line.text}
                       {line.clipped && <span className="clipped"> … line clipped</span>}
