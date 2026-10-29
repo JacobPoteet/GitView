@@ -175,7 +175,9 @@ export default function ImageDiff({ diff, source }: { diff: FileDiff; source: Im
     );
   }
 
-  const label = removed ? "removed" : "new";
+  // The file view hands over an image with nothing uncommitted, which has one
+  // side without being new.
+  const label = removed ? "removed" : diff.status === "unchanged" ? "on disk" : "new";
 
   return (
     <div className="image-diff">

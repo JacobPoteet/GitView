@@ -84,6 +84,8 @@ interface Props {
    * could not reopen a filter the person had since cleared.
    */
   seed: { query: string; epoch: number } | null;
+  /** The path a `path:` in the field names, or null, so the file tree can light it. */
+  onPathFilter: (path: string | null) => void;
 }
 
 /** What a right-click landed on: a commit row, or a branch chip sitting on one. */
@@ -150,6 +152,8 @@ const PAGE = 400;
  * on that repository's own place.
  */
 const places = new Map<string, number>();
+/** The seed epoch each repository's history last opened on, by path. */
+const seeds = new Map<string, number>();
 
 /**
  * Lane colours, in the order lanes open.
@@ -197,6 +201,7 @@ export default function HistoryPane({
   onCopy,
   onError,
   seed,
+  onPathFilter,
 }: Props) {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const menu = useContextMenu<Target>();
@@ -220,23 +225,38 @@ export default function HistoryPane({
    */
   const scroller = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState(seed?.query ?? "");
-  const [filter, setFilter] = useState<HistoryFilter | null>(null);
+  // A seed is a question already asked, so it is the filter from the first
+  // read. Starting at null painted the whole history and swapped to the
+  // file's commits a debounce later.
+  const [filter, setFilter] = useState<HistoryFilter | null>(() =>
+    parseHistoryFilter(seed?.query ?? ""),
+  );
+  const applyFilter = useCallback((next: HistoryFilter | null) => {
+    setFilter((was) => {
+      // The same question keeps the same object, so the read does not run
+      // twice. A new one starts at the top: the place kept for the
+      // unfiltered list means nothing in a list of forty matches.
+      if (JSON.stringify(was) === JSON.stringify(next)) return was;
+      scroller.current?.scrollTo(0, 0);
+      return next;
+    });
+  }, []);
   useEffect(() => {
-    if (seed) setQuery(seed.query);
-  }, [seed]);
+    if (!seed) return;
+    setQuery(seed.query);
+    applyFilter(parseHistoryFilter(seed.query));
+  }, [seed, applyFilter]);
+  // From the field rather than the debounced filter, so the tree row follows
+  // the typing. A trailing slash on a folder names the same folder.
+  useEffect(() => {
+    onPathFilter(parseHistoryFilter(query)?.path?.replace(/\/+$/, "") || null);
+  }, [query, onPathFilter]);
   const [filtered, setFiltered] = useState(false);
   useEffect(() => {
     const next = parseHistoryFilter(query);
-    const timer = window.setTimeout(() => {
-      setFilter((was) => {
-        // A new question starts at the top: the place kept for the unfiltered
-        // list means nothing in a list of forty matches.
-        if (JSON.stringify(was) !== JSON.stringify(next)) scroller.current?.scrollTo(0, 0);
-        return next;
-      });
-    }, next ? 250 : 0);
+    const timer = window.setTimeout(() => applyFilter(next), next ? 250 : 0);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, applyFilter]);
 
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -244,7 +264,15 @@ export default function HistoryPane({
   // The place to go back to, taken once at mount and cleared once reached.
   // A ref rather than state: it is read inside `loadPage` to size the first
   // read, and it must not re-run that read when it clears.
-  const restore = useRef(places.get(repoPath) ?? 0);
+  // A seed this repository has not opened on yet is a fresh question, and it
+  // starts at the top; the same seed again is the pane coming back from the
+  // commit pane, and goes back to its place.
+  const restore = useRef(
+    seed && seeds.get(repoPath) !== seed.epoch ? 0 : (places.get(repoPath) ?? 0),
+  );
+  useEffect(() => {
+    if (seed) seeds.set(repoPath, seed.epoch);
+  }, [repoPath, seed]);
 
   // A page in flight, so a scroll that keeps going does not ask twice for the
   // same 400 commits. A ref rather than state: the check has to see the change

@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import PaneNote from "./PaneNote";
 import { MARK } from "./ChangesPane";
@@ -11,12 +11,18 @@ interface Props {
   repo: RepoState;
   tree: Tree;
   changes: FileChange[];
-  /** The file the diff pane is showing, lit the way its changes row is. */
-  openFile: string | null;
+  /**
+   * The file or folder the main column is showing: the diff's file, the
+   * commit's picked file, or the history's `path:` filter. Lit the way the
+   * changes column lights its open row.
+   */
+  openPath: string | null;
   /** The shell is not at a prompt yet, so nothing that types can run. */
   disabled: boolean;
   shell: ShellKind;
   onBack: () => void;
+  /** The file view, read-only, which is what a click on a file opens. */
+  onOpenFile: (file: string) => void;
   onOpenDiff: (file: string, staged: boolean) => void;
   onFileHistory: (path: string) => void;
   onCommand: (command: string, typeOnly: boolean) => void;
@@ -26,11 +32,10 @@ interface Props {
 /**
  * The rail's project mode: one repository's folders, where the fleet was.
  *
- * GitView is not an editor, so a file here is something to ask git about. A
- * changed file opens its diff, the way its row in the changes column does, and
- * any other file or folder opens the history filtered to its path. Opening the
- * file itself is on the right-click menu, typed as `Invoke-Item` like the
- * changes column's Open.
+ * A click on a file opens it read-only in the file view, where its diff, its
+ * history and its blame are a button each. GitView is still not an editor:
+ * editing it is Open, on the view and on the right-click menu, typed as
+ * `Invoke-Item` like the changes column's Open.
  *
  * There is no `cd` here on purpose. Every command GitView types names its
  * paths from the repository's root, so a prompt standing anywhere else would
@@ -40,25 +45,31 @@ export default function FileTree({
   repo,
   tree,
   changes,
-  openFile,
+  openPath,
   disabled,
   shell,
   onBack,
+  onOpenFile,
   onOpenDiff,
   onFileHistory,
   onCommand,
   onCopy,
 }: Props) {
   const menu = useContextMenu<TreeEntry>();
+  const list = useRef<HTMLDivElement | null>(null);
+
+  // A file opened from the changes column or the commit's list can be lit
+  // below the fold. Only on a change of path, so a scroll away from it stays.
+  useEffect(() => {
+    if (!openPath) return;
+    list.current
+      ?.querySelector<HTMLElement>(`[data-path="${CSS.escape(openPath)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [openPath]);
 
   function activate(entry: TreeEntry, deep: boolean) {
-    if (entry.dir) {
-      tree.toggle(entry.path, deep);
-      return;
-    }
-    const staged = sideFor(changes, entry.path);
-    if (staged === null) onFileHistory(entry.path);
-    else onOpenDiff(entry.path, staged);
+    if (entry.dir) tree.toggle(entry.path, deep);
+    else onOpenFile(entry.path);
   }
 
   function entryMenu(entry: TreeEntry): MenuEntry[] {
@@ -182,6 +193,7 @@ export default function FileTree({
       </div>
 
       <div
+        ref={list}
         className="tree-list"
         role="tree"
         // The rows are buttons and take the focus themselves; this lets a
@@ -207,11 +219,11 @@ export default function FileTree({
                 role="treeitem"
                 aria-level={depth + 1}
                 aria-expanded={entry.dir ? open : undefined}
-                aria-selected={!entry.dir && entry.path === openFile}
+                aria-selected={entry.path === openPath}
                 data-path={entry.path}
                 className={
                   `tree-row${entry.dir ? " dir" : ""}${entry.ignored ? " ignored" : ""}` +
-                  (!entry.dir && entry.path === openFile ? " open" : "")
+                  (entry.path === openPath ? " open" : "")
                 }
                 style={{ "--depth": depth } as CSSProperties}
                 onClick={(event) => activate(entry, event.ctrlKey || event.metaKey)}
@@ -258,6 +270,6 @@ function rowTitle(entry: TreeEntry, changed: boolean): string {
   if (entry.dir) {
     return `${entry.path}${ignored}\n\nCtrl+click opens or closes every folder inside`;
   }
-  const does = changed ? "Open the diff" : `History of this file: git log -- ${entry.path}`;
-  return `${entry.path}${ignored}\n\n${does}`;
+  const changes = changed ? "\nNot committed yet: the view marks what changed" : "";
+  return `${entry.path}${ignored}${changes}\n\nClick to view it`;
 }

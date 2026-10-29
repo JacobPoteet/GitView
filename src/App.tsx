@@ -9,6 +9,7 @@ import {
 } from "react";
 import FleetSidebar, { drawnOrder, groupRepos } from "./components/FleetSidebar";
 import FileTree from "./components/FileTree";
+import { sideFor } from "./lib/tree";
 import TerminalPane, {
   blockOutput,
   closeSession,
@@ -41,6 +42,7 @@ import ChangesPane from "./components/ChangesPane";
 import CommitFilesPane from "./components/CommitFilesPane";
 import CommitPane from "./components/CommitPane";
 import DiffPane from "./components/DiffPane";
+import FilePane from "./components/FilePane";
 import HistoryPane from "./components/HistoryPane";
 import OperationBar from "./components/OperationBar";
 import ContextMenu, {
@@ -108,6 +110,7 @@ import {
   type CommitDiff,
   type CommitTarget,
   type DiffTarget,
+  type FileTarget,
   type FileChange,
   type RepoPref,
   type BranchScope,
@@ -221,6 +224,15 @@ export default function App() {
    */
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   /**
+   * The file the file view is open on, from a click in the file tree.
+   *
+   * The bottom of the main column's layers: the diff, the history and a
+   * commit all draw over it and leave it set, so closing what was opened from
+   * its header puts the file back, the way closing a commit puts the history
+   * back. A click on another file in the tree clears what covers it.
+   */
+  const [fileTarget, setFileTarget] = useState<FileTarget | null>(null);
+  /**
    * Whether the scrolling history is up.
    *
    * A boolean rather than a path: it always belongs to whatever is selected,
@@ -234,6 +246,12 @@ export default function App() {
    * filter was cleared; see HistoryPane's `seed`.
    */
   const [historySeed, setHistorySeed] = useState<{ query: string; epoch: number } | null>(null);
+  /**
+   * The path the history's filter field names, as the pane reports it, so the
+   * file tree can light that row. Read off the field rather than the seed,
+   * because the field is what the person can edit afterwards.
+   */
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   /** The whole history, with no filter left over from a file's. */
   const openHistory = useCallback(() => {
     setHistorySeed(null);
@@ -244,6 +262,9 @@ export default function App() {
     // None here has one, and the filter would still match on the first
     // half; the field is a filter rather than a form.
     setHistorySeed((was) => ({ query: `path:${file}`, epoch: (was?.epoch ?? 0) + 1 }));
+    // The pane reports this itself once it reads the seed; setting it here
+    // lights the tree row in the same render as the click.
+    setHistoryPath(file);
     setCommitTarget(null);
     setDiffTarget(null);
     setHistoryOpen(true);
@@ -764,19 +785,41 @@ export default function App() {
     }
   }, [changes, diffTarget, selectedPath]);
 
+  useEffect(() => {
+    if (fileTarget && fileTarget.repoPath !== selectedPath) setFileTarget(null);
+  }, [fileTarget, selectedPath]);
+
+  /** A file in the tree, read-only, with everything over it closed. */
+  const openFile = useCallback(
+    (file: string) => {
+      if (!selectedPath) return;
+      setCommitTarget(null);
+      setHistoryOpen(false);
+      setHistorySeed(null);
+      setDiffTarget(null);
+      setFileTarget({ repoPath: selectedPath, file });
+    },
+    [selectedPath],
+  );
+
   const openDiff = useCallback(
     (file: string, staged: boolean) => {
       if (!selectedPath) return;
-      // The commit pane outranks the diff in the column, so a click in the
-      // changes column while a commit is up would otherwise do nothing visible.
+      // The commit pane and the history both outrank the diff in the column,
+      // so a click in the changes column or the file tree while either is up
+      // would otherwise do nothing visible. A click on the file already open
+      // closes it, but only when the diff was the pane on screen to close.
+      const covered = historyOpen || (commitTarget !== null && commitFile !== null);
       setCommitTarget(null);
+      setHistoryOpen(false);
+      setHistorySeed(null);
       setDiffTarget((current) =>
-        current && current.file === file && current.staged === staged
+        current && current.file === file && current.staged === staged && !covered
           ? null
           : { repoPath: selectedPath, file, staged },
       );
     },
-    [selectedPath],
+    [selectedPath, historyOpen, commitTarget, commitFile],
   );
 
   const openCommit = useCallback(
@@ -1068,6 +1111,8 @@ export default function App() {
           setHistorySeed(null);
         } else if (diffTarget) {
           setDiffTarget(null);
+        } else if (fileTarget) {
+          setFileTarget(null);
         } else {
           // The rail is the bottom layer: with nothing open over the shell,
           // Escape steps back out of one project to all of them.
@@ -1097,6 +1142,7 @@ export default function App() {
     tabOf,
     historyOpen,
     diffTarget,
+    fileTarget,
     toggleHistory,
     info?.gh.version,
     setBatchOpen,
@@ -2352,6 +2398,19 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
   }, [selected, shell, shellReady, emit]);
 
   /**
+   * The file or folder the main column's pane is about, which the file tree
+   * lights. It follows the pane's precedence below, so the lit row is always
+   * the one on screen.
+   */
+  const panePath = inboxOpen
+    ? null
+    : commitTarget && commitFile && selected
+      ? commitFile
+      : historyOpen && selected
+        ? historyPath
+        : (diffTarget?.file ?? fileTarget?.file ?? null);
+
+  /**
    * The pane sharing the main column with the terminal, or nothing.
    *
    * One at a time, and never on top of the shell. These three used to be
@@ -2489,6 +2548,7 @@ ${landing} ${cleanup}${warning}${closing}`,
       onCopy={copy}
       onError={setNote}
       seed={historySeed}
+      onPathFilter={setHistoryPath}
     />
   ) : diffTarget ? (
     <DiffPane
@@ -2504,6 +2564,19 @@ ${landing} ${cleanup}${warning}${closing}`,
       onClose={() => setDiffTarget(null)}
       onCommand={emit}
       onError={setNote}
+    />
+  ) : fileTarget ? (
+    <FilePane
+      target={fileTarget}
+      diffSide={sideFor(changes, fileTarget.file)}
+      disabled={!shellReady}
+      shell={shell}
+      reloadKey={changes}
+      onOpenDiff={(staged) => openDiff(fileTarget.file, staged)}
+      onFileHistory={() => openFileHistory(fileTarget.file)}
+      onOpenCommit={openCommit}
+      onClose={() => setFileTarget(null)}
+      onCommand={emit}
     />
   ) : null;
 
@@ -2555,10 +2628,11 @@ ${landing} ${cleanup}${warning}${closing}`,
             repo={selected}
             tree={fileTree}
             changes={changes}
-            openFile={diffTarget?.file ?? null}
+            openPath={panePath}
             disabled={!shellReady}
             shell={shell}
             onBack={() => setRailMode("fleet")}
+            onOpenFile={openFile}
             onOpenDiff={openDiff}
             onFileHistory={openFileHistory}
             onCommand={emit}

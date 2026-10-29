@@ -603,7 +603,8 @@ select:focus-visible,
   color: color-mix(in oklch, var(--text-faint), var(--bg-inset) 35%);
 }
 
-/* The file the diff pane is showing, lit like its row in the changes column. */
+/* The file or folder the main column is about (a diff, a commit's file, a
+   history filtered to a path), lit like the open row in the changes column. */
 .tree-row.open {
   background: var(--accent-soft);
 }
@@ -4258,6 +4259,46 @@ button.inbox-check-name.link:hover {
 .diff-line .clipped {
   color: var(--amber);
   font-style: italic;
+}
+
+/* The file view: the file itself, so its text is not dimmed the way a diff's
+   context is. One number column, then a narrow mark where the sign would be:
+   a green bar for a line not committed yet, the way an editor's gutter shows
+   it, and a red rule across the row where committed lines were removed. */
+.diff-hunks.whole .diff-line {
+  color: var(--text);
+}
+
+.diff-line .mark {
+  flex: none;
+  width: 4px;
+  margin-right: 10px;
+  user-select: none;
+  position: sticky;
+  left: calc(44px + var(--gutter, 0px));
+  background: inherit;
+}
+
+.diff-line.fresh .mark {
+  background: var(--green);
+}
+
+.diff-line.fresh .ln {
+  color: var(--green);
+}
+
+.diff-line.gone-above {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--red) 70%, transparent);
+}
+
+.diff-line.gone-below {
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--red) 70%, transparent);
+}
+
+.diff-line.gone-above.gone-below {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--red) 70%, transparent),
+    inset 0 -1px 0 color-mix(in oklch, var(--red) 70%, transparent);
 }
 
 .diff-rename {
