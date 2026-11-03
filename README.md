@@ -8,11 +8,11 @@ The home screen is the whole fleet at once. The terminal is a primary pane rathe
 run and build commands for each project sit next to the repository that needs them.
 
 > [!NOTE]
-> Everything through Phase 4 works, and Phases 6 and 7 are landing: the fleet scanner, the
-> persistent terminal, task discovery, the branch graph, command blocks, the GitHub inbox, the diff
-> view, hunk staging, the commit history and its filter, the pull request desk, a strip for a paused
-> rebase, the stash count, amend, and revert, cherry-pick and reset from a commit. Worktree lanes
-> are designed but not built. See [Status](#status).
+> Phases 0 to 4 and 6 to 8 work: the fleet scanner, the persistent terminal, task discovery, the
+> branch graph, command blocks, the GitHub inbox, the diff view, hunk staging, the commit history
+> and its filter, blame, the pull request desk, a strip for a paused rebase, the stash count, amend,
+> revert, cherry-pick and reset from a commit, a file tree, splitters, shortcuts and themes. Worktree
+> lanes (Phase 5) are designed but not built. See [Status](#status).
 
 ## Why
 
@@ -43,8 +43,9 @@ Three rules shape the whole app:
   where you already look. Prune lists the branches first and uses `git branch -d`, which refuses
   anything unmerged.
 - **Branch graph.** Two rails, time running left to right: what your branch has that `origin/main`
-  does not, and what it has that you do not. It collapses to a one-line summary, and clicking a
-  commit opens it: its message, its files, and one file's hunks. Shift-click types `git show`.
+  does not, and what it has that you do not. It collapses to a one-line summary. Click a commit and
+  the right-hand column shows its message and files; pick a file to read its hunks. Shift-click
+  types `git show`.
 - **A list you control.** Pin the repositories you are working on to the top, hide the ones you are
   not, and add or remove the folders GitView watches without leaving the app.
 - **Tasks you actually run.** Discovery finds every script a project declares, which for one
@@ -61,9 +62,12 @@ Three rules shape the whole app:
   the clipboard together, ready to paste into Claude in the next window.
 - **Command palette.** `Ctrl+K` for repositories, tasks and actions.
 - **The diff, without leaving the window.** Click a file name in the changes column and its diff
-  opens over the terminal, unified, on whichever side of the index that row belongs to. A file
-  staged and then edited again has both, and the pane says which one you are reading. The shell
-  behind it keeps running.
+  opens in the main column above the terminal, unified, on whichever side of the index that row
+  belongs to. A file staged and then edited again has both, and the pane says which one you are
+  reading. The shell below it stays on screen and keeps running.
+- **Your files, in the rail.** Step into a repository and the left rail swaps the fleet for its
+  folders. Click a file to read it as it sits on disk, with a blame gutter naming who last wrote
+  each line, and the commit behind a line opens from there.
 - **A hunk at a time.** Each hunk has a button that stages it on its own. A hunk is the one argument
   nobody can type at a prompt, so GitView writes it out as a patch under its own data folder and
   types `git apply --cached` against that path, which is what `git add -p` does underneath. The
@@ -88,8 +92,12 @@ Three rules shape the whole app:
   alone across every local branch, not only the one checked out, and the chip names them.
 - **The pull request desk.** Push from the header, open a pull request from a form, watch each check
   by name, and merge with `gh pr merge` typed after a confirmation. See the wiki's GitHub Inbox.
-- **Settings.** One dialog: watched folders, the terminal's type size and screen reader mode, and
-  whether the app fetches and checks for a release on launch.
+- **The window, your way.** Drag the column and row splitters, open a second shell for one
+  repository, and search the scrollback. Each shell's buffer comes back above the first prompt after
+  a restart.
+- **Settings.** One dialog: watched folders, the shell and its type size, how the inbox reads
+  GitHub, what happens on launch, every keyboard shortcut, and the theme (GitView, Windows 98 or
+  LCARS).
 - **Updates that name their command.** GitView asks GitHub for its own latest release once per
   launch. When there is a newer one the status bar says so, and the dialog hands you the
   `gh release download` line to run at the prompt, like every other action here.
@@ -221,8 +229,8 @@ times per repository per refresh is slow enough to feel.
 | 3 | The commit history: canvas rails under virtualised rows, lanes packed in Rust | Built |
 | 4 | The pull request desk: push, `gh pr create` from a form, checks by name, merge typed as `gh` | Built |
 | 6 | The state a prompt cannot show: a paused rebase, stashes, unpushed work on every branch, amend | Built |
-| 7 | Reading back: the history filter, file history, revert and cherry-pick and reset from a row, search in the scrollback | Built, blame pending |
-| 8 | The window: splitters, scrollback across restarts, keyboard shortcuts, a second shell per repository | Planned |
+| 7 | Reading back: the history filter, file history, blame, revert and cherry-pick and reset from a row, search in the scrollback | Built |
+| 8 | The window: splitters, scrollback across restarts, keyboard shortcuts, a second shell per repository | Built |
 | 5 | Worktree lanes | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and

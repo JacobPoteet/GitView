@@ -59,32 +59,13 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 
 ## Layout
 
+Each Rust module opens with a `//!` comment naming what it owns, so `src-tauri/src` is its own map,
+and the wiki's `Architecture/Repo Map.md` covers every file. What the files do not say:
+
 | Path | Holds |
 | --- | --- |
-| `src/` | React frontend. Components, plus `lib/api.ts` mirroring the Rust command surface, `lib/shell.ts` quoting the commands that get typed at a prompt, and `lib/settings.ts` holding the app's own settings in `localStorage` |
-| `src/lib/themes.ts` | The theme registry and `applyTheme`. A theme's terminal palette, and the id the settings store |
-| `src/theme-win98.css` | The Windows 98 theme. Scoped to its attribute, so the default never sees a rule from it |
-| `src/theme-lcars.css` | The LCARS theme, the same way. Its elbows are pseudo-elements on `.rail` and a gradient on the status bar, so no component knows about them |
-| `src/hooks/` | State that left `App.tsx`: `useInbox`, `useBatch`, `useUpdate`, `useTour`, `useCommandHint`, `useFileTree`. Each owns its state and returns what the render needs; a feature that grows a handful of state goes here rather than into `App` |
-| `src-tauri/src/fleet.rs` | The scanner. Repository reads, in process |
-| `src-tauri/src/graph.rs` | The branch graph. Two bounded revwalks against a chosen base |
-| `src-tauri/src/diff.rs` | One file's hunks, read per file and per side of the index, one commit against its first parent, and one working-tree file whole for the file view |
-| `src-tauri/src/tree.rs` | The rail's file tree: one folder of the working tree per listing, from the disk, with `.gitignore` asked through `git2` only for what the index does not track |
-| `src-tauri/src/blame.rs` | Who last wrote each line of a file, as of a commit or as it is on disk. Hunks, not lines, capped at 6000 like the diff |
-| `src-tauri/src/history.rs` | The whole DAG, a page at a time, with its lanes already packed |
-| `src-tauri/src/signing.rs` | Whether a commit carries a signature and of which scheme. Presence only, never verification |
-| `src-tauri/src/gitops.rs` | `git.exe` subprocess. Everything that touches a remote |
-| `src-tauri/src/github.rs` | `gh` subprocess. One aliased GraphQL query for the whole fleet |
-| `src-tauri/src/update.rs` | The launch check against the latest GitHub release, through the same `gh` invocation |
-| `src-tauri/src/pty.rs` | Terminal sessions, and the base64 that hands the shell its prompt hook |
-| `src-tauri/src/scrollback.rs` | A shell's buffer and its blocks on disk, written as the shell settles and on close, read back above the next launch's first prompt |
-| `src-tauri/src/scratch.rs` | The files a typed command names because its argument cannot be typed: the folder under the data dir, the one sweep, the slug, and the commit message writer |
-| `src-tauri/src/agent.rs` | The Claude hooks file, and the tail of the per-session files those hooks append to |
-| `src-tauri/src/shell_integration.ps1` | The OSC 133 hook. Source, not an asset: `include_str!` puts it in the binary |
-| `src-tauri/src/tasks.rs` | Task discovery across manifests |
-| `src-tauri/src/cache.rs` | SQLite. Cached scans, saved tasks, settings, and the pin and hide preferences |
-| `src-tauri/examples/scan.rs` | Headless scanner check, no window |
-| `site/index.html` | The project page. Static, served by `pages.yml` |
+| `src/lib/api.ts` | The Rust command surface, mirrored. A new command lands in both |
+| `src/hooks/` | State that left `App.tsx`. Each hook owns its state and returns what the render needs; a feature that grows a handful of state goes here rather than into `App` |
 | `scripts/install-local.ps1` | `npm run install:local`: build the installer, run it over the installed GitView, start the new one. Never rename the script to `install`, npm runs that on every `npm install` and `npm ci` |
 | `scripts/ftue.ps1` | `npm run dev:ftue`: a dev build with a fresh data folder, fresh `localStorage` and fixture repositories, for rehearsing the first run. The wiki's `Operations/Local Development.md` lists the scenarios |
 
@@ -112,7 +93,7 @@ copied in. Its prose gets the same `stop-slop` pass a wiki note does. The wiki's
 | An operation that runs out of sight reports what failed | `git_run` resolves with an exit code rather than throwing, so catching the promise sees almost nothing. Read `code` |
 | An argument nobody can type goes out as a file under GitView's data folder, through `scratch.rs` | A hunk, an issue body and a commit message with a description are the three so far. Each writer used to carry its own sweep; `scratch::dir` is the one that remains, and a new one calls it rather than copying the loop. A subject-only commit stays `-m`, because that reads at the prompt and `-F` for one line would not |
 | A batch reads the repository again between its commands | `ahead` and `behind` come from the last sweep, and a fetch is what changes them. Planning the pull from cached counts skips the repository that became fast-forwardable one command ago |
-| A command aimed at a repository goes to a shell at its prompt | A shell running `claude`, another CLI or a dev server reads typed text as its own input, so `gh pr merge` became a message to Claude. `pickShell` in `lib/sessions.ts` takes the tab on screen if it is free, then the first free shell, then a new one; busy means an OSC 133 block is still running, from `isBusy`, with no list of tool names. `emit` and every `pendingCommand` go through it. The Claude tab never qualifies. It stays asleep until clicked, and it stays asleep until clicked, and is not an agent panel: it types `claude` at a prompt and GitView adds no UI around it |
+| A command aimed at a repository goes to a shell at its prompt | A shell running `claude`, another CLI or a dev server reads typed text as its own input, so `gh pr merge` became a message to Claude. `pickShell` in `lib/sessions.ts` takes the tab on screen if it is free, then the first free shell, then a new one; busy means an OSC 133 block is still running, from `isBusy`, with no list of tool names. `emit` and every `pendingCommand` go through it. The Claude tab never qualifies. It stays asleep until clicked, and is not an agent panel: it types `claude` at a prompt and GitView adds no UI around it |
 | The prompt hook wraps the user's prompt and touches nothing on disk | Overwriting `prompt` discards Starship and oh-my-posh. The script is handed over as `-EncodedCommand` after the profile has loaded, so it captures whatever is there. Never write to a profile without asking |
 | Claude integration is opt-in in the AI settings; GitView never writes to `~/.claude`, and its hooks go in through `--settings` on the command it types | Hooks are how Orca learns working, waiting and done, and Orca puts them in the user's own Claude settings. A per-run file keeps them inside GitView's tab. Without the switch, or in a shell where `claude` is typed by hand, the reading falls back to what Claude prints: the OSC 0 title says working (`◐`, `◑`) or idle (`✳`), and a question's `Esc to cancel` footer at the bottom of the screen separates waiting from done. `lib/agent.ts` holds the reading; `readAgent` in `TerminalPane.tsx` feeds it. The wiki's Terminal note has the titles as measured |
 | A terminal line number is checked against the command text before it is used | ConPTY repaints on resize and can duplicate a line, and `cls` rewrites lines in place, so a marker stops describing what it was taken from. `anchor` in `TerminalPane.tsx` is the only way to turn a block into a line |
