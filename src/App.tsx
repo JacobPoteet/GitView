@@ -97,7 +97,7 @@ import {
   tagCommand,
   validRefName,
 } from "./lib/shell";
-import { finishedCount, hasOtherBranches } from "./lib/cleanup";
+import { finishedCount, hasOtherBranches, type ShellState } from "./lib/cleanup";
 import {
   fleetSummary,
   isUntracked,
@@ -1850,18 +1850,12 @@ export default function App() {
     [repos, emit],
   );
 
-  const describeShells = useCallback(
-    (worktrees: string[]) => {
-      const own = worktrees.flatMap((path) => {
-        const row = repos.find((r) => r.path.toLowerCase() === path.toLowerCase());
-        return row ? sessionsFor(row.path) : [];
-      });
+  const shellState = useCallback(
+    (path: string): ShellState => {
+      const row = repos.find((r) => r.path.toLowerCase() === path.toLowerCase());
+      const own = row ? sessionsFor(row.path) : [];
       if (own.length === 0) return null;
-      const busy = own.some((id) => isBusy(id) || isClaude(id));
-      const these = own.length === 1 ? "a shell" : `${own.length} shells`;
-      return busy
-        ? `GitView has ${these} open there with something still running, and they close first: whatever is running stops.`
-        : `GitView has ${these} open there, which close first, since Windows will not delete a folder a shell is standing in.`;
+      return own.some((id) => isBusy(id) || isClaude(id)) ? "busy" : "idle";
     },
     [repos],
   );
@@ -3138,7 +3132,7 @@ gh pr view ${branchPr.number} --web`}
           shell={shell}
           focus={cleanup.focus}
           onState={upsert}
-          describeShells={describeShells}
+          shellState={shellState}
           onRun={(commands, worktrees) => void runCleanup(commands, worktrees)}
           onClose={() => setCleanup(null)}
         />
