@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fetchPlan, prunePlan, pruneSplit, pruneCommands, pullPlan } from "./batch";
+import { fetchPlan, heldBranches, prunePlan, pullPlan } from "./batch";
 import { repo } from "./fixtures";
-import type { WorktreeSummary } from "./types";
 
 describe("pullPlan", () => {
   it("pulls a branch that is only behind", () => {
@@ -61,98 +60,30 @@ describe("prunePlan", () => {
   });
 });
 
-describe("pruneSplit", () => {
-  const squashed = (branch: string, over: { protected?: boolean; remote?: boolean } = {}) => ({
-    branch,
-    into: "0".repeat(40),
-    intoShort: "0000000",
-    intoSummary: "Squash",
-    base: "origin/main",
-    commits: 1,
-    protected: false,
-    remote: false,
-    ...over,
-  });
-
-  it("keeps -d and -D apart, and never offers a protected or remote ref for -D", () => {
-    const split = pruneSplit(repo({ mergedBranches: ["merged"] }), [
-      squashed("squashed"),
-      squashed("merged"),
-      squashed("main", { protected: true }),
-      squashed("origin/old", { remote: true }),
-    ]);
-    expect(split).toEqual({ merged: ["merged"], squashed: ["squashed"], held: [], stale: [] });
-    expect(pruneCommands(split, "powershell")).toEqual([
-      "git branch -d 'merged'",
-      "git branch -D 'squashed'",
-    ]);
-  });
-
-  it("quotes every branch name, since a branch can be called x;calc", () => {
-    const split = { merged: ["a;calc", "it's"], squashed: ["b&c"], held: [], stale: [] };
-    expect(pruneCommands(split, "powershell")).toEqual([
-      "git branch -d 'a;calc' 'it''s'",
-      "git branch -D 'b&c'",
-    ]);
-    expect(pruneCommands(split, "posix")[0]).toBe("git branch -d 'a;calc' 'it'\\''s'");
-  });
-
-  it("lists a branch a worktree holds apart, and prunes a gone worktree's record first", () => {
-    const worktree = (path: string, over: Partial<WorktreeSummary> = {}): WorktreeSummary => ({
-      path,
-      branch: null,
-      main: false,
-      prunable: false,
-      locked: false,
-      ...over,
-    });
-    const branch = (name: string, merged: boolean, worktree: string | null) => ({
+describe("the fleet-wide prune", () => {
+  it("never reaches for a branch a worktree holds", () => {
+    const branch = (name: string, worktree: string | null) => ({
       name,
       ahead: 0,
       behind: 0,
       isHead: false,
-      merged,
+      merged: true,
       lastCommitAt: null,
       tip: null,
       upstream: null,
       aheadOfUpstream: 0,
       worktree,
+      goneUpstream: null,
+      originTip: null,
     });
     const state = repo({
       mergedBranches: ["free"],
-      branches: [
-        branch("free", true, null),
-        branch("live", true, "F:\\wt\\live"),
-        branch("gone", true, "F:\\wt\\gone"),
-        branch("pinned", true, "F:\\wt\\pinned"),
-        branch("squash-live", false, "F:\\wt\\live2"),
-      ],
-      worktrees: [
-        worktree("F:\\wt\\live", { branch: "live" }),
-        worktree("F:\\wt\\gone", { branch: "gone", prunable: true }),
-        worktree("F:\\wt\\pinned", { branch: "pinned", prunable: true, locked: true }),
-        worktree("F:\\wt\\live2", { branch: "squash-live" }),
-      ],
+      branches: [branch("free", null), branch("live", "F:\\wt\\live")],
     });
-    const split = pruneSplit(state, [squashed("squash-live")]);
-    expect(split).toEqual({
-      merged: ["free", "gone"],
-      squashed: [],
-      held: [
-        { branch: "live", path: "F:\\wt\\live" },
-        { branch: "pinned", path: "F:\\wt\\pinned" },
-        { branch: "squash-live", path: "F:\\wt\\live2" },
-      ],
-      stale: ["F:\\wt\\gone"],
-    });
-    expect(pruneCommands(split, "powershell")).toEqual([
-      "git worktree prune",
-      "git branch -d 'free' 'gone'",
-    ]);
-    // The fleet-wide prune never prunes a worktree record out of sight.
     expect(prunePlan(state)).toEqual({
       args: ["branch", "-d", "free"],
       command: "git branch -d free",
     });
+    expect(heldBranches(state)).toEqual([{ branch: "live", path: "F:\\wt\\live" }]);
   });
 });

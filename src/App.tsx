@@ -53,6 +53,7 @@ import ContextMenu, {
 } from "./components/ContextMenu";
 import SettingsDialog, { type SettingsSection } from "./components/SettingsDialog";
 import BatchDialog from "./components/BatchDialog";
+import CleanupDialog, { type CleanupFocus } from "./components/CleanupDialog";
 import InboxPane from "./components/InboxPane";
 import ChipIcon from "./components/ChipIcon";
 import { headFacts, headStatus, itemKey, refKey, refLabel } from "./lib/inbox";
@@ -88,22 +89,22 @@ import { claudeId, isClaude, pickShell, sessionLabel, sessionNumber, sessionRepo
 import { copyText } from "./lib/clipboard";
 import {
   discardCommands,
-  isClaudeWorktree,
   openUrlCommand,
   pushCommand,
   quote,
   claudeCommand,
-  releaseCommand,
   shellKind,
   tagCommand,
   validRefName,
 } from "./lib/shell";
-import { pruneCommands, pruneSplit } from "./lib/batch";
+import { finishedCount, hasOtherBranches } from "./lib/cleanup";
 import {
   fleetSummary,
   isUntracked,
+  parentRow,
   relativeTime,
   stashTitle,
+  worktreeRemoved,
   type AppInfo,
   type BranchGraph as Graph,
   type CommandBlock,
@@ -117,7 +118,6 @@ import {
   type RepoState,
   type Squashed,
   type Task,
-  type WorktreeSummary,
 } from "./lib/types";
 
 interface Confirmation {
@@ -391,6 +391,7 @@ export default function App() {
   const [closedShell, setClosedShell] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [cleanup, setCleanup] = useState<{ focus: CleanupFocus | null; epoch: number } | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [note, setNoteState] = useState<Note | null>(null);
   const setNote = useCallback((text: string) => setNoteState({ text }), []);
@@ -448,15 +449,15 @@ export default function App() {
   );
 
   /**
-   * What Prune would delete: the branches the trunk contains, plus the ones it
-   * swallowed through a squash. The second half is why the count on the button
-   * was zero on every repository that squash-merges its pull requests.
+   * What the Clean up button counts: the branches the trunk contains, plus the
+   * ones it swallowed through a squash, which is why a count of the first half
+   * alone was zero on every repository that squash-merges its pull requests. A
+   * worktree holding one no longer takes it out of the count.
    */
-  const prunable = useMemo(
-    () => (selected ? pruneSplit(selected, squashed) : { merged: [], squashed: [], held: [], stale: [] }),
+  const finished = useMemo(
+    () => (selected ? finishedCount(selected, squashed) : 0),
     [selected, squashed],
   );
-  const prunableCount = prunable.merged.length + prunable.squashed.length;
 
   /** The entry for the branch you are standing on, if it was squash-merged. */
   const headSquashed = useMemo(
@@ -473,7 +474,9 @@ export default function App() {
       if (index === -1) return [...current, repo];
       const next = [...current];
       next[index] = repo;
-      return next;
+      // A worktree just removed is a row for a folder that is gone, and the next
+      // sweep is minutes off. Its main checkout has just said so.
+      return next.filter((row) => !worktreeRemoved(row, repo));
     });
   }, []);
 
@@ -999,7 +1002,10 @@ export default function App() {
   );
 
   // The sidebar's rows in the order it draws them, for Ctrl+1 to Ctrl+9.
-  const drawn = useMemo(() => drawnOrder(groupRepos(repos, prefs, query)), [repos, prefs, query]);
+  const drawn = useMemo(
+    () => drawnOrder(groupRepos(repos, prefs, query, selectedPath)),
+    [repos, prefs, query, selectedPath],
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1081,6 +1087,7 @@ export default function App() {
         // took the history with it.
         if (
           confirmation !== null ||
+          cleanup !== null ||
           settingsOpen !== null ||
           pendingTask !== null ||
           pendingDescription !== null ||
@@ -1089,6 +1096,7 @@ export default function App() {
           updateOpen
         ) {
           setConfirmation(null);
+          setCleanup(null);
           setSettingsOpen(null);
           setPendingTask(null);
           setPendingDescription(null);
@@ -1134,6 +1142,7 @@ export default function App() {
     pendingTask,
     pendingDescription,
     pendingTag,
+    cleanup,
     batchOpen,
     updateOpen,
     paletteOpen,
@@ -1758,46 +1767,7 @@ export default function App() {
   }, [selected, shell]);
 
   /**
-   * Prune, for one repository, with the squash-merged branches included.
-   *
-   * The two halves take different flags and the dialog has to say so. A branch
-   * the trunk already contains goes through `git branch -d`, which refuses
-   * anything it is not sure about. A squash-merged branch is contained by
-   * nothing, so `-d` refuses it as well, and deleting it means `-D` and taking
-   * GitView's word for it. That is stated rather than buried.
-   */
-  function pruneConfirmation(repo: RepoState, found: Squashed[]): Confirmation {
-    const split = pruneSplit(repo, found);
-    const total = split.merged.length + split.squashed.length;
-    const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
-    const commands = pruneCommands(split, shell);
-
-    const body =
-      split.squashed.length === 0
-        ? `Every branch listed is already contained in ${trunk}. git branch -d refuses anything unmerged, and the output prints each deleted branch's commit so it can be recreated.`
-        : `${split.merged.length > 0 ? `${split.merged.length} of these are contained in ${trunk}, and go through git branch -d, which refuses anything unmerged. ` : ""}${split.squashed.length} were squash-merged: ${split.squashed.join(", ")}. A squash rebuilds the work as a new commit with no link back, so git considers them unmerged and -d will not take them. GitView matched each one's patch to a commit on ${trunk}. -D deletes them on that evidence rather than on git's. The output prints each commit, so a wrong answer is recoverable.`;
-    // A worktree whose folder is gone still holds its branch until git's
-    // record of it goes, and one still in use holds it outright.
-    const stale =
-      split.stale.length === 0
-        ? ""
-        : ` git worktree prune runs first: ${split.stale.length === 1 ? "a worktree's folder is" : `${split.stale.length} worktrees' folders are`} already gone, and git keeps refusing the ${split.stale.length === 1 ? "branch it held" : "branches they held"} until the record goes.`;
-    const held =
-      split.held.length === 0
-        ? ""
-        : ` Left out, because a worktree has ${split.held.length === 1 ? "it" : "them"} checked out: ${split.held.map((h) => `${h.branch} at ${h.path}`).join(", ")}. Right-click one in the branch list to remove its worktree first.`;
-
-    return {
-      title: `Delete ${total} merged ${total === 1 ? "branch" : "branches"}`,
-      body: `${body}${stale}${held}`,
-      command: commands.join("\n"),
-      confirmLabel: "Delete branches",
-      onConfirm: () => emit(commands),
-    };
-  }
-
-  /**
-   * One branch, from a right-click. Asks first, the way Prune does, and with
+   * One branch, from a right-click. Asks first, the way Clean up does, and with
    * the same split: `-d` for a branch the trunk contains, `-D` with the reason
    * spelled out for one it does not. The reason differs. A squash-merged branch
    * is finished work git cannot see; anything else is unmerged work, and the
@@ -1844,12 +1814,6 @@ export default function App() {
     const commands = both ? [command, remoteCommand] : [command];
     if (both) body = `${body} ${remoteBody}`;
 
-    const holder = branch?.worktree
-      ? repo.worktrees.find((w) => w.path === branch.worktree)
-      : undefined;
-    const release = holder ? releaseCommand(holder, shell) : null;
-    if (holder && release) return releaseConfirmation(name, holder, release, commands, body);
-
     return {
       title: both ? `Delete ${name} and ${remote}/${name}` : `Delete ${name}`,
       body,
@@ -1859,51 +1823,20 @@ export default function App() {
     };
   }
 
+  const openCleanup = useCallback((focus: CleanupFocus | null = null) => {
+    setCleanup((current) => ({ focus, epoch: (current?.epoch ?? 0) + 1 }));
+  }, []);
+
   /**
-   * A branch another worktree has checked out, which git will not delete
-   * until that worktree lets go. Both commands are named, per the discard
-   * rule, and GitView's own shells in the worktree close first: Windows will
-   * not delete a folder a process is standing in.
-   *
-   * Measured on 24 Sep 2026: when something else holds the folder, Git for
-   * Windows asks "Should I try again? (y/n)" and waits, with the branch delete
-   * queued behind it at the prompt. A y after the holder lets go removes the
-   * worktree; an n prints Permission denied but has already dropped git's
-   * record, so the delete still goes through and only an empty folder stays.
+   * Types what the dialog built, once GitView's own shells are out of the way:
+   * Windows will not delete a folder a process is standing in. A shell somewhere
+   * else, a Claude session say, is what the dialog warned about.
    */
-  function releaseConfirmation(
-    name: string,
-    holder: WorktreeSummary,
-    release: string,
-    commands: string[],
-    reason: string,
-  ): Confirmation {
-    const row = repos.find((r) => r.path.toLowerCase() === holder.path.toLowerCase());
-    const own = row ? sessionsFor(row.path) : [];
-    const busy = own.some((id) => isBusy(id) || isClaude(id));
-
-    const why = holder.prunable
-      ? `${name} is held by a worktree whose folder is already gone, at ${holder.path}. git still keeps a record of it and refuses the delete until git worktree prune clears that record.`
-      : `${name} is checked out in the worktree at ${holder.path}, and git refuses to delete a branch another checkout is on. git worktree remove takes the worktree away first. It refuses if the worktree has changes nobody committed, and then the delete refuses too.`;
-    const shells =
-      own.length === 0
-        ? ""
-        : busy
-          ? ` GitView has ${own.length === 1 ? "a shell" : `${own.length} shells`} open there with something still running in ${own.length === 1 ? "it" : "them"}, and ${own.length === 1 ? "it closes" : "they close"} first: whatever is running stops.`
-          : ` GitView's ${own.length === 1 ? "shell" : "shells"} there ${own.length === 1 ? "closes" : "close"} first, since Windows will not delete a folder a shell is standing in.`;
-    const outside = holder.prunable
-      ? ""
-      : isClaudeWorktree(holder.path)
-        ? " It is a Claude Code worktree. If that session is still open, git asks whether to try again: exit the session and answer y. An n drops the worktree anyway and leaves its empty folder behind."
-        : " If another program has a shell open in that folder, git asks whether to try again: close it and answer y. An n drops the worktree anyway and leaves its empty folder behind.";
-
-    return {
-      title: `Delete ${name}`,
-      body: `${why}${shells}${outside} ${reason}`,
-      command: [release, ...commands].join("\n"),
-      confirmLabel: holder.prunable ? "Prune and delete" : "Remove worktree and delete",
-      onConfirm: async () => {
-        for (const id of own) {
+  const runCleanup = useCallback(
+    async (commands: string[], worktrees: string[]) => {
+      for (const path of worktrees) {
+        const row = repos.find((r) => r.path.toLowerCase() === path.toLowerCase());
+        for (const id of row ? sessionsFor(row.path) : []) {
           await closeSession(id);
           setLive((current) => {
             const next = new Set(current);
@@ -1911,10 +1844,27 @@ export default function App() {
             return next;
           });
         }
-        await emit([release, ...commands]);
-      },
-    };
-  }
+      }
+      await emit(commands);
+    },
+    [repos, emit],
+  );
+
+  const describeShells = useCallback(
+    (worktrees: string[]) => {
+      const own = worktrees.flatMap((path) => {
+        const row = repos.find((r) => r.path.toLowerCase() === path.toLowerCase());
+        return row ? sessionsFor(row.path) : [];
+      });
+      if (own.length === 0) return null;
+      const busy = own.some((id) => isBusy(id) || isClaude(id));
+      const these = own.length === 1 ? "a shell" : `${own.length} shells`;
+      return busy
+        ? `GitView has ${these} open there with something still running, and they close first: whatever is running stops.`
+        : `GitView has ${these} open there, which close first, since Windows will not delete a folder a shell is standing in.`;
+    },
+    [repos],
+  );
 
   const askDeleteBranch = useCallback(
     (name: string, scope: BranchScope = "local") => {
@@ -1923,19 +1873,20 @@ export default function App() {
         setConfirmation(deleteBranchConfirmation(selected, name, squashed, scope));
         return;
       }
-      // The main checkout, or a worktree somebody locked, has no command to
-      // offer: the one is switched off the branch in its own shell, the other
-      // was locked on purpose. Say where it is held rather than type a delete
-      // git will refuse.
+      // The main checkout has no command to offer: it is switched off the branch
+      // in its own shell. Any other worktree takes reading before it can be
+      // removed, and Clean up is what reads it, so that is where this goes.
       const holder = selected.worktrees.find(
         (w) => w.path === selected.branches.find((b) => b.name === name)?.worktree,
       );
-      if (holder && !releaseCommand(holder, shell)) {
+      if (holder?.main) {
         setNote(
-          holder.main
-            ? `${name} is checked out in the main checkout at ${holder.path}. Switch that checkout to another branch, then delete it.`
-            : `${name} is checked out in a locked worktree at ${holder.path}. git worktree unlock it first if it is finished with.`,
+          `${name} is checked out in the main checkout at ${holder.path}. Switch that checkout to another branch, then delete it.`,
         );
+        return;
+      }
+      if (holder) {
+        openCleanup({ branch: name, withRemote: scope === "both" });
         return;
       }
       setConfirmation(deleteBranchConfirmation(selected, name, squashed, scope));
@@ -1946,7 +1897,7 @@ export default function App() {
     // `emit` out typed the delete into whichever tab was on screen when this
     // was last rebuilt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, squashed, shell, repos, emit],
+    [selected, squashed, shell, repos, emit, openCleanup],
   );
 
   /**
@@ -2059,13 +2010,16 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         hint: syncCommand,
         run: () => emit(syncCommand),
       });
-      if (prunableCount > 0) {
+      if (hasOtherBranches(selected)) {
         items.push({
-          id: "action:prune",
-          label: `Prune ${prunableCount} merged ${prunableCount === 1 ? "branch" : "branches"}`,
+          id: "action:cleanup",
+          label:
+            finished > 0
+              ? `Clean up ${finished} finished ${finished === 1 ? "branch" : "branches"}`
+              : "Clean up branches",
           kind: "git",
-          hint: pruneCommands(prunable, shell).join("  ·  "),
-          run: () => setConfirmation(pruneConfirmation(selected, squashed)),
+          hint: "prune branches, their worktrees and their copies on origin",
+          run: () => openCleanup(),
         });
       }
 
@@ -2348,7 +2302,11 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
     [repos, prefs],
   );
   // Hidden rows leave the summary as they leave the palette and the batches.
-  const summary = useMemo(() => fleetSummary(batchCandidates), [batchCandidates]);
+  // A folded worktree is a part of the row above it, not a row of the summary.
+  const summary = useMemo(
+    () => fleetSummary(batchCandidates.filter((repo) => !parentRow(repo, batchCandidates))),
+    [batchCandidates],
+  );
   const shellReady = sessionId != null && live.has(sessionId);
 
   /**
@@ -2471,7 +2429,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
               ? `Rebases ${head}'s commits onto ${base}, one by one.`
               : `Merges ${head} into ${base} with a merge commit.`;
         const cleanup = item.deleteBranchOnMerge
-          ? `GitHub deletes ${head} on origin itself afterwards; the local copy stays until Prune.`
+          ? `GitHub deletes ${head} on origin itself afterwards; the local copy stays until Clean up.`
           : `Then deletes ${head} on origin and, if the shell is standing on it, switches to ${base} and deletes the local copy too.`;
         const failing = item.checkRuns.filter((run) => run.state === "FAILURE").length;
         const pending = item.checkRuns.filter((run) => run.state === "PENDING").length;
@@ -2527,11 +2485,9 @@ ${landing} ${cleanup}${warning}${closing}`,
       squashed={squashed}
       reloadKey={refSignature}
       shell={shell}
-      prunable={prunableCount}
-      pruneTitle={
-        prunableCount > 0 ? pruneCommands(prunable, shell).join("\n") : "No merged branches to delete"
-      }
-      onPrune={() => setConfirmation(pruneConfirmation(selected, squashed))}
+      finished={finished}
+      cleanable={hasOtherBranches(selected)}
+      onCleanUp={() => openCleanup()}
       onClose={() => {
         setHistoryOpen(false);
         setHistorySeed(null);
@@ -3172,6 +3128,19 @@ gh pr view ${branchPr.number} --web`}
           label="Selection"
           entries={[{ label: "Copy", run: () => copy(textMenu.text, "the selection") }]}
           onClose={() => setTextMenu(null)}
+        />
+      )}
+
+      {cleanup && selected && (
+        <CleanupDialog
+          key={`${selected.path}:${cleanup.epoch}`}
+          repo={selected}
+          shell={shell}
+          focus={cleanup.focus}
+          onState={upsert}
+          describeShells={describeShells}
+          onRun={(commands, worktrees) => void runCleanup(commands, worktrees)}
+          onClose={() => setCleanup(null)}
         />
       )}
 

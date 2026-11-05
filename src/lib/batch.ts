@@ -15,8 +15,7 @@
  */
 
 import { api } from "./api";
-import { quote, type ShellKind } from "./shell";
-import type { GitOutcome, RepoState, Squashed } from "./types";
+import type { GitOutcome, RepoState } from "./types";
 
 export type BatchKind = "fetch" | "sync" | "prune";
 
@@ -69,89 +68,11 @@ export function pullPlan(repo: RepoState): Plan {
   return run(["pull", "--ff-only"]);
 }
 
-/**
- * The branches a single-repository prune would delete, and how.
- *
- * Two lists, because they take different flags. A branch the trunk already
- * contains goes through `git branch -d`, which refuses anything unmerged and is
- * the whole safety story in [[Batch Operations]]. A squash-merged branch is not
- * contained by anything, so `-d` refuses it too and it needs `-D`. That swaps
- * git's judgement for GitView's, which is why the two are never mixed into one
- * command: the dialog has to be able to say which branches are on which flag.
- */
-export interface PruneSplit {
-  merged: string[];
-  squashed: string[];
-  /**
-   * Finished, but checked out in another worktree, so git would refuse either
-   * flag. Listed apart with where they are held, and left out of the command.
-   */
-  held: { branch: string; path: string }[];
-  /**
-   * Worktrees whose folder is already gone. Their branches are in the lists
-   * above, and `git worktree prune` runs first to drop the record that would
-   * otherwise make git refuse them.
-   */
-  stale: string[];
-}
-
-export function pruneSplit(repo: RepoState, squashed: Squashed[]): PruneSplit {
-  const holder = new Map(repo.worktrees.map((w) => [w.path, w]));
-  const held: PruneSplit["held"] = [];
-  const stale = new Set<string>();
-  // True when the branch can go, once any stale record is pruned.
-  const free = (name: string) => {
-    const path = repo.branches.find((b) => b.name === name)?.worktree;
-    if (!path) return true;
-    const worktree = holder.get(path);
-    if (worktree?.prunable && !worktree.locked) {
-      stale.add(path);
-      return true;
-    }
-    held.push({ branch: name, path });
-    return false;
-  };
-
-  // The scanner leaves every held branch out of `mergedBranches`. They come
-  // back here, and `free` keeps the ones only a stale record holds.
-  const merged = [...repo.mergedBranches, ...heldBranches(repo).map((h) => h.branch)];
-  const contained = new Set(merged);
-  return {
-    merged: merged.filter(free),
-    squashed: squashed
-      // A remote-tracking ref is drawn in the history and is not a branch
-      // `git branch -D` can touch; `git push origin --delete` is a different
-      // action against somebody else's copy and is not one to fold in here.
-      .filter((s) => !s.protected && !s.remote && !contained.has(s.branch))
-      .map((s) => s.branch)
-      .filter(free),
-    held,
-    stale: [...stale],
-  };
-}
-
 /** Contained in the trunk but checked out in another worktree, for the fleet-wide prune to list. */
 export function heldBranches(repo: RepoState): { branch: string; path: string }[] {
   return repo.branches
     .filter((b) => b.merged && b.worktree)
     .map((b) => ({ branch: b.name, path: b.worktree as string }));
-}
-
-/**
- * The commands that prune leaves in the shell, in the order they run.
- *
- * Quoted like the single-branch delete is: `;`, `&`, `(` and `$` are all legal
- * in a branch name, and a local branch can arrive with whatever name a remote
- * gave it. The fleet-wide prune never comes through here, since it passes
- * its names to `git_run` as arguments and no shell reads them.
- */
-export function pruneCommands(split: PruneSplit, kind: ShellKind): string[] {
-  const names = (branches: string[]) => branches.map((name) => quote(name, kind)).join(" ");
-  const out: string[] = [];
-  if (split.stale.length > 0) out.push("git worktree prune");
-  if (split.merged.length > 0) out.push(`git branch -d ${names(split.merged)}`);
-  if (split.squashed.length > 0) out.push(`git branch -D ${names(split.squashed)}`);
-  return out;
 }
 
 /**
@@ -162,7 +83,8 @@ export function pruneCommands(split: PruneSplit, kind: ShellKind): string[] {
  * squash costs a patch id per branch against recent history, which is a read
  * the sweep deliberately does not do, and `-D` across twelve repositories with
  * nobody watching is not a trade worth making for it. Squash-merged branches
- * are offered one repository at a time, where the dialog can name them.
+ * are offered one repository at a time, in Clean up, where the dialog can name
+ * them.
  */
 export function prunePlan(repo: RepoState): Plan {
   if (repo.error) return { skip: "unreadable" };

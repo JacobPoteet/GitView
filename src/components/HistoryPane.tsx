@@ -49,15 +49,15 @@ interface Props {
   reloadKey: string;
   shell: ShellKind;
   /**
-   * Branches the trunk contains or swallowed, which is what Prune deletes. The
+   * Branches the trunk contains or swallowed, for the count on Clean up. The
    * button lives here rather than in the header because this is the view that
    * shows a branch is finished: the chip sits on a commit under the trunk's, or
-   * ends at a "squashed into" note. Zero disables it rather than hiding it.
+   * ends at a "squashed into" note.
    */
-  prunable: number;
-  /** The commands Prune would type, for the tooltip. */
-  pruneTitle: string;
-  onPrune: () => void;
+  finished: number;
+  /** Anything for Clean up to list at all: other branches, worktrees, origin's. */
+  cleanable: boolean;
+  onCleanUp: () => void;
   onClose: () => void;
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Deleting asks first, and the app owns the dialog. */
@@ -185,9 +185,9 @@ export default function HistoryPane({
   squashed,
   reloadKey,
   shell,
-  prunable,
-  pruneTitle,
-  onPrune,
+  finished,
+  cleanable,
+  onCleanUp,
   onClose,
   onCommand,
   onOpen,
@@ -604,12 +604,18 @@ export default function HistoryPane({
         </span>
         <button
           className="btn tiny"
-          disabled={prunable === 0 || disabled}
-          title={disabled ? "Waiting for the shell" : pruneTitle}
-          onClick={onPrune}
+          disabled={!cleanable || disabled}
+          title={
+            disabled
+              ? "Waiting for the shell"
+              : cleanable
+                ? "Every other branch, its worktree and its copy on origin. Lists them, and asks first."
+                : "Nothing to clean up."
+          }
+          onClick={onCleanUp}
         >
-          Prune merged
-          {prunable > 0 && ` (${prunable})`}
+          Clean up
+          {finished > 0 && ` (${finished})`}
         </button>
         <CloseButton onClick={onClose} />
       </div>
