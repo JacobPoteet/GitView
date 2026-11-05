@@ -11,8 +11,8 @@ run and build commands for each project sit next to the repository that needs th
 > Phases 0 to 4 and 6 to 8 work: the fleet scanner, the persistent terminal, task discovery, the
 > branch graph, command blocks, the GitHub inbox, the diff view, hunk staging, the commit history
 > and its filter, blame, the pull request desk, a strip for a paused rebase, the stash count, amend,
-> revert, cherry-pick and reset from a commit, a file tree, splitters, shortcuts and themes. Worktree
-> lanes (Phase 5) are designed but not built. See [Status](#status).
+> revert, cherry-pick and reset from a commit, a file tree, splitters, shortcuts and themes. See
+> [Status](#status).
 
 ## Why
 
@@ -88,8 +88,6 @@ Three rules shape the whole app:
 - **Amend.** A word beside Commit that fills the box from the last commit and types
   `git commit --amend`, or `--amend --no-edit` when only the files changed. Off once the commit is
   on origin, since the next step would be a force push.
-- **Unpushed work on every branch.** The attention sort counts commits that exist on this disk
-  alone across every local branch, not only the one checked out, and the chip names them.
 - **The pull request desk.** Push from the header, open a pull request from a form, watch each check
   by name, and merge with `gh pr merge` typed after a confirmation. See the wiki's GitHub Inbox.
 - **The window, your way.** Drag the column and row splitters, open a second shell for one
@@ -228,10 +226,9 @@ times per repository per refresh is slow enough to feel.
 | 3 | The diff pane, and staging one hunk of it through a typed `git apply` | Built |
 | 3 | The commit history: canvas rails under virtualised rows, lanes packed in Rust | Built |
 | 4 | The pull request desk: push, `gh pr create` from a form, checks by name, merge typed as `gh` | Built |
-| 6 | The state a prompt cannot show: a paused rebase, stashes, unpushed work on every branch, amend | Built |
+| 6 | The state a prompt cannot show: a paused rebase, stashes, amend | Built |
 | 7 | Reading back: the history filter, file history, blame, revert and cherry-pick and reset from a row, search in the scrollback | Built |
 | 8 | The window: splitters, scrollback across restarts, keyboard shortcuts, a second shell per repository | Built |
-| 5 | Worktree lanes | Designed |
 
 Command blocks need PowerShell. GitView wraps whatever prompt you already have, so Starship and
 oh-my-posh keep working, and it writes nothing to your profile or anywhere else outside its own
