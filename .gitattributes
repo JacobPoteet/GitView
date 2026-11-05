@@ -1,0 +1,3 @@
+# tauri-cli before 2.12.0 rewrites a CRLF manifest as LF on every `tauri dev`. The new size makes git
+# report the file modified, and `git worktree remove` refuses over that. LF here gives it nothing to do.
+src-tauri/Cargo.toml text eol=lf
