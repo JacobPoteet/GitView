@@ -1492,7 +1492,10 @@ mod tests {
 
         git(&app, &["init", "-q", "-b", "main"]);
         let source = lib.to_string_lossy().replace('\\', "/");
-        git(&app, &["submodule", "add", "-q", &source, "third_party/lib"]);
+        git(
+            &app,
+            &["submodule", "add", "-q", &source, "third_party/lib"],
+        );
         git(&app, &["commit", "-qm", "add the submodule"]);
 
         let clean = read_repo(&app);

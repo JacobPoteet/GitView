@@ -888,7 +888,9 @@ pub fn hunk_patch(
 ) -> Result<String, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
     if is_conflicted(&repo, file) {
-        return Err(format!("{file} is conflicted, so it has no hunks to stage."));
+        return Err(format!(
+            "{file} is conflicted, so it has no hunks to stage."
+        ));
     }
     let diff = build(&repo, staged).map_err(|e| e.message().to_string())?;
     let idx = locate(&diff, file).ok_or_else(|| format!("{file} has no diff on this side."))?;
@@ -1266,7 +1268,10 @@ mod tests {
         assert!(rows.contains(&"ours".to_string()), "{rows:?}");
         assert!(rows.contains(&"=======".to_string()), "{rows:?}");
         assert!(rows.contains(&"theirs".to_string()), "{rows:?}");
-        assert!(rows.iter().any(|row| row.starts_with(">>>>>>>")), "{rows:?}");
+        assert!(
+            rows.iter().any(|row| row.starts_with(">>>>>>>")),
+            "{rows:?}"
+        );
         assert_eq!((diff.additions, diff.deletions), (0, 0));
 
         let whole = read_worktree(&fixture.dir, "a.txt");
