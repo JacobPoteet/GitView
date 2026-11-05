@@ -24,6 +24,7 @@ export function repo(over: Partial<RepoState> = {}): RepoState {
     mergedBranches: [],
     localBranchCount: 1,
     branches: [],
+    remoteOnlyBranches: 0,
     tags: [],
     defaultBase: "origin/main",
     aheadOfDefault: 0,

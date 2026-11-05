@@ -442,6 +442,11 @@ select:focus-visible,
   background: var(--bg-hover);
 }
 
+/* A worktree under the main checkout it belongs to. */
+.repo-row-wrap.nested {
+  margin-left: 14px;
+}
+
 /* The selected row is a raised surface with the accent as a rule down its
    edge. A violet fill and a violet border made it the loudest thing in the
    rail, louder than the rows asking for attention. */
