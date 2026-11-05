@@ -18,6 +18,7 @@ import type {
   RootSuggestion,
   ScanReport,
   Squashed,
+  CleanupRead,
   StoredBlock,
   StoredScrollback,
   Task,
@@ -43,6 +44,8 @@ export const api = {
    * Read for the open repository, not in the sweep: see squash.rs.
    */
   repoSquashed: (path: string) => invoke<Squashed[]>("repo_squashed", { path }),
+  /** What deleting this repository's other branches would run into. */
+  repoCleanup: (path: string) => invoke<CleanupRead>("repo_cleanup", { path }),
   repoChanges: (path: string) => invoke<FileChange[]>("repo_changes", { path }),
   /**
    * Folders of the working tree, one listing each, for the rail's project

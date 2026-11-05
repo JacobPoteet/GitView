@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { repo } from "./fixtures";
-import { attentionScore, branchTips, isClean, unpushed } from "./types";
+import {
+  attentionScore,
+  branchTips,
+  fleetSummary,
+  foldWorktrees,
+  isClean,
+  parentRow,
+  unpushed,
+  worktreeRemoved,
+} from "./types";
 
 describe("attentionScore", () => {
   it("orders a conflict above a paused operation above behind above dirty", () => {
@@ -43,17 +52,81 @@ describe("unpushed", () => {
     upstream: null,
     aheadOfUpstream: 0,
     worktree: null,
+    goneUpstream: null,
+    originTip: null,
     ...over,
   });
 
-  it("counts a branch switched away from with work on it", () => {
-    expect(unpushed(repo({ branches: [branch({ ahead: 2 })] }))).toBe(2);
-    expect(unpushed(repo({ branches: [branch({ upstream: "origin/topic", aheadOfUpstream: 3 })] }))).toBe(3);
+  it("counts the checked-out branch with no upstream", () => {
+    const on = branch({ isHead: true, ahead: 3 });
+    expect(unpushed(repo({ upstream: null, aheadOfDefault: 3, branches: [on] }))).toBe(3);
   });
 
-  it("leaves HEAD's tracked branch to `ahead`, and skips a merged branch", () => {
-    expect(unpushed(repo({ ahead: 4, branches: [branch({ name: "main", isHead: true, ahead: 4 })] }))).toBe(0);
-    expect(unpushed(repo({ branches: [branch({ ahead: 2, merged: true })] }))).toBe(0);
+  it("leaves a tracked branch to `ahead`", () => {
+    const on = branch({ name: "main", isHead: true, upstream: "origin/main", aheadOfUpstream: 4 });
+    expect(unpushed(repo({ ahead: 4, branches: [on] }))).toBe(0);
+  });
+
+  it("says nothing about a branch that is not checked out", () => {
+    const main = branch({ name: "main", isHead: true, upstream: "origin/main" });
+    const others = [
+      branch({ name: "local", ahead: 2 }),
+      branch({ name: "pushed", upstream: "origin/pushed", aheadOfUpstream: 3 }),
+      branch({ name: "merged-pr", ahead: 2, behind: 2, goneUpstream: "origin/merged-pr" }),
+    ];
+    const state = repo({ branches: [main, ...others] });
+    expect(unpushed(state)).toBe(0);
+    expect(isClean(state)).toBe(true);
+  });
+
+  it("has nothing to push on a branch whose upstream went away", () => {
+    const on = branch({ isHead: true, ahead: 2, goneUpstream: "origin/topic" });
+    expect(unpushed(repo({ upstream: null, aheadOfDefault: 2, branches: [on] }))).toBe(0);
+  });
+});
+
+describe("attentionScore and other branches", () => {
+  it("leaves a merged side branch out of the sort and the summary", () => {
+    const state = repo({ mergedBranches: ["done"] });
+    expect(attentionScore(state)).toBe(0);
+    expect(fleetSummary([state])).toEqual([]);
+  });
+});
+
+describe("foldWorktrees", () => {
+  const main = repo({ path: "F:\\GitHub\\app", name: "app" });
+  const linked = (name: string, mainPath: string | null) =>
+    repo({ path: `F:\\GitHub\\${name}`, name, isWorktree: true, mainPath });
+
+  it("folds a worktree under its main checkout, whatever the slashes and case", () => {
+    const child = linked("app-wt", "f:/github/APP");
+    expect(parentRow(child, [main, child])).toBe(main);
+    expect(foldWorktrees([main, child], [main, child]).get(main.path)).toEqual([child]);
+  });
+
+  it("leaves one in place when its main checkout is not on screen", () => {
+    const child = linked("app-wt", "F:\\elsewhere\\app");
+    expect(foldWorktrees([main, child], [main, child]).size).toBe(0);
+  });
+
+  it("never folds a row that is not a worktree", () => {
+    expect(foldWorktrees([main], [main]).size).toBe(0);
+  });
+
+  it("drops a worktree once its main checkout stops listing it, and no other row", () => {
+    const child = linked("app-wt", main.path);
+    const summary = {
+      path: "f:/github/APP-WT",
+      branch: "topic",
+      main: false,
+      prunable: false,
+      locked: false,
+      lockReason: null,
+    };
+    expect(worktreeRemoved(child, { ...main, worktrees: [summary] })).toBe(false);
+    expect(worktreeRemoved(child, main)).toBe(true);
+    expect(worktreeRemoved(linked("other-wt", "F:\\GitHub\\other"), main)).toBe(false);
+    expect(worktreeRemoved(main, main)).toBe(false);
   });
 });
 

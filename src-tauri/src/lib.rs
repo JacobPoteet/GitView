@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod blame;
 pub mod cache;
+pub mod cleanup;
 pub mod diff;
 pub mod fleet;
 pub mod github;
@@ -329,6 +330,16 @@ async fn repo_history(
 #[tauri::command]
 async fn repo_squashed(path: String) -> Result<Vec<Squashed>, String> {
     blocking(move || squash::detect(&PathBuf::from(&path))).await
+}
+
+/// What deleting this repository's other branches would run into: what each
+/// worktree would refuse over or lose, and what is on origin.
+///
+/// Read when the Clean up dialog opens rather than in the sweep, since it costs
+/// a `git status` per worktree and a count per remote branch.
+#[tauri::command]
+async fn repo_cleanup(path: String) -> Result<cleanup::CleanupRead, String> {
+    blocking(move || cleanup::read(&PathBuf::from(&path))).await
 }
 
 // ------------------------------------------------------------ preferences
@@ -794,6 +805,7 @@ pub fn run() {
             repo_graph,
             repo_history,
             repo_squashed,
+            repo_cleanup,
             repo_changes,
             repo_tree,
             repo_diff,

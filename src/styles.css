@@ -442,6 +442,11 @@ select:focus-visible,
   background: var(--bg-hover);
 }
 
+/* A worktree under the main checkout it belongs to. */
+.repo-row-wrap.nested {
+  margin-left: 14px;
+}
+
 /* The selected row is a raised surface with the accent as a rule down its
    edge. A violet fill and a violet border made it the loudest thing in the
    rail, louder than the rows asking for attention. */
@@ -2972,6 +2977,90 @@ button.branch-name.has-other .branch-count {
 
 .batch-pick.blocked .batch-pick-hint {
   color: var(--text-faint);
+}
+
+/* Clean up. A branch is mono because a prompt would accept it; the sentences
+   under it are what the tick is being asked to agree to. */
+.cleanup-fetch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 16px 0;
+  font-size: var(--fs-meta);
+}
+
+.cleanup-fetch code {
+  font-family: var(--font-mono);
+}
+
+.cleanup-fetch pre {
+  flex-basis: 100%;
+  margin: 4px 0;
+}
+
+.cleanup-remote {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.cleanup-remote input,
+.cleanup-row input {
+  accent-color: var(--accent);
+}
+
+.cleanup-group {
+  padding: 8px 0 3px;
+  font-size: var(--fs-meta);
+  color: var(--text-faint);
+}
+
+.cleanup-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 1px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.cleanup-row.blocked {
+  cursor: default;
+  color: var(--text-faint);
+}
+
+.cleanup-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.cleanup-note {
+  grid-column: 2;
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.cleanup-row.blocked .cleanup-note {
+  color: var(--text-faint);
+}
+
+.cleanup-commands {
+  max-height: 18vh;
+  overflow: auto;
+}
+
+.cleanup-warning {
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
 }
 
 /* The branch list is the whole safety argument for prune, so it is on screen

@@ -50,6 +50,18 @@ pub struct BranchSummary {
     /// names the checkout rather than typing a command git will refuse.
     #[serde(default)]
     pub worktree: Option<String>,
+    /// What the branch was tracking, when git still has the setting and the
+    /// remote-tracking ref is gone. A pull request merged with its branch
+    /// deleted leaves this after the next `git fetch --prune`. `upstream` is
+    /// None then too, and a branch whose remote went away is a different thing
+    /// from one that was never pushed.
+    #[serde(default)]
+    pub gone_upstream: Option<String>,
+    /// The commit `origin/<name>` points at, when there is one. Says whether
+    /// `git push origin --delete` has anything to delete, and whether that copy
+    /// holds commits this one does not.
+    #[serde(default)]
+    pub origin_tip: Option<String>,
 }
 
 /// Another checkout of the same repository: a linked worktree, or, read from
@@ -73,6 +85,10 @@ pub struct WorktreeSummary {
     pub prunable: bool,
     /// `git worktree lock`ed: remove and prune both leave it alone.
     pub locked: bool,
+    /// What `git worktree lock --reason` said, so the lock can be judged
+    /// rather than just reported.
+    #[serde(default)]
+    pub lock_reason: Option<String>,
 }
 
 /// One tag, and the commit it marks.
@@ -143,6 +159,11 @@ pub struct RepoState {
     /// Every local branch, newest first, with the current one leading.
     #[serde(default)]
     pub branches: Vec<BranchSummary>,
+    /// Branches on origin with no local namesake and not the default branch.
+    /// A count, since a repository can have thousands of them and this runs on
+    /// every sweep. `cleanup::read` measures them when somebody asks.
+    #[serde(default)]
+    pub remote_only_branches: usize,
     /// Every tag, by name. Part of `refSignature`, like `branches`.
     #[serde(default)]
     pub tags: Vec<TagSummary>,
@@ -178,7 +199,7 @@ pub struct RepoState {
 }
 
 impl RepoState {
-    fn empty(path: &Path) -> Self {
+    pub(crate) fn empty(path: &Path) -> Self {
         Self {
             path: path.to_string_lossy().to_string(),
             name: path
@@ -200,6 +221,7 @@ impl RepoState {
             merged_branches: Vec::new(),
             local_branch_count: 0,
             branches: Vec::new(),
+            remote_only_branches: 0,
             tags: Vec::new(),
             default_base: None,
             ahead_of_default: 0,
@@ -591,7 +613,7 @@ pub(crate) fn default_branch(repo: &Repository) -> Option<String> {
 /// the checkout: a worktree whose folder was deleted still has its HEAD there,
 /// and git still refuses to delete the branch it names, so that is the case
 /// that most needs reading and the one opening the folder would miss.
-fn read_worktrees(repo: &Repository, state: &mut RepoState) {
+pub(crate) fn read_worktrees(repo: &Repository, state: &mut RepoState) {
     // git2 0.19 has no `commondir()`. A linked worktree's git dir is always
     // `<common>/worktrees/<id>/`, and the main checkout's is the common one.
     let common = if repo.is_worktree() {
@@ -616,6 +638,7 @@ fn read_worktrees(repo: &Repository, state: &mut RepoState) {
                 main: true,
                 prunable: false,
                 locked: false,
+                lock_reason: None,
             });
         }
     }
@@ -630,15 +653,19 @@ fn read_worktrees(repo: &Repository, state: &mut RepoState) {
         if same_path(worktree.path(), here) {
             continue;
         }
+        let lock = worktree.is_locked();
         state.worktrees.push(WorktreeSummary {
             path: native(worktree.path()),
             branch: head_branch(&common.join("worktrees").join(name).join("HEAD")),
             main: false,
             prunable: worktree.validate().is_err(),
-            locked: matches!(
-                worktree.is_locked(),
-                Ok(git2::WorktreeLockStatus::Locked(_))
-            ),
+            locked: matches!(lock, Ok(git2::WorktreeLockStatus::Locked(_))),
+            lock_reason: match lock {
+                Ok(git2::WorktreeLockStatus::Locked(reason)) => reason
+                    .map(|text| text.trim().to_string())
+                    .filter(|text| !text.is_empty()),
+                _ => None,
+            },
         });
     }
 }
@@ -654,7 +681,7 @@ fn head_branch(head: &Path) -> Option<String> {
 /// A path as the rest of the app spells it. git records worktree paths with
 /// forward slashes on Windows, and the sidebar's rows, the sessions keyed on
 /// them and the command typed at a prompt all use the platform's own.
-fn native(path: &Path) -> String {
+pub(crate) fn native(path: &Path) -> String {
     let text = path.to_string_lossy();
     let text = text.trim_end_matches(['/', '\\']);
     if cfg!(windows) {
@@ -707,7 +734,10 @@ pub(crate) fn short_ref(reference: &str) -> &str {
 /// it understates how far a branch has run. This is the same choice `graph.rs`
 /// makes in `pick_base`, and the two have to agree or the sidebar and the graph
 /// would report different numbers for the same branch.
-fn default_tip(repo: &Repository, default_branch: Option<&str>) -> (Option<Oid>, Option<String>) {
+pub(crate) fn default_tip(
+    repo: &Repository,
+    default_branch: Option<&str>,
+) -> (Option<Oid>, Option<String>) {
     let Some(name) = default_branch else {
         return (None, None);
     };
@@ -723,6 +753,24 @@ fn default_tip(repo: &Repository, default_branch: Option<&str>) -> (Option<Oid>,
         }
     }
     (None, None)
+}
+
+/// The branches on origin by their own names, `feat/x` rather than
+/// `origin/feat/x`, without `origin/HEAD`, which is another name for one of them.
+pub(crate) fn origin_refs(repo: &Repository) -> Vec<String> {
+    let Ok(references) = repo.references_glob("refs/remotes/origin/*") else {
+        return Vec::new();
+    };
+    references
+        .flatten()
+        .filter_map(|reference| {
+            reference
+                .name()
+                .and_then(|name| name.strip_prefix("refs/remotes/origin/"))
+                .map(str::to_string)
+        })
+        .filter(|name| name != "HEAD")
+        .collect()
 }
 
 /// Every local branch, measured against that tip in one pass.
@@ -767,6 +815,22 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
                 .unwrap_or(0),
             _ => 0,
         };
+        // `upstream()` fails on a ref that is gone and on a branch that never
+        // had one. `branch_upstream_name` reads only the setting, so the two
+        // answers together tell those apart.
+        let gone_upstream = if upstream.is_none() {
+            repo.branch_upstream_name(&format!("refs/heads/{name}"))
+                .ok()
+                .and_then(|buf| buf.as_str().map(str::to_string))
+                .and_then(|full| full.strip_prefix("refs/remotes/").map(str::to_string))
+        } else {
+            None
+        };
+        let origin_tip = repo
+            .find_reference(&format!("refs/remotes/origin/{name}"))
+            .ok()
+            .and_then(|reference| reference.target())
+            .map(|oid| oid.to_string());
 
         let (ahead, behind) = match (tip, default_tip) {
             (Some(tip), Some(base)) => repo.graph_ahead_behind(tip, base).unwrap_or((0, 0)),
@@ -805,8 +869,16 @@ fn read_branches(repo: &Repository, state: &mut RepoState) {
             upstream: upstream_name,
             ahead_of_upstream,
             worktree,
+            gone_upstream,
+            origin_tip,
         });
     }
+
+    state.remote_only_branches = origin_refs(repo)
+        .iter()
+        .filter(|name| Some(*name) != state.default_branch.as_ref())
+        .filter(|name| !state.branches.iter().any(|b| &b.name == *name))
+        .count();
 
     // The branch you are on leads, then the ones touched most recently. A list
     // ordered by name buries the branch from yesterday under an alphabet.
@@ -1130,6 +1202,102 @@ mod tests {
         assert_eq!(by_name("tracked").ahead_of_upstream, 1);
         assert_eq!(by_name("local").upstream, None);
         assert_eq!(by_name("local").ahead, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_remote_branch_deleted_after_the_merge_is_not_a_branch_never_pushed() {
+        let dir = std::env::temp_dir().join(format!("gitview-gone-{}", std::process::id()));
+        let work = dir.join("work");
+        let origin = dir.join("origin.git");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&work).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .expect("git.exe");
+        };
+        git(&dir, &["init", "-q", "--bare", "origin.git"]);
+        git(&work, &["init", "-q", "-b", "main"]);
+        git(&work, &["config", "user.email", "t@t"]);
+        git(&work, &["config", "user.name", "t"]);
+        git(&work, &["config", "commit.gpgsign", "false"]);
+        git(
+            &work,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
+        );
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&work, &["push", "-q", "-u", "origin", "main"]);
+
+        // Pushed, then deleted on the remote the way a merged pull request is.
+        git(&work, &["switch", "-qc", "merged-pr"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "work"]);
+        git(&work, &["push", "-q", "-u", "origin", "merged-pr"]);
+        git(&work, &["switch", "-q", "main"]);
+        git(&work, &["push", "-q", "origin", "--delete", "merged-pr"]);
+        git(&work, &["fetch", "-q", "--prune"]);
+
+        git(&work, &["branch", "local-only"]);
+        git(&work, &["push", "-q", "origin", "main:remote-only"]);
+        git(&work, &["fetch", "-q", "--prune"]);
+
+        let state = read_repo(&work);
+        let by_name = |n: &str| state.branches.iter().find(|b| b.name == n).unwrap();
+        assert_eq!(by_name("merged-pr").upstream, None);
+        assert_eq!(
+            by_name("merged-pr").gone_upstream.as_deref(),
+            Some("origin/merged-pr")
+        );
+        assert_eq!(by_name("merged-pr").origin_tip, None);
+        assert_eq!(by_name("local-only").gone_upstream, None);
+        assert_eq!(by_name("local-only").origin_tip, None);
+        assert_eq!(by_name("main").gone_upstream, None);
+        assert_eq!(by_name("main").origin_tip, by_name("main").tip);
+        // origin/main has a local namesake and origin/remote-only does not.
+        assert_eq!(state.remote_only_branches, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_lock_keeps_the_reason_it_was_given() {
+        let dir = std::env::temp_dir().join(format!("gitview-lock-{}", std::process::id()));
+        let work = dir.join("work");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&work).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .expect("git.exe");
+        };
+        git(&work, &["init", "-q", "-b", "main"]);
+        git(&work, &["config", "user.email", "t@t"]);
+        git(&work, &["config", "user.name", "t"]);
+        git(&work, &["config", "commit.gpgsign", "false"]);
+        git(&work, &["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&work, &["worktree", "add", "-q", "../with", "-b", "with"]);
+        git(&work, &["worktree", "add", "-q", "../bare", "-b", "bare"]);
+        git(
+            &work,
+            &["worktree", "lock", "../with", "--reason", "agent 7"],
+        );
+        git(&work, &["worktree", "lock", "../bare"]);
+
+        let state = read_repo(&work);
+        let by_branch = |n: &str| {
+            state
+                .worktrees
+                .iter()
+                .find(|w| w.branch.as_deref() == Some(n))
+                .unwrap()
+        };
+        assert!(by_branch("with").locked);
+        assert_eq!(by_branch("with").lock_reason.as_deref(), Some("agent 7"));
+        assert!(by_branch("bare").locked);
+        assert_eq!(by_branch("bare").lock_reason, None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
