@@ -2161,8 +2161,9 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         items.push({
           id: `gh:${item.ownerRepo}:${item.kind}${item.number}`,
           label: `${item.repoName} #${item.number} ${item.title}`,
-          kind: item.kind === "pr" ? "git" : "task",
+          kind: item.kind === "pr" ? "git" : "issue",
           hint: item.kind === "pr" ? "pull request" : "issue",
+          inbox: true,
           run: () => {
             setSelectedPath(item.repoPath);
             setInboxOpen(true);
