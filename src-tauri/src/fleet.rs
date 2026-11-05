@@ -366,7 +366,9 @@ fn read_status(repo: &Repository, state: &mut RepoState) {
         .recurse_untracked_dirs(false)
         .include_ignored(false)
         .include_unmodified(false)
-        .exclude_submodules(true);
+        // A moved submodule is a change `git status` reports, and excluding them
+        // left that repository reading Clean.
+        .exclude_submodules(false);
 
     let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
         return;
@@ -430,7 +432,7 @@ pub fn read_changes(path: &Path) -> Result<Vec<FileChange>, String> {
         .recurse_untracked_dirs(true)
         .include_ignored(false)
         .include_unmodified(false)
-        .exclude_submodules(true)
+        .exclude_submodules(false)
         .renames_head_to_index(true)
         .renames_index_to_workdir(true);
 
@@ -1448,5 +1450,68 @@ mod tests {
             .collect();
         let id = commit.to_string();
         assert_eq!(tags, vec![("alpha", id.as_str()), ("zeta", id.as_str())]);
+    }
+
+    /// A submodule checked out at another commit is `M third_party/lib` in
+    /// `git status`, and it has to count on the row and list in the column.
+    #[test]
+    fn a_moved_submodule_counts_as_a_change() {
+        let root = std::env::temp_dir().join(format!("gitview-submodule-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let lib = root.join("lib");
+        let app = root.join("app");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::create_dir_all(&app).unwrap();
+        let git = |dir: &std::path::Path, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args([
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "protocol.file.allow=always",
+                ])
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("git.exe");
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        git(&lib, &["init", "-q", "-b", "main"]);
+        std::fs::write(lib.join("f"), "one\n").unwrap();
+        git(&lib, &["add", "."]);
+        git(&lib, &["commit", "-qm", "one"]);
+
+        git(&app, &["init", "-q", "-b", "main"]);
+        let source = lib.to_string_lossy().replace('\\', "/");
+        git(&app, &["submodule", "add", "-q", &source, "third_party/lib"]);
+        git(&app, &["commit", "-qm", "add the submodule"]);
+
+        let clean = read_repo(&app);
+        assert_eq!(clean.modified, 0, "a submodule where HEAD has it is clean");
+
+        let inner = app.join("third_party").join("lib");
+        std::fs::write(inner.join("f"), "two\n").unwrap();
+        git(&inner, &["add", "."]);
+        git(&inner, &["commit", "-qm", "two"]);
+
+        let moved = read_repo(&app);
+        let changes = super::read_changes(&app).expect("read changes");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(moved.modified, 1);
+        let rows: Vec<(&str, &str, bool)> = changes
+            .iter()
+            .map(|c| (c.path.as_str(), c.state.as_str(), c.staged))
+            .collect();
+        assert_eq!(rows, vec![("third_party/lib", "modified", false)]);
     }
 }
