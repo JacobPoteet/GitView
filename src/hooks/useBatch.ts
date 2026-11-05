@@ -9,6 +9,8 @@ interface Args {
   prefs: Map<string, RepoPref>;
   /** The first sweep has resolved, which is when a launch fetch may plan. */
   swept: boolean;
+  /** A sweep is running, so the rows are not yet the whole fleet. */
+  scanning: boolean;
   upsert: (repo: RepoState) => void;
   /**
    * A repository's share of a batch has landed. `upsert` already carried its
@@ -27,7 +29,7 @@ interface Args {
  * the status bar) and the fetch that runs on its own when the last one has
  * gone stale.
  */
-export function useBatch({ repos, prefs, swept, upsert, synced, setNote, setNoteWith }: Args) {
+export function useBatch({ repos, prefs, swept, scanning, upsert, synced, setNote, setNoteWith }: Args) {
   /** The last batch, running or finished, and whether its transcript is up. */
   const [batch, setBatch] = useState<BatchRun | null>(null);
   const [batchKind, setBatchKind] = useState<BatchKind>("sync");
@@ -149,9 +151,11 @@ export function useBatch({ repos, prefs, swept, upsert, synced, setNote, setNote
     return runBatch(
       "fetch",
       batchCandidates.filter((repo) => !isSkip(fetchPlan(repo))).map((repo) => repo.path),
-      true,
+      // Mid-sweep the rows are only what the sweep has reached so far, so this
+      // fetches those and leaves the fleet's stamp where it was.
+      !scanning,
     );
-  }, [batchCandidates, runBatch, setNote]);
+  }, [batchCandidates, scanning, runBatch, setNote]);
 
   /**
    * The button in the status bar. Sync, over the whole fleet, with no pick
@@ -164,8 +168,8 @@ export function useBatch({ repos, prefs, swept, upsert, synced, setNote, setNote
     setBatchEpoch((n) => n + 1);
     setBatchOpen(false);
     setTranscriptSeen(false);
-    return runBatch("sync", batchCandidates.map((repo) => repo.path), true);
-  }, [batchCandidates, runBatch]);
+    return runBatch("sync", batchCandidates.map((repo) => repo.path), !scanning);
+  }, [batchCandidates, scanning, runBatch]);
 
   /**
    * One fetch on launch when the last one has gone stale, under the same
@@ -177,14 +181,19 @@ export function useBatch({ repos, prefs, swept, upsert, synced, setNote, setNote
    * a working tree moves on its own at launch. It waits for the first sweep
    * to resolve: the cached rows arrive a render before the preferences do,
    * and a fetch planned from that render includes the hidden repositories.
+   *
+   * A sweep running holds it back too. On a first run the first sweep has no
+   * folders and resolves empty, so adding a folder streams its rows in with
+   * `swept` already true, and this used to fire on the first row and stamp the
+   * fleet as fetched from a fleet of one.
    */
   const fetchLaunched = useRef(false);
   useEffect(() => {
-    if (fetchLaunched.current || !swept || batchCandidates.length === 0) return;
+    if (fetchLaunched.current || !swept || scanning || batchCandidates.length === 0) return;
     fetchLaunched.current = true;
     if (!settings().launch.fetch) return;
     if (Math.floor(Date.now() / 1000) - fetchedAt > 600) fetchAll();
-  }, [swept, batchCandidates, fetchedAt, fetchAll]);
+  }, [swept, scanning, batchCandidates, fetchedAt, fetchAll]);
 
   /**
    * Opens a fresh pick stage.

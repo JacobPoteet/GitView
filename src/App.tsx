@@ -570,7 +570,7 @@ export default function App() {
     setFetchedAt,
     transcriptSeen,
     setTranscriptSeen,
-  } = useBatch({ repos, prefs, swept, upsert, synced, setNote, setNoteWith });
+  } = useBatch({ repos, prefs, swept, scanning, upsert, synced, setNote, setNoteWith });
 
   const loadPrefs = useCallback(async () => {
     try {
