@@ -37,6 +37,7 @@ const MAX_COMPARED: u64 = 8 * 1024 * 1024;
 /// come back: `.env.local` is ignored because it matters.
 const REBUILT: &[&str] = &[
     ".cache",
+    ".claude",
     ".gradle",
     ".next",
     ".nuxt",
@@ -48,6 +49,7 @@ const REBUILT: &[&str] = &[
     "build",
     "coverage",
     "dist",
+    "gen",
     "node_modules",
     "obj",
     "out",
@@ -72,6 +74,9 @@ pub struct WorktreeCheck {
     pub ignored_count: usize,
     /// git refuses to remove a worktree holding submodules without `--force`.
     pub submodules: bool,
+    /// A program has the folder open, so `git worktree remove` would stop at
+    /// "Should I try again? (y/n)" with the rest of the commands queued behind it.
+    pub in_use: bool,
     /// The status could not be read, so nothing above can be trusted.
     pub error: Option<String>,
 }
@@ -125,8 +130,16 @@ fn check_worktree(path: &Path) -> WorktreeCheck {
         ignored: Vec::new(),
         ignored_count: 0,
         submodules: false,
+        in_use: false,
         error: None,
     };
+    match folder_in_use(path) {
+        Ok(held) => check.in_use = held,
+        Err(message) => {
+            check.error = Some(message);
+            return check;
+        }
+    }
     let repo = match Repository::open(path) {
         Ok(repo) => repo,
         Err(err) => {
@@ -167,6 +180,46 @@ fn check_worktree(path: &Path) -> WorktreeCheck {
         }
     }
     check
+}
+
+/// Whether something has this folder or anything under it open.
+///
+/// Windows refuses to rename a folder with a process standing anywhere inside it
+/// or a file held open in it, which is the same thing that stops the delete, and
+/// it refuses at once rather than asking. The folder goes back in the same breath.
+/// Nothing can see it moved unless it starts in that moment, and anything already
+/// running in there is what makes the first rename fail.
+///
+/// A running `.exe` is the gap: it stops the delete and not the rename, measured
+/// 5 Nov 2026, so a dev build started from inside still reaches git's prompt.
+#[cfg(windows)]
+fn folder_in_use(path: &Path) -> Result<bool, String> {
+    let mut aside = path.as_os_str().to_owned();
+    aside.push(".gitview-probe");
+    let aside = std::path::PathBuf::from(aside);
+    if std::fs::rename(path, &aside).is_err() {
+        return Ok(true);
+    }
+    // Defender or the indexer can look at a new name the moment it appears.
+    let mut last = None;
+    for _ in 0..40 {
+        match std::fs::rename(&aside, path) {
+            Ok(()) => return Ok(false),
+            Err(err) => last = Some(err),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    Err(format!(
+        "could not move {} back from {}: {}",
+        path.display(),
+        aside.display(),
+        last.map(|err| err.to_string()).unwrap_or_default()
+    ))
+}
+
+#[cfg(not(windows))]
+fn folder_in_use(_path: &Path) -> Result<bool, String> {
+    Ok(false)
 }
 
 struct StatusEntry<'a> {
@@ -400,8 +453,44 @@ mod tests {
     fn only_a_folder_a_build_makes_is_written_off() {
         assert!(is_rebuilt("node_modules/"));
         assert!(is_rebuilt("src-tauri/target/"));
+        assert!(is_rebuilt(".claude/"));
+        assert!(is_rebuilt("src-tauri/gen/"));
         assert!(!is_rebuilt(".env.local"));
-        assert!(!is_rebuilt(".claude/"));
+        assert!(!is_rebuilt("notes/"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_with_a_process_standing_in_it_reads_as_in_use() {
+        let (dir, work, linked) = fixture("held");
+        assert!(!check_of(&work).in_use);
+        // Still where git expects it after being moved aside and back.
+        assert!(git(&linked, &["status", "--porcelain"]).status.success());
+
+        let sub = linked.join("deep");
+        std::fs::create_dir_all(&sub).unwrap();
+        let mut holder = std::process::Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .current_dir(&sub)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("ping");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(check_of(&work).in_use);
+
+        holder.kill().unwrap();
+        holder.wait().unwrap();
+        // The handle goes a moment after the process does.
+        let mut held = true;
+        for _ in 0..40 {
+            held = check_of(&work).in_use;
+            if !held {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(!held);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

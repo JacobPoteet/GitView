@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import {
   cleanupCommands,
   cleanupRows,
   confirmLabel,
   pullFirst,
-  touchesClaude,
   type CleanupRow,
+  type ShellState,
 } from "../lib/cleanup";
 import type { ShellKind } from "../lib/shell";
-import type { CleanupRead, GitOutcome, RepoState, Squashed } from "../lib/types";
+import { relativeTime, type CleanupRead, type GitOutcome, type RepoState, type Squashed } from "../lib/types";
 import Dialog from "./Dialog";
 
 /** One branch to start from, when the dialog opened from that branch's menu. */
@@ -24,8 +24,8 @@ interface Props {
   focus: CleanupFocus | null;
   /** The re-read after the fetch is news to the rest of the app too. */
   onState: (state: RepoState) => void;
-  /** GitView's own shells in those folders, as a sentence. Null when it has none. */
-  describeShells: (paths: string[]) => string | null;
+  /** What GitView's own shells in a folder are doing, since they close first. */
+  shellState: (path: string) => ShellState;
   /** Types the lines, after closing GitView's shells in those folders. */
   onRun: (commands: string[], worktrees: string[]) => void;
   onClose: () => void;
@@ -46,30 +46,59 @@ async function readAll(path: string): Promise<Snapshot> {
   return { repo, squashed, read };
 }
 
+/** A group's own tick: on, off, or the dash when only some of its rows are on. */
+function GroupTick({
+  rows,
+  isTicked,
+  onChange,
+}: {
+  rows: CleanupRow[];
+  isTicked: (row: CleanupRow) => boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const box = useRef<HTMLInputElement>(null);
+  const on = rows.filter(isTicked).length;
+  useEffect(() => {
+    if (box.current) box.current.indeterminate = on > 0 && on < rows.length;
+  }, [on, rows.length]);
+  return (
+    <input
+      ref={box}
+      type="checkbox"
+      checked={rows.length > 0 && on === rows.length}
+      disabled={rows.length === 0}
+      onChange={(event) => onChange(event.target.checked)}
+    />
+  );
+}
+
 /**
- * Every branch but the one you are on, and what deleting each one takes.
+ * Ready and not ready, one line a branch.
  *
- * What the dialog says is only worth anything if it is current, so it fetches
- * first: a merge on GitHub an hour ago is what turns a row from unfinished into
- * finished, and it is why a remote delete here is never aimed at a ref already
- * gone. The rows from before the fetch show straight away, and the button waits
- * for the fetch, whichever way it ends.
+ * Reading this should take as long as reading the branch menu, which is where
+ * its words come from: `merged`, `squashed`, `gone`, `local`, `worktree`. Each
+ * tag's title holds the sentence, and the commands are one click down, so nothing
+ * is hidden and nothing has to be read to press the button on a routine tidy-up.
+ *
+ * It fetches first, since a merge an hour ago is what makes a row ready, and that
+ * is why a remote delete here is never aimed at a ref already gone. The rows from
+ * before the fetch show straight away and the button waits for it.
  */
 export default function CleanupDialog({
   repo,
   shell,
   focus,
   onState,
-  describeShells,
+  shellState,
   onRun,
   onClose,
 }: Props) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [fetching, setFetching] = useState(repo.remoteUrl !== null);
-  const [fetched, setFetched] = useState<GitOutcome | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   // Only what somebody changed. Everything else follows the row, so a row a
-  // fetch has just proved finished starts ticked without undoing a choice.
+  // fetch has just proved ready starts ticked without undoing a choice.
   const [changed, setChanged] = useState<Map<string, boolean>>(new Map());
   const [withRemote, setWithRemote] = useState(focus ? focus.withRemote : true);
 
@@ -96,7 +125,7 @@ export default function CleanupDialog({
           }),
         );
         if (stale) return;
-        setFetched(outcome);
+        if (outcome.code !== 0) setFetchError(outcome.stderr.trim() || `exit ${outcome.code}`);
         await load();
       } catch (err) {
         if (!stale) setFailed(String(err));
@@ -113,8 +142,8 @@ export default function CleanupDialog({
   }, [path, hasRemote]);
 
   const rows = useMemo(
-    () => (snapshot ? cleanupRows(snapshot.repo, snapshot.squashed, snapshot.read) : []),
-    [snapshot],
+    () => (snapshot ? cleanupRows(snapshot.repo, snapshot.squashed, snapshot.read, shellState) : []),
+    [snapshot, shellState],
   );
 
   const selectable = (row: CleanupRow) =>
@@ -128,49 +157,69 @@ export default function CleanupDialog({
     pull: snapshot ? pullFirst(snapshot.repo) : false,
     withRemote,
   });
-
-  const setAll = (test: (row: CleanupRow) => boolean) =>
-    setChanged(new Map(rows.map((row) => [row.key, test(row)])));
-
   const worktrees = ticked.flatMap((row) =>
     row.worktree && !row.worktree.prunable ? [row.worktree.path] : [],
   );
-  const shells = describeShells(worktrees);
-  // What will go leads its group. Sorted on how the row starts rather than on
-  // its tick, so a row does not jump out from under the pointer when clicked.
-  const finished = rows
-    .filter((row) => row.finished)
-    .sort((a, b) => Number(b.ticked) - Number(a.ticked));
-  const others = rows.filter((row) => !row.finished);
-  const on = snapshot?.repo.branch ?? repo.branch ?? "this branch";
+
+  const setGroup = (group: CleanupRow[], value: boolean) =>
+    setChanged((current) => {
+      const next = new Map(current);
+      for (const row of group) next.set(row.key, value);
+      return next;
+    });
 
   const renderRow = (row: CleanupRow) => {
-    const blockedHere = !selectable(row);
+    const off = !selectable(row);
     return (
       <label
         key={row.key}
-        className={`cleanup-row${blockedHere ? " blocked" : ""}`}
-        title={row.worktree?.path ?? undefined}
+        className={`cleanup-row${off ? " blocked" : ""}`}
+        title={off ? (row.blocked ?? undefined) : undefined}
       >
         <input
           type="checkbox"
           checked={isTicked(row)}
-          disabled={blockedHere}
+          disabled={off}
           onChange={(event) => {
             const value = event.target.checked;
             setChanged((current) => new Map(current).set(row.key, value));
           }}
         />
-        <span className="cleanup-name">{row.label}</span>
-        <span className="cleanup-note">{row.why}</span>
-        {row.blocked && <span className="cleanup-note">{row.blocked}</span>}
-        {row.notes.map((note) => (
-          <span key={note} className="cleanup-note">
-            {note}
-          </span>
-        ))}
-        {withRemote && row.remoteNote && <span className="cleanup-note">{row.remoteNote}</span>}
+        <span className="cleanup-name" title={row.label}>
+          {row.label}
+        </span>
+        <span className="cleanup-tags">
+          {row.tags
+            .filter((tag) => withRemote || !tag.origin)
+            .map((tag) => (
+              <span key={tag.label} className={`chip ${tag.chip}`} title={tag.title}>
+                {tag.label}
+              </span>
+            ))}
+        </span>
+        <span className="cleanup-when">
+          {row.lastCommitAt ? relativeTime(row.lastCommitAt) : ""}
+        </span>
       </label>
+    );
+  };
+
+  const renderGroup = (name: string, group: CleanupRow[]) => {
+    if (group.length === 0) return null;
+    const tickable = group.filter(selectable);
+    return (
+      <>
+        <label className="cleanup-group">
+          <GroupTick
+            rows={tickable}
+            isTicked={isTicked}
+            onChange={(value) => setGroup(tickable, value)}
+          />
+          {name}
+          <span className="cleanup-count">{group.length}</span>
+        </label>
+        {group.map(renderRow)}
+      </>
     );
   };
 
@@ -190,6 +239,7 @@ export default function CleanupDialog({
             <button
               className="btn accent"
               disabled={ticked.length === 0 || fetching}
+              title={fetching ? "git fetch --prune" : commands.join("\n")}
               onClick={() => {
                 onRun(commands, worktrees);
                 onClose();
@@ -201,44 +251,30 @@ export default function CleanupDialog({
         )
       }
     >
-      {failed ? (
-        <p>This repository could not be read: {failed}</p>
-      ) : nothing ? (
-        <p>Nothing to clean up.</p>
-      ) : (
-        <p>
-          Every branch but <code>{on}</code>. Finished ones start ticked. A tick removes the
-          worktree holding the branch, then the branch, then its copy on origin.
+      {failed && <p>This repository could not be read: {failed}</p>}
+      {nothing && !failed && <p>Nothing to clean up.</p>}
+
+      {fetchError && (
+        <p className="cleanup-fetch-failed" title={fetchError}>
+          Could not reach origin, so this is as of the last fetch.
         </p>
       )}
 
-      {hasRemote && !failed && (
-        <div className="cleanup-fetch">
-          <code>git fetch --prune</code>
-          {fetching ? (
-            <span className="batch-muted-note">running</span>
-          ) : fetched && fetched.code !== 0 ? (
-            <span className="batch-code bad">
-              exit {fetched.code}. What follows is as of the last fetch.
-            </span>
-          ) : (
-            <span className="batch-code ok">exit {fetched?.code ?? 0}</span>
-          )}
-          {fetched && fetched.code !== 0 && <pre>{fetched.stderr.trim()}</pre>}
+      {rows.length > 0 && (
+        <div className="batch-list cleanup-list">
+          {renderGroup("Ready", rows.filter((row) => row.ticked))}
+          {renderGroup("Not ready", rows.filter((row) => !row.ticked))}
         </div>
       )}
 
       {rows.length > 0 && (
-        <div className="batch-pick-head">
-          <button className="link-btn" onClick={() => setAll((row) => row.ticked)}>
-            Finished
-          </button>
-          <button className="link-btn" onClick={() => setAll(() => true)}>
-            All {rows.length}
-          </button>
-          <button className="link-btn" onClick={() => setAll(() => false)}>
-            None
-          </button>
+        <div className="cleanup-foot">
+          <details className="cleanup-commands">
+            <summary>
+              {commands.length} {commands.length === 1 ? "command" : "commands"}
+            </summary>
+            <pre>{commands.join("\n")}</pre>
+          </details>
           {hasRemote && (
             <label className="cleanup-remote">
               <input
@@ -250,26 +286,6 @@ export default function CleanupDialog({
             </label>
           )}
         </div>
-      )}
-
-      {rows.length > 0 && (
-        <div className="batch-list">
-          {finished.length > 0 && <div className="cleanup-group">Finished</div>}
-          {finished.map(renderRow)}
-          {others.length > 0 && <div className="cleanup-group">Not finished</div>}
-          {others.map(renderRow)}
-        </div>
-      )}
-
-      {commands.length > 0 && <pre className="cleanup-commands">{commands.join("\n")}</pre>}
-
-      {(shells || touchesClaude(ticked)) && (
-        <p className="cleanup-warning">
-          {shells}
-          {shells && touchesClaude(ticked) && " "}
-          {touchesClaude(ticked) &&
-            "If a Claude Code session is still open in one of these worktrees, git asks whether to try again: exit the session and answer y. An n drops the worktree anyway and leaves its empty folder behind."}
-        </p>
       )}
     </Dialog>
   );

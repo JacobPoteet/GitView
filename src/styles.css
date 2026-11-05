@@ -2979,88 +2979,120 @@ button.branch-name.has-other .branch-count {
   color: var(--text-faint);
 }
 
-/* Clean up. A branch is mono because a prompt would accept it; the sentences
-   under it are what the tick is being asked to agree to. */
-.cleanup-fetch {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 16px 0;
-  font-size: var(--fs-meta);
-}
-
-.cleanup-fetch code {
-  font-family: var(--font-mono);
-}
-
-.cleanup-fetch pre {
-  flex-basis: 100%;
-  margin: 4px 0;
-}
-
-.cleanup-remote {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  font-size: var(--fs-meta);
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.cleanup-remote input,
-.cleanup-row input {
-  accent-color: var(--accent);
+/* Clean up: one line a branch. A name is mono because a prompt would accept it,
+   and the tags are the branch menu's chips. */
+.cleanup-list {
+  margin-top: 4px;
 }
 
 .cleanup-group {
-  padding: 8px 0 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cleanup-group:first-child {
+  padding-top: 2px;
+}
+
+.cleanup-count {
   font-size: var(--fs-meta);
+  font-weight: 400;
   color: var(--text-faint);
 }
 
 .cleanup-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 8px;
-  row-gap: 1px;
-  align-items: baseline;
-  padding: 6px 0;
+  grid-template-columns: auto minmax(0, 1fr) auto 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
   border-top: 1px solid var(--line);
   cursor: pointer;
 }
 
 .cleanup-row.blocked {
   cursor: default;
+}
+
+.cleanup-row.blocked .cleanup-name,
+.cleanup-row.blocked .cleanup-when {
   color: var(--text-faint);
+}
+
+.cleanup-group input,
+.cleanup-row input,
+.cleanup-remote input {
+  accent-color: var(--accent);
 }
 
 .cleanup-name {
   font-family: var(--font-mono);
   font-size: var(--fs-small);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.cleanup-note {
-  grid-column: 2;
+.cleanup-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A word about the branch rather than something a prompt would accept. */
+.cleanup-tags .chip {
+  font-family: var(--font-ui);
+}
+
+.cleanup-when {
   font-size: var(--fs-meta);
-  color: var(--text-dim);
-  overflow-wrap: anywhere;
+  color: var(--text-faint);
+  text-align: right;
+  white-space: nowrap;
 }
 
-.cleanup-row.blocked .cleanup-note {
-  color: var(--text-faint);
+.cleanup-fetch-failed {
+  font-size: var(--fs-meta);
+  color: var(--red);
+}
+
+.cleanup-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 16px 0;
 }
 
 .cleanup-commands {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+}
+
+.cleanup-commands summary {
+  cursor: pointer;
+}
+
+.cleanup-commands pre {
   max-height: 18vh;
+  margin: 6px 0 0;
   overflow: auto;
 }
 
-.cleanup-warning {
+.cleanup-remote {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
   font-size: var(--fs-meta);
   color: var(--text-dim);
+  cursor: pointer;
 }
 
 /* The branch list is the whole safety argument for prune, so it is on screen

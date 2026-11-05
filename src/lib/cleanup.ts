@@ -9,19 +9,18 @@
  *
  * A tick starts on only for a branch that is provably finished and a worktree
  * with nothing in it to lose. Anything else can still be ticked by hand, since
- * "delete everything but main" is a thing somebody is allowed to want. The
- * dialog says what that costs rather than refusing to do it.
+ * "delete everything but main" is a thing somebody is allowed to want. The one
+ * exception is a folder something still has open: git would stop at a question
+ * with the rest of the commands queued behind it, and answering no leaves the
+ * worktree half gone.
+ *
+ * A row says all this in tags, using the branch menu's words. The whole sentence
+ * is the tag's title, for the moment one is wanted.
  */
 
 import { isSkip, pullPlan } from "./batch";
-import { isClaudeWorktree, quote, type ShellKind } from "./shell";
-import type {
-  CleanupRead,
-  RepoState,
-  Squashed,
-  WorktreeCheck,
-  WorktreeSummary,
-} from "./types";
+import { quote, type ShellKind } from "./shell";
+import type { CleanupRead, RepoState, Squashed, WorktreeCheck, WorktreeSummary } from "./types";
 
 /**
  * How sure the row is that the branch is done with.
@@ -34,6 +33,16 @@ import type {
  */
 export type Verdict = "contained" | "squashed" | "gone" | "fresh" | "unfinished" | "detached";
 
+/** A word on a row. `chip` is the `.chip` colour, the same ones the branch menu uses. */
+export interface RowTag {
+  label: string;
+  chip: "merged" | "squashed" | "ahead" | "unpushed" | "dirty" | "conflict";
+  /** The sentence the word stands for. */
+  title: string;
+  /** About origin's copy, so it goes away when deleting there is switched off. */
+  origin?: boolean;
+}
+
 export interface CleanupRow {
   /** Stable across a re-read, so a tick survives the fetch finishing. */
   key: string;
@@ -43,21 +52,19 @@ export interface CleanupRow {
   /** Its name on origin, when origin has it. */
   remote: string | null;
   verdict: Verdict;
-  /** One line on what the verdict rests on. */
-  why: string;
-  finished: boolean;
-  /** Whether the row starts ticked. */
+  /** Ready: it starts ticked. */
   ticked: boolean;
   /** A linked worktree to take away first. Never the main checkout. */
   worktree: WorktreeSummary | null;
   check: WorktreeCheck | null;
   /** Why it cannot be ticked at all. */
   blocked: string | null;
-  /** What removing the worktree does, one line each. */
-  notes: string[];
-  /** What deleting origin's copy does, shown only while that is switched on. */
-  remoteNote: string | null;
+  tags: RowTag[];
+  lastCommitAt: number | null;
 }
+
+/** What GitView's own shells in a folder are doing. Null is none open there. */
+export type ShellState = "idle" | "busy" | null;
 
 /** Past this a `git restore` line stops being readable, and a stash does the job as well. */
 const MAX_RESTORED = 20;
@@ -71,41 +78,76 @@ function listed(names: string[], total: number): string {
   return extra > 0 ? `${names.join(", ")} and ${extra} more` : names.join(", ");
 }
 
-function worktreeNotes(worktree: WorktreeSummary, check: WorktreeCheck | null): string[] {
-  const notes: string[] = [];
+/** What a worktree adds to its row, and whether anything stops it going at all. */
+function worktreeFacts(
+  worktree: WorktreeSummary,
+  check: WorktreeCheck | null,
+  shells: ShellState,
+): { tags: RowTag[]; heldOpen: boolean; atRisk: boolean } {
+  const tags: RowTag[] = [];
+  let atRisk = worktree.locked;
   if (worktree.locked) {
-    notes.push(
-      `Locked${worktree.lockReason ? `: ${worktree.lockReason}` : ""}. Deleting it unlocks it first.`,
-    );
+    tags.push({
+      label: "locked",
+      chip: "dirty",
+      title: `Locked${worktree.lockReason ? `: ${worktree.lockReason}` : ""}. Deleting it unlocks it first.`,
+    });
   }
   if (worktree.prunable) {
-    notes.push(`Its worktree folder is already gone from ${worktree.path}.`);
-    return notes;
+    tags.push({
+      label: "folder gone",
+      chip: "merged",
+      title: `Its worktree folder is already gone from ${worktree.path}. git worktree prune clears the record.`,
+    });
+    return { tags, heldOpen: false, atRisk };
   }
-  notes.push(`Checked out in the worktree at ${worktree.path}.`);
-  if (!check) return notes;
-  if (check.error) {
-    notes.push(`Could not read its status, so git decides: ${check.error}`);
-    return notes;
+
+  const about = [`Checked out in the worktree at ${worktree.path}.`];
+  const endings = check?.lineEndings ?? [];
+  if (endings.length > 0 && (check?.changedCount ?? 0) === 0 && endings.length <= MAX_RESTORED) {
+    about.push(`Only line endings changed, restored first: ${endings.join(", ")}.`);
   }
-  if (check.changedCount > 0) {
-    notes.push(
-      `${plural(check.changedCount, "changed file")}, kept in a stash first: ${listed(check.changed, check.changedCount)}.`,
-    );
+  if (shells === "idle") about.push("GitView's shell there closes first.");
+  tags.unshift({ label: "worktree", chip: "merged", title: about.join("\n") });
+
+  if (shells === "busy") {
+    atRisk = true;
+    tags.push({
+      label: "running",
+      chip: "dirty",
+      title: "A GitView shell there has something running. It closes first, and whatever is running stops.",
+    });
   }
-  if (check.lineEndings.length > 0) {
-    notes.push(
-      check.changedCount > 0 || check.lineEndings.length > MAX_RESTORED
-        ? `${plural(check.lineEndings.length, "file")} with only line endings changed, which go in the stash too.`
-        : `Only line endings changed, restored first with nothing lost: ${check.lineEndings.join(", ")}.`,
-    );
+  // GitView's own shell is the one holder that goes away before the remove.
+  const heldOpen = shells === null && check?.inUse === true;
+  if (heldOpen) {
+    tags.push({
+      label: "in use",
+      chip: "conflict",
+      title: "A program has this folder open, a Claude Code session or a terminal usually, so Windows will not delete it. Close that and open Clean up again.",
+    });
   }
-  if (check.ignoredCount > 0) {
-    notes.push(
-      `Ignored files that go with it and are not kept: ${listed(check.ignored, check.ignoredCount)}.`,
-    );
+  if (check?.error) {
+    atRisk = true;
+    tags.push({ label: "unreadable", chip: "dirty", title: `Could not read its status: ${check.error}` });
+    return { tags, heldOpen, atRisk };
   }
-  return notes;
+  if ((check?.changedCount ?? 0) > 0 && check) {
+    atRisk = true;
+    tags.push({
+      label: `${check.changedCount} changed`,
+      chip: "dirty",
+      title: `Kept in a stash first: ${listed(check.changed, check.changedCount)}.`,
+    });
+  }
+  if ((check?.ignoredCount ?? 0) > 0 && check) {
+    tags.push({
+      label: `${check.ignoredCount} ignored`,
+      chip: "dirty",
+      title: `Ignored files that go with it and are not kept: ${listed(check.ignored, check.ignoredCount)}.`,
+    });
+  }
+  return { tags, heldOpen, atRisk };
 }
 
 /**
@@ -115,7 +157,12 @@ function worktreeNotes(worktree: WorktreeSummary, check: WorktreeCheck | null): 
  * Only `origin` is touched. A branch tracking another remote is usually tracking
  * somebody else's fork, and a tidy-up has no business pushing a delete there.
  */
-export function cleanupRows(repo: RepoState, squashed: Squashed[], read: CleanupRead): CleanupRow[] {
+export function cleanupRows(
+  repo: RepoState,
+  squashed: Squashed[],
+  read: CleanupRead,
+  shellState: (path: string) => ShellState = () => null,
+): CleanupRow[] {
   const trunk = repo.defaultBase ?? repo.defaultBranch ?? "the default branch";
   const checks = new Map(read.worktrees.map((c) => [c.path, c]));
   const onOrigin = new Map(read.remoteBranches.map((r) => [r.name, r]));
@@ -135,31 +182,53 @@ export function cleanupRows(repo: RepoState, squashed: Squashed[], read: Cleanup
     const linked = holder && !holder.main ? holder : null;
     const check = linked ? (checks.get(linked.path) ?? null) : null;
     const squash = localSquash.get(branch.name);
+    const ahead = `${plural(branch.ahead, "commit")} not in ${trunk}`;
 
     let verdict: Verdict;
-    let why: string;
+    const tags: RowTag[] = [];
     if (linked && !linked.prunable && branch.ahead === 0 && branch.behind === 0) {
       verdict = "fresh";
-      why = `No commits of its own and level with ${trunk}, so a session may have just started here.`;
+      tags.push({
+        label: "new",
+        chip: "merged",
+        title: `No commits of its own and level with ${trunk}, so a session may have just started here.`,
+      });
     } else if (branch.merged) {
       verdict = "contained";
-      why = `Already in ${trunk}.`;
+      tags.push({ label: "merged", chip: "merged", title: `Already in ${trunk}.` });
     } else if (squash) {
       verdict = "squashed";
-      why = `Squash-merged as ${squash.intoShort} on ${squash.base}: ${squash.intoSummary}`;
+      tags.push({
+        label: "squashed",
+        chip: "squashed",
+        title: `Squash-merged as ${squash.intoShort} on ${squash.base}: ${squash.intoSummary}`,
+      });
     } else if (branch.goneUpstream) {
       verdict = "gone";
-      why = `${branch.goneUpstream} is gone from the remote, and nothing matched its ${plural(branch.ahead, "commit")} on ${trunk}.`;
+      tags.push({
+        label: "gone",
+        chip: "merged",
+        title: `${branch.goneUpstream} is gone from the remote, and nothing matched its ${plural(branch.ahead, "commit")} on ${trunk}.`,
+      });
     } else {
       verdict = "unfinished";
-      const pushed = branch.upstream && branch.aheadOfUpstream === 0;
-      why = pushed
-        ? `${plural(branch.ahead, "commit")} not in ${trunk}, all on ${branch.upstream}.`
-        : branch.upstream
-          ? `${plural(branch.ahead, "commit")} not in ${trunk}, ${branch.aheadOfUpstream} of them on this disk alone.`
-          : `${plural(branch.ahead, "commit")} not in ${trunk}, and never pushed.`;
+      tags.push({ label: `↑${branch.ahead}`, chip: "ahead", title: `${ahead}.` });
+      if (!branch.upstream) {
+        tags.push({ label: "local", chip: "unpushed", title: "Never pushed. These commits are on this disk alone." });
+      } else if (branch.aheadOfUpstream > 0) {
+        tags.push({
+          label: `⇡${branch.aheadOfUpstream}`,
+          chip: "unpushed",
+          title: `${plural(branch.aheadOfUpstream, "commit")} past ${branch.upstream}, on this disk alone.`,
+        });
+      }
     }
     const finished = verdict === "contained" || verdict === "squashed";
+
+    const facts = linked
+      ? worktreeFacts(linked, check, shellState(linked.path))
+      : { tags: [], heldOpen: false, atRisk: false };
+    tags.push(...facts.tags);
 
     // Origin's copy can have moved on from this one, and a delete takes that too.
     const copy = onOrigin.get(branch.name);
@@ -168,53 +237,61 @@ export function cleanupRows(repo: RepoState, squashed: Squashed[], read: Cleanup
       branch.originTip !== branch.tip &&
       !remoteSquash.has(`origin/${branch.name}`) &&
       (copy?.ahead ?? 1) !== 0;
-    const remoteNote = branch.originTip
-      ? copyAhead
-        ? `origin/${branch.name} has moved on from this branch, and those commits are not in ${trunk}.`
-        : `Also deletes origin/${branch.name}.`
-      : branch.goneUpstream
-        ? `${branch.goneUpstream} is already gone.`
-        : null;
+    if (branch.originTip) {
+      tags.push(
+        copyAhead
+          ? {
+              label: "origin ahead",
+              chip: "dirty",
+              origin: true,
+              title: `origin/${branch.name} has moved on from this branch, and those commits are not in ${trunk}. Deleting it takes them too.`,
+            }
+          : { label: "origin", chip: "merged", origin: true, title: `Also deletes origin/${branch.name}.` },
+      );
+    }
 
-    const hasRealChanges = (check?.changedCount ?? 0) > 0 || check?.error != null;
+    let blocked: string | null = null;
+    if (holder?.main) {
+      blocked = `Checked out in the main checkout at ${holder.path}. Switch that checkout to another branch first.`;
+      tags.push({ label: "main checkout", chip: "merged", title: blocked });
+    } else if (facts.heldOpen) {
+      blocked = "A program has this folder open. Close it and open Clean up again.";
+    }
+
     rows.push({
       key: branch.name,
       label: branch.name,
       branch: branch.name,
       remote: branch.originTip ? branch.name : null,
       verdict,
-      why,
-      finished,
-      ticked: finished && !holder?.main && !copyAhead && !hasRealChanges && !linked?.locked,
+      ticked: finished && blocked === null && !copyAhead && !facts.atRisk,
       worktree: linked,
       check,
-      blocked: holder?.main
-        ? `Checked out in the main checkout at ${holder.path}. Switch that checkout to another branch first.`
-        : null,
-      notes: linked ? worktreeNotes(linked, check) : [],
-      remoteNote,
+      blocked,
+      tags,
+      lastCommitAt: branch.lastCommitAt,
     });
   }
 
   for (const worktree of repo.worktrees) {
     if (worktree.main || worktree.branch !== null) continue;
     const check = checks.get(worktree.path) ?? null;
+    const facts = worktreeFacts(worktree, check, shellState(worktree.path));
     rows.push({
       key: worktree.path,
       label: worktree.path.split(/[\\/]/).pop() || worktree.path,
       branch: null,
       remote: null,
       verdict: "detached",
-      why: worktree.prunable
-        ? "A worktree on no branch, and its folder is already gone."
-        : "A worktree on no branch. A commit made only there goes with it.",
-      finished: worktree.prunable,
       ticked: worktree.prunable && !worktree.locked,
       worktree,
       check,
-      blocked: null,
-      notes: worktreeNotes(worktree, check),
-      remoteNote: null,
+      blocked: facts.heldOpen ? "A program has this folder open. Close it and open Clean up again." : null,
+      tags: [
+        { label: "detached", chip: "merged", title: "A worktree on no branch. A commit made only there goes with it." },
+        ...facts.tags,
+      ],
+      lastCommitAt: null,
     });
   }
 
@@ -223,27 +300,33 @@ export function cleanupRows(repo: RepoState, squashed: Squashed[], read: Cleanup
     if (locals.has(remote.name)) continue;
     const squash = remoteSquash.get(`origin/${remote.name}`);
     const contained = remote.ahead === 0;
-    const finished = contained || squash !== undefined;
+    const tag: RowTag = contained
+      ? { label: "merged", chip: "merged", title: `Only on origin, and already in ${trunk}.` }
+      : squash
+        ? {
+            label: "squashed",
+            chip: "squashed",
+            title: `Only on origin. Squash-merged as ${squash.intoShort} on ${squash.base}: ${squash.intoSummary}`,
+          }
+        : remote.ahead === null
+          ? { label: "unmeasured", chip: "merged", title: "Only on origin, with no default branch here to measure it against." }
+          : {
+              label: `↑${remote.ahead}`,
+              chip: "ahead",
+              title: `Only on origin, with ${plural(remote.ahead, "commit")} not in ${trunk}.`,
+            };
     rows.push({
       key: `origin/${remote.name}`,
       label: `origin/${remote.name}`,
       branch: null,
       remote: remote.name,
       verdict: contained ? "contained" : squash ? "squashed" : "unfinished",
-      why: contained
-        ? `Only on origin, and already in ${trunk}.`
-        : squash
-          ? `Only on origin. Squash-merged as ${squash.intoShort} on ${squash.base}: ${squash.intoSummary}`
-          : remote.ahead === null
-            ? "Only on origin, with no default branch here to measure it against."
-            : `Only on origin, with ${plural(remote.ahead, "commit")} not in ${trunk}.`,
-      finished,
-      ticked: finished,
+      ticked: contained || squash !== undefined,
       worktree: null,
       check: null,
       blocked: null,
-      notes: [],
-      remoteNote: `Deletes origin/${remote.name}. Nothing on this machine holds it.`,
+      tags: [tag],
+      lastCommitAt: remote.lastCommitAt,
     });
   }
 
@@ -317,13 +400,6 @@ export function confirmLabel(rows: CleanupRow[], withRemote: boolean): string {
   if (branches > 0) return `Delete ${plural(branches, "branch", "branches")}`;
   const worktrees = rows.filter((row) => row.worktree).length;
   return worktrees > 0 ? `Remove ${plural(worktrees, "worktree")}` : "Delete";
-}
-
-/** A ticked row an open session could be sitting in. */
-export function touchesClaude(rows: CleanupRow[]): boolean {
-  return rows.some(
-    (row) => row.worktree && !row.worktree.prunable && isClaudeWorktree(row.worktree.path),
-  );
 }
 
 /**

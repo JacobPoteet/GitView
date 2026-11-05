@@ -6,7 +6,6 @@ import {
   finishedCount,
   hasOtherBranches,
   pullFirst,
-  touchesClaude,
   type CleanupRow,
 } from "./cleanup";
 import { repo } from "./fixtures";
@@ -58,6 +57,7 @@ const check = (path: string, over: Partial<WorktreeCheck> = {}): WorktreeCheck =
   ignored: [],
   ignoredCount: 0,
   submodules: false,
+  inUse: false,
   error: null,
   ...over,
 });
@@ -92,6 +92,10 @@ function rowsOf(branches: BranchSummary[], extra: { squashed?: Squashed[]; read?
     extra.read ?? empty,
   );
 }
+
+/** The sentence behind a row's tags, and the tags themselves. */
+const words = (row: CleanupRow) => row.tags.map((tag) => tag.label);
+const sentences = (row: CleanupRow) => row.tags.map((tag) => tag.title).join(" ");
 
 function only(rows: CleanupRow[], key: string): CleanupRow {
   const row = rows.find((r) => r.key === key);
@@ -133,9 +137,9 @@ describe("cleanupRows", () => {
       branch("ahead", { upstream: "origin/ahead", aheadOfUpstream: 1, originTip: "ccc" }),
       branch("never"),
     ]);
-    expect(only(rows, "pushed").why).toContain("all on origin/pushed");
-    expect(only(rows, "ahead").why).toContain("1 of them on this disk alone");
-    expect(only(rows, "never").why).toContain("never pushed");
+    expect(words(only(rows, "pushed"))).toEqual(["↑2", "origin"]);
+    expect(words(only(rows, "ahead"))).toEqual(["↑2", "⇡1", "origin ahead"]);
+    expect(words(only(rows, "never"))).toEqual(["↑2", "local"]);
   });
 
   it("never reads a worktree level with the trunk as finished", () => {
@@ -152,9 +156,10 @@ describe("cleanupRows", () => {
       read: { ...empty, worktrees: [check(path, { changed: ["a.txt"], changedCount: 1 })] },
     });
     const row = only(rows, "dirty");
-    expect(row.finished).toBe(true);
+    expect(row.verdict).toBe("contained");
     expect(row.ticked).toBe(false);
-    expect(row.notes.join(" ")).toContain("kept in a stash first: a.txt");
+    expect(words(row)).toContain("1 changed");
+    expect(sentences(row)).toContain("Kept in a stash first: a.txt");
   });
 
   it("ticks a worktree that only has line endings to lose", () => {
@@ -164,7 +169,8 @@ describe("cleanupRows", () => {
       read: { ...empty, worktrees: [check(path, { lineEndings: ["Cargo.toml"] })] },
     });
     expect(only(rows, "eol").ticked).toBe(true);
-    expect(only(rows, "eol").notes.join(" ")).toContain("Only line endings changed");
+    expect(words(only(rows, "eol"))).toEqual(["merged", "worktree"]);
+    expect(sentences(only(rows, "eol"))).toContain("Only line endings changed");
   });
 
   it("names ignored files nothing will keep", () => {
@@ -176,7 +182,8 @@ describe("cleanupRows", () => {
         worktrees: [check(path, { ignored: [".env.local"], ignoredCount: 3 })],
       },
     });
-    expect(only(rows, "ign").notes.join(" ")).toContain(".env.local and 2 more");
+    expect(words(only(rows, "ign"))).toContain("3 ignored");
+    expect(sentences(only(rows, "ign"))).toContain(".env.local and 2 more");
   });
 
   it("leaves a locked worktree unticked, with the reason it was given", () => {
@@ -186,7 +193,7 @@ describe("cleanupRows", () => {
     });
     expect(only(rows, "lock").ticked).toBe(false);
     expect(only(rows, "lock").blocked).toBeNull();
-    expect(only(rows, "lock").notes[0]).toContain("Locked: agent 7");
+    expect(sentences(only(rows, "lock"))).toContain("Locked: agent 7");
   });
 
   it("blocks a branch the main checkout has, since nothing here can free it", () => {
@@ -221,7 +228,7 @@ describe("cleanupRows", () => {
       },
     );
     expect(only(rows, "moved").ticked).toBe(false);
-    expect(only(rows, "moved").remoteNote).toContain("has moved on");
+    expect(words(only(rows, "moved"))).toContain("origin ahead");
     expect(only(rows, "same").ticked).toBe(true);
     expect(only(rows, "alsoin").ticked).toBe(true);
     expect(only(rows, "sq").ticked).toBe(true);
@@ -234,10 +241,9 @@ describe("cleanupRows", () => {
       contained("never"),
     ]);
     expect(only(rows, "gone").remote).toBeNull();
-    expect(only(rows, "gone").remoteNote).toBe("origin/gone is already gone.");
     expect(only(rows, "there").remote).toBe("there");
     expect(only(rows, "never").remote).toBeNull();
-    expect(only(rows, "never").remoteNote).toBeNull();
+    expect(words(only(rows, "never"))).toEqual(["merged"]);
   });
 
   it("does not touch a remote the branch tracks other than origin", () => {
@@ -287,6 +293,54 @@ describe("cleanupRows", () => {
     expect(rows.map((r) => r.label)).toEqual(["live", "stale"]);
     expect(only(rows, "F:\\wt\\live").ticked).toBe(false);
     expect(only(rows, "F:\\wt\\stale").ticked).toBe(true);
+  });
+});
+
+describe("a folder something has open", () => {
+  const path = "F:\\wt\\open";
+  const open = (state: "idle" | "busy" | null = null) =>
+    only(
+      cleanupRows(
+        repo({
+          branches: [main, contained("open", { worktree: path })],
+          worktrees: [worktree(path, { branch: "open" })],
+        }),
+        [],
+        { ...empty, worktrees: [check(path, { inUse: true })] },
+        () => state,
+      ),
+      "open",
+    );
+
+  it("cannot be ticked, so git never reaches its retry question", () => {
+    const row = open();
+    expect(row.ticked).toBe(false);
+    expect(row.blocked).toContain("has this folder open");
+    expect(words(row)).toContain("in use");
+  });
+
+  it("is ready when the only thing holding it is GitView's own idle shell", () => {
+    const row = open("idle");
+    expect(row.blocked).toBeNull();
+    expect(row.ticked).toBe(true);
+    expect(words(row)).not.toContain("in use");
+    expect(sentences(row)).toContain("GitView's shell there closes first");
+  });
+
+  it("asks for a tick by hand when GitView's shell there is running something", () => {
+    const row = open("busy");
+    expect(row.blocked).toBeNull();
+    expect(row.ticked).toBe(false);
+    expect(words(row)).toContain("running");
+  });
+
+  it("blocks a worktree on no branch the same way", () => {
+    const rows = cleanupRows(
+      repo({ branches: [main], worktrees: [worktree(path)] }),
+      [],
+      { ...empty, worktrees: [check(path, { inUse: true })] },
+    );
+    expect(rows[0].blocked).toContain("has this folder open");
   });
 });
 
@@ -431,21 +485,6 @@ describe("confirmLabel", () => {
     const rows = rowsOf([], { read: { ...empty, remoteBranches: [remote("only")] } });
     expect(confirmLabel(rows, true)).toBe("Delete 1 branch");
     expect(confirmLabel(rows, false)).toBe("Delete");
-  });
-});
-
-describe("touchesClaude", () => {
-  it("knows a Claude Code worktree, and not one whose folder is already gone", () => {
-    const path = "F:\\app\\.claude\\worktrees\\x";
-    const live = rowsOf([contained("x", { worktree: path })], {
-      worktrees: [worktree(path, { branch: "x" })],
-    });
-    const gone = rowsOf([contained("x", { worktree: path })], {
-      worktrees: [worktree(path, { branch: "x", prunable: true })],
-    });
-    expect(touchesClaude(live)).toBe(true);
-    expect(touchesClaude(gone)).toBe(false);
-    expect(touchesClaude(rowsOf([contained("y")]))).toBe(false);
   });
 });
 

@@ -56,6 +56,8 @@ export interface WorktreeCheck {
   ignoredCount: number;
   /** git refuses to remove a worktree holding submodules without `--force`. */
   submodules: boolean;
+  /** A program has the folder open, so a remove would stop at git's retry prompt. */
+  inUse: boolean;
   /** The status could not be read. */
   error: string | null;
 }
