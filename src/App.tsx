@@ -1045,14 +1045,26 @@ export default function App() {
         setSettingsOpen((open) => (open ? null : "terminal"));
       } else if (chord === "Ctrl+F") {
         // The terminal pane hears its own Ctrl+F on the way down and opens the
-        // scrollback search; everything else lands here. The surface is the
-        // one the focus is in, and the sidebar's filter when it is in none.
+        // scrollback search; everything else lands here. A pane that has focus
+        // and no search of its own keeps it, so the chord does nothing there.
+        // Clicking text in a pane leaves the focus on the body, so with nothing
+        // focused the answer comes from the pane on top, in the order Escape
+        // peels them.
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest(".terminal-pane")) return;
         event.preventDefault();
-        const surface = target?.closest(".history-pane")
-          ? ".history-pane .history-filter input"
-          : ".sidebar-search input";
+        const focused = target !== null && target !== document.body && target !== document.documentElement;
+        const history = ".history-pane .history-filter input";
+        const fleet = ".sidebar-search input";
+        let surface: string | null = null;
+        if (focused) {
+          if (target.closest(".history-pane")) surface = history;
+          else if (target.closest(".sidebar")) surface = fleet;
+        } else if (!document.querySelector(".inbox-pane, .commit-pane")) {
+          if (document.querySelector(".history-pane")) surface = history;
+          else if (!document.querySelector(".diff-pane")) surface = fleet;
+        }
+        if (!surface) return;
         const field = document.querySelector<HTMLInputElement>(surface);
         field?.focus();
         field?.select();

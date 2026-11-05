@@ -29,7 +29,7 @@ export const SHORTCUTS: Shortcut[] = [
   { chord: "Ctrl+I", does: "Open or close the inbox" },
   { chord: "Ctrl+,", does: "Open or close the settings" },
   { chord: "Ctrl+Alt+B", does: "Hide or show the changes column" },
-  { chord: "Ctrl+F", does: "Search, in whichever surface has focus: the scrollback, the history, or the repositories" },
+  { chord: "Ctrl+F", does: "Search the scrollback, the history or the repositories, whichever has focus. A pane with no search of its own keeps the focus" },
   { chord: "Ctrl+Enter", does: "Commit, from the subject or the description" },
   { chord: "Escape", does: "Close the layer on top, one per press, or leave the field. Under everything, the files go back to every repository" },
 ];
