@@ -384,6 +384,9 @@ fn read_status(repo: &Repository, state: &mut RepoState) {
 
     for entry in statuses.iter() {
         let status = entry.status();
+        if is_untracked_repo(repo, &entry) {
+            continue;
+        }
         if status.is_conflicted() {
             state.conflicted += 1;
             continue;
@@ -396,6 +399,23 @@ fn read_status(repo: &Repository, state: &mut RepoState) {
         } else if status.intersects(worktree_flags) {
             state.modified += 1;
         }
+    }
+}
+
+/// A repository nobody has added, sitting in the working tree: a worktree under
+/// `.claude/worktrees/`, or a clone in a subfolder. libgit2 reports it the way it
+/// reports a submodule, so including submodules brings these with them. It is not
+/// a change to this repository, and `git add` on one records an embedded repo.
+///
+/// Asked of the disk, one stat per untracked folder, since the entry's own mode
+/// does not say. A `.git` file counts as well as a folder, which is a worktree.
+fn is_untracked_repo(repo: &Repository, entry: &git2::StatusEntry<'_>) -> bool {
+    if !entry.status().contains(Status::WT_NEW) {
+        return false;
+    }
+    match (entry.path(), repo.workdir()) {
+        (Some(path), Some(root)) if path.ends_with('/') => root.join(path).join(".git").exists(),
+        _ => false,
     }
 }
 
@@ -444,7 +464,7 @@ pub fn read_changes(path: &Path) -> Result<Vec<FileChange>, String> {
     for entry in statuses.iter() {
         let status = entry.status();
         let name = entry.path().map(str::to_string).unwrap_or_default();
-        if name.is_empty() {
+        if name.is_empty() || is_untracked_repo(&repo, &entry) {
             continue;
         }
 
@@ -1516,5 +1536,63 @@ mod tests {
             .map(|c| (c.path.as_str(), c.state.as_str(), c.staged))
             .collect();
         assert_eq!(rows, vec![("third_party/lib", "modified", false)]);
+    }
+
+    /// Claude's worktrees sit inside the repository, untracked. Listing them as
+    /// new files offered a `stage` button that records an embedded repo.
+    #[test]
+    fn a_worktree_or_clone_inside_the_repository_is_not_a_change() {
+        let dir = std::env::temp_dir().join(format!("gitview-nested-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args([
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .current_dir(cwd)
+                .output()
+                .expect("git.exe");
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        git(&dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("f"), "one\n").unwrap();
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-qm", "one"]);
+        git(
+            &dir,
+            &["worktree", "add", "-q", "-b", "w", ".claude/worktrees/w"],
+        );
+        let clone = dir.join("vendored");
+        std::fs::create_dir_all(&clone).unwrap();
+        git(&clone, &["init", "-q", "-b", "main"]);
+        std::fs::write(clone.join("g"), "two\n").unwrap();
+        git(&clone, &["add", "."]);
+        git(&clone, &["commit", "-qm", "two"]);
+        std::fs::write(dir.join("real.txt"), "new\n").unwrap();
+
+        let state = read_repo(&dir);
+        let changes = super::read_changes(&dir).expect("read changes");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let paths: Vec<&str> = changes.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec!["real.txt"],
+            "only the file, not the repositories"
+        );
+        // `real.txt`, and `.claude/`, which the sweep collapses to one folder as
+        // `git status` does. `vendored/` is a repository at that level, and drops out.
+        assert_eq!(state.untracked, 2, "{paths:?}");
     }
 }
