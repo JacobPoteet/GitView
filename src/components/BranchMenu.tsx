@@ -81,8 +81,16 @@ export default function BranchMenu({
   function rowMenu(branch: BranchSummary): MenuEntry[] {
     const switchTo = `git switch ${quote(branch.name, shell)}`;
     const held = branch.worktree;
-    const remote = branch.upstream?.split("/")[0] || "origin";
-    const hasRemote = repo.remoteUrl !== null;
+    const remote = (branch.upstream ?? branch.goneUpstream)?.split("/")[0] || "origin";
+    // A branch with an upstream has a copy there. Without one, only a ref under
+    // origin says so, and typing a delete for nothing fails with exit 1.
+    const hasRemote =
+      repo.remoteUrl !== null && (branch.upstream !== null || branch.originTip !== null);
+    const noRemote = branch.goneUpstream
+      ? `${branch.goneUpstream} is already gone from the remote.`
+      : repo.remoteUrl === null
+        ? "No remote to delete from."
+        : `Nothing on ${remote} to delete: this branch was never pushed.`;
     return [
       {
         label: "Check out",
@@ -120,7 +128,7 @@ export default function BranchMenu({
         disabled: !hasRemote,
         title: hasRemote
           ? `On ${remote} only; the local branch stays. Asks first, and names the command.`
-          : "No remote to delete from.",
+          : noRemote,
         run: () => {
           setOpen(false);
           onDeleteBranch(branch.name, "remote");
@@ -134,7 +142,7 @@ export default function BranchMenu({
           ? "You are on it. Check out another branch first."
           : hasRemote
             ? "Both copies, one confirmation, both commands named."
-            : "No remote to delete from.",
+            : noRemote,
         run: () => {
           setOpen(false);
           onDeleteBranch(branch.name, "both");
@@ -236,9 +244,17 @@ function BranchRow({
             ⇡{branch.aheadOfUpstream}
           </span>
         )}
-        {!branch.upstream && !branch.merged && (
+        {!branch.upstream && !branch.goneUpstream && !branch.merged && (
           <span className="chip unpushed" title="No upstream. Nothing on this branch has been pushed.">
             local
+          </span>
+        )}
+        {branch.goneUpstream && !branch.merged && !squashed && (
+          <span
+            className="chip merged"
+            title={`It tracked ${branch.goneUpstream}, which is gone from the remote. A merged pull request usually leaves this, but nothing here has confirmed that it merged.`}
+          >
+            gone
           </span>
         )}
         {held && (

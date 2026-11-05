@@ -18,6 +18,14 @@ export interface BranchSummary {
    * `mergedBranches` even when `merged` is true.
    */
   worktree: string | null;
+  /**
+   * What it was tracking, when git still has the setting and the ref is gone.
+   * `upstream` is null then too, and this is what tells a branch whose pull
+   * request was merged and deleted from one that was never pushed.
+   */
+  goneUpstream: string | null;
+  /** The commit `origin/<name>` points at. Null is nothing there to delete. */
+  originTip: string | null;
 }
 
 /** Another checkout of the same repository. See `read_worktrees` in fleet.rs. */
@@ -31,6 +39,41 @@ export interface WorktreeSummary {
   prunable: boolean;
   /** `git worktree lock`ed: remove and prune both leave it alone. */
   locked: boolean;
+  /** What `git worktree lock --reason` said, when anything did. */
+  lockReason: string | null;
+}
+
+/** What removing one linked worktree would run into. See `cleanup.rs`. */
+export interface WorktreeCheck {
+  path: string;
+  /** Tracked changes and untracked files, up to twenty of them by name. */
+  changed: string[];
+  changedCount: number;
+  /** Files git calls modified that differ only in line endings. All of them. */
+  lineEndings: string[];
+  /** Ignored files a build would not recreate. Nothing keeps these. */
+  ignored: string[];
+  ignoredCount: number;
+  /** git refuses to remove a worktree holding submodules without `--force`. */
+  submodules: boolean;
+  /** The status could not be read. */
+  error: string | null;
+}
+
+/** One branch on origin, measured against the trunk. */
+export interface RemoteBranch {
+  /** As origin names it, without the `origin/`. */
+  name: string;
+  tip: string;
+  /** Commits the trunk does not have. Null is no trunk to measure against. */
+  ahead: number | null;
+  lastCommitAt: number | null;
+}
+
+/** What the Clean up dialog reads when it opens. */
+export interface CleanupRead {
+  worktrees: WorktreeCheck[];
+  remoteBranches: RemoteBranch[];
 }
 
 /** One tag, and the commit it marks. Part of `refSignature`, like a branch tip. */
@@ -109,6 +152,8 @@ export interface RepoState {
   mergedBranches: string[];
   localBranchCount: number;
   branches: BranchSummary[];
+  /** Branches on origin with no local namesake, not counting the default. */
+  remoteOnlyBranches: number;
   tags: TagSummary[];
   /** The ref the drift numbers were measured against, `origin/main` usually. */
   defaultBase: string | null;
@@ -737,39 +782,62 @@ export function portsIn(output: string): number[] {
 }
 
 /**
- * Commits that exist in exactly one place.
+ * Commits on the checked-out branch that exist on this disk and nowhere else.
  *
- * `ahead` only counts against an upstream, so a branch that has never been
- * pushed reported zero however far it had run. That is precisely the case where
- * the work exists on one disk and nowhere else, which is what the ahead weight
- * was there to catch. Measured against the default branch instead, and only
- * when there is no upstream, so a pushed branch is not counted twice.
- */
-/**
- * Commits that exist on this disk and nowhere else, across every local branch.
+ * A row speaks for what is checked out and nothing else. Until Nov 2026 this
+ * summed every local branch, so a finished worktree branch made a repository
+ * sitting clean on `main` report commits to push. The other branches are listed
+ * in the branch menu and in Clean up, where they can be acted on.
  *
- * HEAD's branch with an upstream is left out, because `ahead` already counts
- * it and wears its own chip. Everything else counts: a branch with an
- * upstream by how far past it it has run, and a branch with none by how far
- * past the default branch it is, since that is the nearest thing to "pushed"
- * it can be measured against. Until 16 Sep 2026 only HEAD's branch counted,
- * and a branch switched away from with work on it sorted as Clean.
+ * Only a branch with no upstream counts, since `ahead` covers one that has one.
+ * A branch whose upstream went away is left out too: that is what a merged pull
+ * request leaves behind, and there is nothing to push it to.
  */
 export function unpushed(repo: RepoState): number {
-  if (repo.branches.length === 0) return repo.upstream ? 0 : repo.aheadOfDefault;
-  return repo.branches.reduce((sum, b) => {
-    if (b.isHead && repo.upstream) return sum;
-    if (b.merged) return sum;
-    return sum + (b.upstream ? b.aheadOfUpstream : b.ahead);
-  }, 0);
+  if (repo.upstream) return 0;
+  if (repo.branches.find((b) => b.isHead)?.goneUpstream) return 0;
+  return repo.aheadOfDefault;
 }
 
-/** The branches `unpushed` counted, for a tooltip. */
-export function unpushedBranches(repo: RepoState): string[] {
-  return repo.branches
-    .filter((b) => !(b.isHead && repo.upstream) && !b.merged)
-    .filter((b) => (b.upstream ? b.aheadOfUpstream : b.ahead) > 0)
-    .map((b) => `${b.name}: ${b.upstream ? b.aheadOfUpstream : b.ahead} ${b.upstream ? `past ${b.upstream}` : "with no upstream"}`);
+/** Two spellings of one folder: git and Windows disagree on slashes and case. */
+function pathKey(path: string): string {
+  return path.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+}
+
+/** The row of the main checkout a linked worktree belongs to, when it has one. */
+export function parentRow(repo: RepoState, repos: RepoState[]): RepoState | null {
+  if (!repo.isWorktree || !repo.mainPath) return null;
+  const key = pathKey(repo.mainPath);
+  return repos.find((r) => r !== repo && pathKey(r.path) === key) ?? null;
+}
+
+/** Whether a fresh read of a main checkout says this worktree row no longer exists. */
+export function worktreeRemoved(row: RepoState, main: RepoState): boolean {
+  if (!parentRow(row, [main])) return false;
+  const key = pathKey(row.path);
+  return !main.worktrees.some((worktree) => pathKey(worktree.path) === key);
+}
+
+/**
+ * Worktree rows that fold under their main checkout, keyed on that row's path.
+ *
+ * A worktree in a watched folder is a repository as far as discovery goes, and
+ * a row of its own means its branch's chips sit in the list beside the project
+ * it is a part of. Only a row whose parent is on screen folds: one whose main
+ * checkout is not watched has nowhere else to appear.
+ */
+export function foldWorktrees(
+  candidates: RepoState[],
+  parents: RepoState[],
+): Map<string, RepoState[]> {
+  const folded = new Map<string, RepoState[]>();
+  for (const repo of candidates) {
+    const parent = parentRow(repo, parents);
+    if (!parent) continue;
+    folded.set(parent.path, [...(folded.get(parent.path) ?? []), repo]);
+  }
+  for (const rows of folded.values()) rows.sort((a, b) => a.name.localeCompare(b.name));
+  return folded;
 }
 
 /** What the sidebar sorts on. Higher wants attention sooner. */
@@ -786,7 +854,6 @@ export function attentionScore(repo: RepoState): number {
     // has diverged from a branch someone else is also pushing to.
     unpushed(repo) * 5 +
     (repo.staged + repo.modified) * 4 +
-    repo.mergedBranches.length * 3 +
     Math.min(repo.untracked, 20)
   );
 }
@@ -826,8 +893,6 @@ export function fleetSummary(repos: RepoState[]): string[] {
   if (dirty > 0) parts.push(`${dirty} with uncommitted work`);
   const local = count((r) => (r.ahead > 0 && r.behind === 0) || unpushed(r) > 0);
   if (local > 0) parts.push(`${local} with unpushed commits`);
-  const merged = count((r) => r.mergedBranches.length > 0);
-  if (merged > 0) parts.push(`${merged} with merged branches`);
   return parts;
 }
 

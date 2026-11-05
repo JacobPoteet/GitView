@@ -2,11 +2,11 @@ import { useMemo, useState, type CSSProperties, type MouseEvent as ReactMouseEve
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import {
   attentionScore,
+  foldWorktrees,
   isClean,
   operationTitle,
   stashTitle,
   unpushed,
-  unpushedBranches,
   type RepoPref,
   type RepoState,
 } from "../lib/types";
@@ -112,15 +112,13 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
           <ChipIcon kind="ahead" />{repo.ahead}
         </span>
       )}
-      {/* Commits on this disk and nowhere else, on any local branch: a branch
-          with no upstream by its lead over the default, one with an upstream
-          by its lead over that. `ahead` only ever sees HEAD's. */}
+      {/* The checked-out branch with no upstream, by its lead over the default.
+          The other branches are in the branch menu and Clean up: a row that
+          counted them reported commits to push while sitting clean on main. */}
       {local > 0 && (
         <span
           className="chip unpushed"
-          title={`${local} ${local === 1 ? "commit" : "commits"} not on any remote\n${
-            unpushedBranches(repo).join("\n") || `ahead of ${base} with no upstream`
-          }`}
+          title={`${local} ${local === 1 ? "commit" : "commits"} ahead of ${base} with no upstream`}
         >
           <ChipIcon kind="unpushed" />{local}
         </span>
@@ -128,11 +126,6 @@ function Chips({ repo, github }: { repo: RepoState; github?: RepoGithub }) {
       {dirty > 0 && (
         <span className="chip dirty" title="staged and modified files">
           <ChipIcon kind="dirty" />{dirty}
-        </span>
-      )}
-      {repo.mergedBranches.length > 0 && (
-        <span className="chip merged" title="branches merged into the default branch">
-          <ChipIcon kind="merged" />{repo.mergedBranches.length}
         </span>
       )}
       {/* No branch count: it asks nothing of the fleet, and the header beside
@@ -191,6 +184,7 @@ function Row({
   live,
   agent,
   hidden,
+  nested,
   github,
   orderable,
   slot,
@@ -212,6 +206,8 @@ function Row({
   github?: RepoGithub;
   /** False on every row outside the pinned group, which has no order to set. */
   orderable: boolean;
+  /** Folded under its main checkout, and showing because that row is open. */
+  nested: boolean;
   /** Position in the list, labels included, for the cascade on launch. */
   slot: number;
   drag: DragRole;
@@ -236,7 +232,7 @@ function Row({
     <li
       style={{ "--slot": slot } as CSSProperties}
       className={
-        `repo-row-wrap${selected ? " selected" : ""}${hidden ? " muted" : ""}` +
+        `repo-row-wrap${selected ? " selected" : ""}${hidden ? " muted" : ""}${nested ? " nested" : ""}` +
         (drag === "source" ? " dragging" : "") +
         (drag === "before" ? " drop-before" : "") +
         (drag === "after" ? " drop-after" : "")
@@ -335,7 +331,12 @@ on ${repo.branch}` : repo.path}
  * number the first nine for Ctrl+1 to Ctrl+9 from the same list the eye
  * counts down, and never from a list the sidebar would draw differently.
  */
-export function groupRepos(repos: RepoState[], prefs: Map<string, RepoPref>, query: string) {
+export function groupRepos(
+  repos: RepoState[],
+  prefs: Map<string, RepoPref>,
+  query: string,
+  selectedPath: string | null = null,
+) {
   const needle = query.trim().toLowerCase();
   const filtered = needle
     ? repos.filter(
@@ -364,15 +365,32 @@ export function groupRepos(repos: RepoState[], prefs: Map<string, RepoPref>, que
       );
     });
 
-  const rest = visible
-    .filter((r) => prefs.get(r.path)?.pinnedAt == null)
+  const unpinned = visible.filter((r) => prefs.get(r.path)?.pinnedAt == null);
+
+  // A worktree folds under its main checkout, and comes back while that row or
+  // the worktree itself is selected. A filter draws everything flat, since a
+  // match the eye was told to look for must not hide under a row that missed.
+  // A pinned one stays pinned: somebody asked for that row to hold its place.
+  const folded = needle ? new Map<string, RepoState[]>() : foldWorktrees(unpinned, visible);
+  const nested = new Set([...folded.values()].flat().map((r) => r.path));
+  const unfold = (rows: RepoState[]) =>
+    rows.flatMap((row) => {
+      const children = folded.get(row.path) ?? [];
+      const open = row.path === selectedPath || children.some((c) => c.path === selectedPath);
+      return open ? [row, ...children] : [row];
+    });
+
+  const rest = unpinned
+    .filter((r) => !nested.has(r.path))
     .sort((a, b) => attentionScore(b) - attentionScore(a) || a.name.localeCompare(b.name));
 
   return {
-    pinned,
-    attention: rest.filter((r) => !isClean(r)),
-    clean: rest.filter(isClean),
+    pinned: unfold(pinned),
+    attention: unfold(rest.filter((r) => !isClean(r))),
+    clean: unfold(rest.filter(isClean)),
     hidden: hidden.sort((a, b) => a.name.localeCompare(b.name)),
+    nested,
+    folded,
   };
 }
 
@@ -411,9 +429,14 @@ export default function FleetSidebar({
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
 
-  const groups = useMemo(() => groupRepos(repos, prefs, query), [repos, prefs, query]);
+  const groups = useMemo(
+    () => groupRepos(repos, prefs, query, selectedPath),
+    [repos, prefs, query, selectedPath],
+  );
 
-  const pinOrder = groups.pinned.map((repo) => repo.path);
+  // A worktree shown under a pinned row is not itself pinned, and an order
+  // written with it in would give it a position it never asked for.
+  const pinOrder = groups.pinned.filter((r) => !groups.nested.has(r.path)).map((r) => r.path);
 
   // A filter draws a subset of the pinned group, and an order written from a
   // subset would leave the rows it could not see holding stale positions. So
@@ -454,11 +477,17 @@ export default function FleetSidebar({
       repo={repo}
       selected={repo.path === selectedPath}
       live={liveSessions.has(repo.path)}
-      agent={agents.get(repo.path) ?? null}
+      // A question from a Claude in a folded worktree still has to reach the eye.
+      agent={
+        agents.get(repo.path) ??
+        groups.folded.get(repo.path)?.map((child) => agents.get(child.path)).find(Boolean) ??
+        null
+      }
       hidden={prefs.get(repo.path)?.hidden === true}
+      nested={groups.nested.has(repo.path)}
       github={github.get(repo.path)}
-      orderable={inPinnedGroup && orderable}
-      drag={inPinnedGroup ? roleFor(repo.path) : "none"}
+      orderable={inPinnedGroup && orderable && !groups.nested.has(repo.path)}
+      drag={inPinnedGroup && !groups.nested.has(repo.path) ? roleFor(repo.path) : "none"}
       onSelect={onSelect}
       onOpenFiles={onOpenFiles}
       onMenu={menu.open}
