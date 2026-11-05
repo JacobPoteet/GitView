@@ -87,6 +87,11 @@ export default function DiffPane({
     ? `git restore --staged -- ${arg}`
     : `git add -- ${arg}`;
   const verb = target.staged ? "unstage" : "stage";
+  // The read is what knows, so the button waits for the read of this file rather
+  // than flashing up from the last one. `git add` on a conflict marks it resolved
+  // with the markers still in it, so a conflicted file has no stage button at all.
+  const current = diff?.path === target.file ? diff : null;
+  const conflicted = current?.status === "conflicted";
 
   /**
    * One hunk, staged or unstaged.
@@ -142,25 +147,27 @@ export default function DiffPane({
           </span>
         )}
 
-        {diff && !diff.empty && !diff.binary && (!diff.image || diff.additions + diff.deletions > 0) && (
+        {!conflicted && diff && !diff.empty && !diff.binary && (!diff.image || diff.additions + diff.deletions > 0) && (
           <span className="diff-tally">
             <span className="add">+{diff.additions}</span>
             <span className="del">−{diff.deletions}</span>
           </span>
         )}
 
-        <button
-          className="btn tiny accent"
-          disabled={disabled}
-          onClick={(event) => onCommand(command, event.shiftKey)}
-          title={
-            disabled
-              ? "No shell open for this repository."
-              : `${command}\n\nShift-click to type it without running it.`
-          }
-        >
-          {verb}
-        </button>
+        {current && !conflicted && (
+          <button
+            className="btn tiny accent"
+            disabled={disabled}
+            onClick={(event) => onCommand(command, event.shiftKey)}
+            title={
+              disabled
+                ? "No shell open for this repository."
+                : `${command}\n\nShift-click to type it without running it.`
+            }
+          >
+            {verb}
+          </button>
+        )}
         <button
           className="btn tiny"
           onClick={onFileHistory}
@@ -185,6 +192,9 @@ export default function DiffPane({
             imageSource={{ repoPath: target.repoPath, staged: target.staged, sha: null }}
             restCommand={`git diff -- ${target.file}`}
             emptyNote={`Nothing on the ${target.staged ? "staged" : "unstaged"} side of this file.`}
+            // A conflict comes back as the file itself, which reads the way the
+            // file view draws one: no `@@` band and no hunk to stage.
+            whole={diff.status === "conflicted"}
             hunkAction={(index, header) => (
               /* Sticky to the other edge, so it is where the eye expects a
                  button however far the file has been scrolled sideways. */

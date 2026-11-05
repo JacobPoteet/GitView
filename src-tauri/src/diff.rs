@@ -90,8 +90,9 @@ pub struct FileDiff {
     pub old_path: Option<String>,
     /// Which side this was read from, so the pane can label it.
     pub staged: bool,
-    /// `new`, `modified`, `deleted`, `renamed` or `typechange`, the same
-    /// vocabulary the changes column already uses.
+    /// `new`, `modified`, `deleted`, `renamed`, `typechange` or `conflicted`,
+    /// the same vocabulary the changes column already uses. The file view adds
+    /// `unchanged`.
     pub status: String,
     /// git could not read it as text, so there are no hunks and never will be.
     pub binary: bool,
@@ -253,6 +254,12 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
         Err(err) => return FileDiff::failed(file, staged, err.message().to_string()),
     };
 
+    if is_conflicted(&repo, file) {
+        let mut out = read_conflicted(&repo, file);
+        out.staged = staged;
+        return out;
+    }
+
     let diff = match build(&repo, staged) {
         Ok(diff) => diff,
         Err(err) => return FileDiff::failed(file, staged, err.message().to_string()),
@@ -273,6 +280,36 @@ pub fn read_file(repo_path: &Path, file: &str, staged: bool) -> FileDiff {
         !staged,
         FileDiff::empty(file, staged),
     )
+}
+
+/// Whether the index holds this path at stage 1, 2 or 3, which is what a conflict
+/// is. Stage 0 is the ordinary entry and a conflicted path does not have one.
+fn is_conflicted(repo: &Repository, file: &str) -> bool {
+    let Ok(index) = repo.index() else {
+        return false;
+    };
+    let path = file.replace('\\', "/");
+    (1..=3).any(|stage| index.get_path(Path::new(&path), stage).is_some())
+}
+
+/// A conflicted file, as it stands on disk with git's markers in it.
+///
+/// libgit2 has no answer to `git diff`'s `diff --cc`: its delta for a conflicted
+/// path has no hunks, and the pane read that as a file where no line differs. The
+/// markers are the content worth reading, and they are in the working tree, so
+/// the file is read from there, whole. A file both sides deleted has nothing on
+/// disk, which is an answer and not a failure.
+fn read_conflicted(repo: &Repository, file: &str) -> FileDiff {
+    let on_disk = repo.workdir().is_some_and(|root| root.join(file).exists());
+    let mut out = if on_disk {
+        read_plain(repo, file)
+    } else {
+        let mut gone = FileDiff::empty(file, false);
+        gone.empty = false;
+        gone
+    };
+    out.status = "conflicted".to_string();
+    out
 }
 
 /// One delta out of a diff, turned into the rows the pane draws.
@@ -416,6 +453,9 @@ pub fn read_worktree(repo_path: &Path, file: &str) -> FileDiff {
         Ok(repo) => repo,
         Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
     };
+    if is_conflicted(&repo, file) {
+        return read_conflicted(&repo, file);
+    }
     let diff = match build_whole(&repo) {
         Ok(diff) => diff,
         Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
@@ -847,6 +887,9 @@ pub fn hunk_patch(
     expect_header: &str,
 ) -> Result<String, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    if is_conflicted(&repo, file) {
+        return Err(format!("{file} is conflicted, so it has no hunks to stage."));
+    }
     let diff = build(&repo, staged).map_err(|e| e.message().to_string())?;
     let idx = locate(&diff, file).ok_or_else(|| format!("{file} has no diff on this side."))?;
     let delta = diff
@@ -1163,6 +1206,95 @@ mod tests {
             markers.contains(&'\\'),
             "the marker keeps a row of its own, got {markers:?}"
         );
+    }
+
+    /// Runs real git in the fixture, unsigned and with a fixture identity. A
+    /// conflict is the point here, so a non-zero exit is not a failure.
+    fn git(fixture: &Fixture, args: &[&str]) {
+        std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.autocrlf=false",
+            ])
+            .args(args)
+            .current_dir(&fixture.dir)
+            .output()
+            .expect("run git");
+    }
+
+    /// Two branches that change one line differently, with the second merged
+    /// into the first and stopped on the conflict.
+    fn conflicted(tag: &str) -> Fixture {
+        let fixture = Fixture::new(tag);
+        fixture.write("a.txt", "one\ntwo\nthree\n");
+        fixture.stage("a.txt");
+        fixture.commit("first");
+        git(&fixture, &["branch", "side"]);
+        fixture.write("a.txt", "one\nours\nthree\n");
+        fixture.stage("a.txt");
+        fixture.commit("ours");
+        git(&fixture, &["checkout", "-q", "side"]);
+        fixture.write("a.txt", "one\ntheirs\nthree\n");
+        fixture.stage("a.txt");
+        fixture.commit("theirs");
+        git(&fixture, &["checkout", "-q", "-"]);
+        git(&fixture, &["merge", "side"]);
+        fixture
+    }
+
+    /// `git diff a.txt` prints the markers here. libgit2's delta has no hunks,
+    /// and the pane used to say no line differed in the one state where a person
+    /// most needs to read the file.
+    #[test]
+    fn a_conflicted_file_shows_its_markers() {
+        let fixture = conflicted("conflict");
+
+        let diff = read_file(&fixture.dir, "a.txt", false);
+
+        assert!(diff.error.is_none(), "{:?}", diff.error);
+        assert!(!diff.empty);
+        assert_eq!(diff.status, "conflicted");
+        assert_eq!(diff.hunks.len(), 1);
+        let rows = texts(&diff, ' ');
+        assert!(rows[1].starts_with("<<<<<<<"), "{rows:?}");
+        assert!(rows.contains(&"ours".to_string()), "{rows:?}");
+        assert!(rows.contains(&"=======".to_string()), "{rows:?}");
+        assert!(rows.contains(&"theirs".to_string()), "{rows:?}");
+        assert!(rows.iter().any(|row| row.starts_with(">>>>>>>")), "{rows:?}");
+        assert_eq!((diff.additions, diff.deletions), (0, 0));
+
+        let whole = read_worktree(&fixture.dir, "a.txt");
+        assert_eq!(whole.status, "conflicted");
+        assert_eq!(texts(&whole, ' '), rows);
+    }
+
+    /// There is no hunk of a conflict that `git apply --cached` could take.
+    #[test]
+    fn a_conflicted_file_refuses_to_build_a_patch() {
+        let fixture = conflicted("conflict-patch");
+        let err = hunk_patch(&fixture.dir, "a.txt", false, 0, "").expect_err("no patch");
+        assert!(err.contains("conflicted"), "{err}");
+    }
+
+    /// Deleted on one side and edited on the other leaves the edit on disk, and
+    /// deleted on disk as well leaves nothing to read. Neither is an error.
+    #[test]
+    fn a_conflicted_file_with_nothing_on_disk_is_not_an_error() {
+        let fixture = conflicted("conflict-gone");
+        std::fs::remove_file(fixture.dir.join("a.txt")).expect("remove");
+
+        let diff = read_file(&fixture.dir, "a.txt", false);
+
+        assert!(diff.error.is_none(), "{:?}", diff.error);
+        assert!(!diff.empty);
+        assert_eq!(diff.status, "conflicted");
+        assert!(diff.hunks.is_empty());
     }
 
     // ------------------------------------------------------- hunk staging

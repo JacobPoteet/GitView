@@ -95,8 +95,16 @@ export default function DiffHunks({
           pane looked like a read that never finished. */}
       {!diff.error && !diff.binary && !diff.empty && diff.hunks.length === 0 && !diff.image && (
         <p className="empty">
-          No line differs. Line endings or the file mode changed, which
-          <code> git diff</code> shows nothing for either.
+          {diff.status === "conflicted" ? (
+            <>
+              Conflicted, with nothing on disk. <code>git status</code> says which side deleted it.
+            </>
+          ) : (
+            <>
+              No line differs. Line endings or the file mode changed, which
+              <code> git diff</code> shows nothing for either.
+            </>
+          )}
         </p>
       )}
 
