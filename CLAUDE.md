@@ -40,10 +40,6 @@ findings landed in five notes in one PR, which is four copies to keep true from 
 | A "Measured" table for something nobody measured | a number in the wiki is a measurement. No measurement, no table |
 | A new note for a change that fits in an existing one | a note earns its file when it has a reader who would open it on its own |
 
-The wiki has its own house style, recorded in its `Wiki Conventions.md`. Follow it. It calls for the
-`stop-slop` skill, which governs the prose in a note you write or rewrite; load it once in a session
-rather than per note, and skip it for a one-line factual correction.
-
 ## Documents this repository keeps
 
 `README.md`, `CLAUDE.md`, `LICENSE`, the three workflows, and the project page under `site/`.
@@ -74,62 +70,25 @@ and the wiki's `Architecture/Repo Map.md` covers every file. What the files do n
 
 ## Rules that hold across changes
 
+These hold everywhere. Area rules live in `.claude/rules/` and load when Claude touches the files
+each one covers: `terminal.md`, `git-actions.md`, `history-and-diff.md`, `state.md` and
+`interface.md`. A change that crosses into an area its files did not load reads that file first.
+
 | Rule | Why |
 | --- | --- |
 | Repository reads go through `git2`, network operations go through `git.exe`, GitHub goes through `gh` | Credential helpers and SSH agents work for free through the CLI. Reimplementing auth is where other GUIs collect "cannot push" reports. The same argument covers the API: `gh api graphql` means GitView never sources, stores or redacts a token, and there is no HTTP client in the binary to add one with |
-| A terminal session is never closed on a view change | Closing it would kill a dev server every time the user looked at another project |
-| The window's close is a request Rust holds | `on_window_event` prevents the close and emits `closing`; the frontend writes every shell's scrollback and calls `app_quit`. Closing outright would end the buffers before the write began. The hold is bounded at three seconds in `saveAllSessions`, so a save that hangs cannot keep the app open |
 | Every action names the command it runs | The GUI accelerates a habit of typing git rather than hiding it. Shift-click types instead of running |
 | No generated commit messages, no agent panel, no account, no telemetry | These are the features that made the tool being replaced feel bloated |
-| GitHub is read out of sight, but written by typing | A fleet-wide read has nowhere to type, the same as fetch-all. A write does: `gh issue create` and `gh pr merge` get typed into that repository's shell like every other action. An issue body has paragraphs and a newline at a prompt submits the line, so a multi-line body goes out to a file under GitView's data folder and `--body-file` carries the path, the same answer hunk staging gives |
-| A command aimed at a repository waits for its session, never for a timer | `sendCommand` writes to the PTY directly, so a command sent while the shell is still starting is lost with an unhandled rejection. Select the repository, then send when `live` reports it |
 | Numbers in the wiki are measurements | If a note states a timing or a count, it was measured. Mark a target as a target |
-| A setting about the app lives in `lib/settings.ts`, and a setting about a repository lives in SQLite | The terminal's type size and the launch checks are choices about this window and this install, read synchronously before the first terminal opens, so they sit in one `localStorage` object merged over its defaults. Pins, hides and the watched folders are read from Rust or belong to a repository, so they stay in the database. The settings dialog is the one home for the first kind: a switch added anywhere else is a switch nobody finds |
-| A paused rebase, merge, cherry-pick, revert, bisect or am is read from `Repository::state()`, and the strip that shows it is never hidden by a pane | With nothing conflicted a paused rebase is a detached HEAD and nothing more, which is the state a prompt is worst at. `read_operation` in `fleet.rs` fills `operation`, `OperationBar.tsx` keeps git's own `hint:` steps on screen under the header, and the state outranks whatever a pane is showing. Continue and Skip type straight away; only Abort asks, since it discards resolution work nothing keeps |
-| A preference is never stored in `RepoState` | That struct is scanner output, cached as a blob and rewritten every sweep. Pins and hides live in `repo_pref` and `task_pref`, and the frontend merges them |
-| A schema change reaches an installed database by `ALTER TABLE` | The one on this machine holds pins and saved tasks somebody set. `add_column_if_missing` checks `PRAGMA table_info` rather than catching an error whose message would also cover a real failure, and a new column that replaces an old sort key is backfilled from it so the upgrade changes nothing on screen |
-| Hiding something removes it from the palette | Demoting it still leaves it in the way, and the palette is where a project's thirty npm scripts do the most damage |
-| A release tag must match `tauri.conf.json`, `package.json` and `Cargo.toml` | The installer takes its filename and its Add/Remove Programs entry from the config, so tagging `v0.2.0` without bumping ships a `v0.2.0` release containing `GitView_0.1.0_x64-setup.exe`. `release.yml` fails on the mismatch rather than shipping it |
-| A preference is keyed on the path, and follows a rename by `owner/repo` | Keying on the identity outright strands every repository with no remote. `repo_identity` records what was at a path so a move can be recognised afterwards, guarded so two clones of one project cannot fight over a set of pins |
-| Staging and committing type their commands too | A single-repository action always has a shell to type into, and the output belongs where the user already looks. Only a fleet-wide action may run out of sight, because one shell would serialise twelve repositories behind whatever is at that prompt. The fetch Clean up opens with is the one exception, since the dialog's answers depend on it, and its button names it while it runs |
-| A fleet-wide operation keeps a transcript, and the transcript holds what a scrollback would | Fetch-all got away with a count because it has no output worth reading. Sync and prune do, so `lib/batch.ts` records the command as typed, the exit code and both streams per repository, and `git branch -d`'s `(was abc1234)` lines can be copied out. A batch with no transcript is an action that happened where nobody can see it |
-| An operation that runs out of sight reports what failed | `git_run` resolves with an exit code rather than throwing, so catching the promise sees almost nothing. Read `code` |
-| An argument nobody can type goes out as a file under GitView's data folder, through `scratch.rs` | A hunk, an issue body and a commit message with a description are the three so far. Each writer used to carry its own sweep; `scratch::dir` is the one that remains, and a new one calls it rather than copying the loop. A subject-only commit stays `-m`, because that reads at the prompt and `-F` for one line would not |
-| A batch reads the repository again between its commands | `ahead` and `behind` come from the last sweep, and a fetch is what changes them. Planning the pull from cached counts skips the repository that became fast-forwardable one command ago |
-| A command aimed at a repository goes to a shell at its prompt | A shell running `claude`, another CLI or a dev server reads typed text as its own input, so `gh pr merge` became a message to Claude. `pickShell` in `lib/sessions.ts` takes the tab on screen if it is free, then the first free shell, then a new one; busy means an OSC 133 block is still running, from `isBusy`, with no list of tool names. `emit` and every `pendingCommand` go through it. The Claude tab never qualifies. It stays asleep until clicked, and is not an agent panel: it types `claude` at a prompt and GitView adds no UI around it |
-| The prompt hook wraps the user's prompt and touches nothing on disk | Overwriting `prompt` discards Starship and oh-my-posh. The script is handed over as `-EncodedCommand` after the profile has loaded, so it captures whatever is there. Never write to a profile without asking |
-| Claude integration is opt-in in the AI settings; GitView never writes to `~/.claude`, and its hooks go in through `--settings` on the command it types | Hooks are how Orca learns working, waiting and done, and Orca puts them in the user's own Claude settings. A per-run file keeps them inside GitView's tab. Without the switch, or in a shell where `claude` is typed by hand, the reading falls back to what Claude prints: the OSC 0 title says working (`◐`, `◑`) or idle (`✳`), and a question's `Esc to cancel` footer at the bottom of the screen separates waiting from done. `lib/agent.ts` holds the reading; `readAgent` in `TerminalPane.tsx` feeds it. The wiki's Terminal note has the titles as measured |
-| A terminal line number is checked against the command text before it is used | ConPTY repaints on resize and can duplicate a line, and `cls` rewrites lines in place, so a marker stops describing what it was taken from. `anchor` in `TerminalPane.tsx` is the only way to turn a block into a line |
-| GitView's own update goes through `gh`, and installs by typing | `tauri-plugin-updater` is what every Tauri project reaches for, and it wants an HTTP client, a TLS stack in a binary built with `lto = true`, and a minisign private key living in an Actions secret. That is the trade the inbox already refused. `gh release view` reads the release out of sight, because the question belongs to the app rather than to a repository; `gh release download` and `Start-Process` get typed at a prompt, so the one action that replaces the binary still names what it ran. The prompt is the selected repository's when there is one, and otherwise a shell GitView opens for itself in its data folder: the command has no interest in a repository, so it never asks you to pick one |
-| A version is compared as numbers, and a tag has to look like a version | `0.10.0` sorts below `0.9.0` as a string, and `v2026-09-09` splits into major 2026 with a prerelease of `09-09` and beats everything. `is_newer` parses each dotted component and requires a major and a minor, so `v3` and `nightly` win nothing |
-| A pane that wants a fourth column shares the main one, and never covers the terminal | The grid is full at sidebar + 1fr + changes, 296 and 300 by default and dragged from there. `.main.split` hides `.graph` with `display: none` and clamps `.terminal-pane` to `--shell-pct` (47% by default, dragged on `RowSplitter`, one value for every pane so moving between them resizes nothing), so a pane gets its room from the branch strip rather than from the shell. Never unmount the strip and never let the terminal flex: the first hands its `ResizeObserver` a 0x0 container on the way back, and the second is the 0x0 the old overlay existed to avoid. Whatever a pane types has to be readable while the pane is still open |
-| Discarding work asks first, and names both commands when there are two | It is the one action in the changes pane a scrollback cannot undo: nothing there is committed, so `git restore` has no reflog behind it and `git clean` restores nothing at all, it removes a file git never had. Unstaged only, and the dialog says which of the two it is about to do rather than promising a restore for both |
-| A branch another worktree has checked out is never typed into a delete on its own | git refuses it, and in a prune one refusal fails the whole repository. `read_worktrees` in `fleet.rs` fills `BranchSummary.worktree` and keeps such a branch out of `merged_branches`; Clean up (`CleanupDialog.tsx`, planned in `lib/cleanup.ts`) types what frees it ahead of the delete, after closing GitView's own shells there, since Windows will not delete a folder a shell is standing in. Claude Code's worktrees sit under `.claude/worktrees/`, below where discovery looks, so this list is the only place GitView sees them |
-| A worktree is removed by a plain `git worktree remove`, after the dialog has dealt with what it would refuse over | `--force` deletes whatever changed after the dialog read the status, and a plain remove still refuses then. Line endings alone get `git restore` by name, real changes a `git stash push -u` that outlives the worktree, a lock `git worktree unlock`. What git will refuse is asked of `git status` through `git.exe`, the one repository read that spawns git, because libgit2 calls a line-ending rewrite clean and git refuses over it. `tauri dev` in a worktree leaves `Cargo.toml` in that state |
-| A tick in Clean up starts on only for work that provably landed | A branch contained in the trunk or matched to a squash. A gone upstream is a hint, since anybody can delete a remote branch, and a worktree level with the trunk is what a session started a minute ago looks like. Anything else can be ticked by hand, with what it costs on the row, apart from a branch the main checkout has and a folder something has open. `folder_in_use` renames that folder aside and back, because a remove there stops at git's `Should I try again?` with the rest queued behind it, and answering no leaves the worktree half gone |
-| A routine dialog is a list of names and tags, and the sentences are titles | Clean up's first version gave each row four sentences and a path, and the warning that mattered was the sentence that got skipped. A row is one line in the branch menu's words, each tag's title holds the sentence, and a state that can go wrong gets a control that says so rather than a paragraph. Commands fold under a count, since they still land in the shell |
-| A repository row reports the checked-out branch and nothing else | A chip, the dot, the sort and the fleet summary all read HEAD's branch. Summing every local branch reported commits to push on repositories clean on `main`, and git2's `upstream()` fails on a gone ref the same as on a branch never pushed, so a merged pull request's branch counted as unpushed work. `goneUpstream` tells the two apart. Other branches live in the branch menu and Clean up |
-| Staging a hunk types `git apply --cached` against a patch file | It is the one action whose argument nobody can type, since the argument is the hunk. Writing it out under GitView's data folder, never into the repository, makes the argument a path, so the command stays readable and re-runnable and the scrollback still says what happened. `git add -p` does the same underneath. Build the patch from libgit2's bytes rather than from the trimmed display rows, and give a lone hunk a new-side start of its own |
-| A diff is read without a pathspec, and capped at 6000 rows | Rename detection pairs a delete with an add, and a pathspec drops one half of the pair before `find_similar` sees it, so a renamed file arrives as a whole-file delete. The cap stands in for virtualisation: 6000 rows of plain DOM paint in 695 ms, and past it the pane names the `git diff` that has the rest |
-| The commit history packs its lanes in Rust and walks from the top for every page | A lane depends on every commit newer than it, so a page starting in the middle has nothing to work from. Walking oids is cheap and reading a commit's text is not, so the walk runs whole and only the rows asked for are read: 140 ms a page over 5,500 commits, and the same 140 ms whichever page |
-| A lane colour is never `--red` or `--amber` | Those already mean a failed command and a repository wanting attention. A trunk that lands in either reads as a warning it is not, so the history has `--lane-1` to `--lane-6` of its own |
-| A read that depends on the refs keys on `refSignature`, never on HEAD alone and never on `scannedAt` | HEAD's branch and counts miss a prune, and `scannedAt` redraws for nothing. The string holds every local tip, so a branch deleted, created or reset reaches the graph, the squash detection and the history, and a refresh that changed nothing leaves all three alone. The Refresh button bumps an epoch inside it, which is how tags and remote refs get re-read at all |
-| A font size is one of the six `--fs-` tokens, and the mono face is for what a prompt would accept | Fourteen literal sizes had crept into a 10 to 12.5 px band, and mono on pane titles and the status bar meant it said nothing. A path, a sha, a branch, a ref or a command is mono; a title, a count, a verb or a chord is not. A glyph used as an icon keeps a literal size. No label is uppercase, except under the LCARS theme, which uppercases chrome and leaves anything in the mono face as typed. The wiki's `Interface/Theme.md` has the scale |
-| A sticky element is dimmed by colour, never by `opacity` | Opacity applies to the element's own background, so a translucent line-number gutter lets a long line scroll straight through it |
-| The output channel belongs to the session, not to a React effect | An effect-owned callback drops everything a shell prints while its pane is off screen, which is most of what a dev server prints. Sessions outlive views, and so does their output |
-| Everything closes with the X in its top right | One gesture for every pane and every dialog, plus `Escape`, which peels one layer per press: a dialog, the inbox, a commit, the history, a diff, a file. `CloseButton.tsx` draws the X, so a new surface imports it rather than pasting a glyph. A footer button survives only where it is a different act: Cancel abandons a choice, which is not what closing a finished report does |
-| A failed pane read uses `PaneNote` with `kind="error"`, and never the empty voice | A diff, commit or history that failed to read looked like one with nothing in it. Error is red, announced, and offers Try again where the pane can re-run the read |
-| A right-click opens the surface's own menu, never the webview's | WebView2 offers Back, Reload, Print and Share, and `App.tsx` swallows the event at the document. A surface with something to offer uses `ContextMenu.tsx` and builds its items from actions it already has; there is no "Type without running" item because shift-click on any item already does that. Text fields keep the native menu for cut, copy and paste |
-| A chord is added to `lib/keys.ts` and nowhere else | Three places have to agree on it: the terminal releases it rather than handing it to the shell, `App` acts on it, and the settings dialog lists it. `isClaimed` and `SHORTCUTS` both read the one table, and `chordOf` is the only reading of a key event, so a handler that tests `event.key` itself is a chord the terminal will swallow |
-| The clipboard is read in Rust, and written from the webview | `navigator.clipboard.readText()` makes WebView2 raise an Edge permission dialog over the window; `clipboard_text` through `arboard` asks nothing. `writeText` never prompts, so `copyText` stays where it is |
-| A theme is a registry entry in `lib/themes.ts` plus a block of tokens under `:root[data-theme]` | Colour, radius, blur, shadow and the type scale are tokens, so a theme redefines them rather than touching a selector. What a token cannot say (bevels, a title bar) goes in that theme's own file, scoped to its attribute. The terminal's palette is in the registry because xterm needs hex. The default carries no attribute. A new literal radius or shadow in `styles.css` is a rule every theme has to override, so use `--r-xs`, `--r-sm`, `--r-pill`, `--radius*` and `--shadow-*` |
 | A pull request opens with one kind label at the least and an `area:` label for each part of the app it touches | A phase label dies with its phase; `area: graph` still says which wiki note owns the change three phases on. The kinds are the ones the issues use plus `release`, the areas follow the layout table above, and `gh label list` is the live vocabulary. Pass `--label` to `gh pr create` rather than labelling afterwards, and add a kind for every issue the PR closes. The wiki's `Operations/Wiki and PR Protocol.md` says what each label means |
 
 ## Cutting a release
 
 Run `/release`. Version files: `package.json`, `src-tauri/tauri.conf.json` and
 `src-tauri/Cargo.toml`; run `cargo check` after the bump so `Cargo.lock` follows. The tag push runs
-`release.yml`, which fails on a version mismatch, builds the NSIS installer and attaches it. It
+`release.yml`, which fails on a version mismatch (the installer takes its filename and its
+Add/Remove Programs entry from the config, so an unbumped tag would ship the old version's
+installer), builds the NSIS installer and attaches it. It
 also takes `workflow_dispatch` with a tag, for re-running a release whose build failed. Check that
 the release carries `GitView_<version>_x64-setup.exe`.
 
@@ -139,9 +98,6 @@ Rust on Windows needs the MSVC linker, which a Rust install alone does not provi
 where `vswhere` does not report the C++ tools, rustc reports `link.exe not found` even with Build
 Tools installed; sourcing `vcvars64.bat` before cargo fixes it. The exact invocation for this
 machine is in the wiki's `Operations/Local Development.md`. CI on `windows-latest` needs none of it.
-
-Run cargo from PowerShell, never Git Bash: `/usr/bin/link` shadows MSVC's `link.exe` and the error
-names neither Rust nor Visual Studio.
 
 ```bash
 npm install
@@ -168,13 +124,7 @@ rather than in a comment here.
 
 Opening the app is not optional. Every bug found in this project so far survived clippy, `cargo
 test`, a full CI build and a read-through, and fell out within minutes of looking at the window.
-Two were in the keyboard path, one only appeared after removing a watched folder, and three more
-were visual: a path rendered `/src/lib` because of a bidi reorder, two graph rails whose captions
-overlapped, and a commit message that followed the selection into the next repository. Command
-blocks added four, including one that had been dropping terminal output since Phase 0 whenever a
-build finished in a project nobody was looking at. The diff pane added two, both in gutters that
-only misbehave once a line is wider than the pane, and the commit history added two more that
-needed a throwaway repository with six branches to show at all.
+The wiki's `Operations/Local Development.md` lists them.
 
 Some cases the eleven repositories here do not have. An unrelated history, a branch far ahead with
 no upstream, a remote that does not resolve, and anything past a couple of hundred commits each need
@@ -200,13 +150,8 @@ one, points the launcher at a scratch folder rather than opening the installed a
 app and a dev build sharing `%APPDATA%\GitView\gitview.db` is the one thing both corruptions had
 in common. Release builds ignore the variable.
 
-A dev build exposes `window.__gitview.sessions`, which is the only way to read a session's blocks,
-its markers and its buffer. The WebGL renderer draws to a canvas, so there is no terminal text in
-the DOM to scrape. Vite drops the handle from a production bundle.
-
-Restart the app rather than trusting Vite's hot update when the change touches the terminal.
-`TerminalPane` holds its sessions in module state, so a hot update leaves the existing `Terminal`
-object in place without any new handler attached.
+`.claude/rules/terminal.md` covers verifying a terminal change: the dev-only sessions handle, and
+why a hot update is not enough.
 
 ## Deviations from the standard
 
