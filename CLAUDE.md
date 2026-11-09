@@ -1,19 +1,21 @@
 # Working in this repository
 
+Follows the workflow standard in the user CLAUDE.md: squash merges, `/ship` to land a PR,
+`/release` to cut one, bugs fixed when found. Deviations are listed at the end.
+
 ## The wiki
 
-Documentation lives in an Obsidian vault outside this repository, not in `docs/`. The path is in
-`.claude/wiki-path.local`, which is gitignored. Never write the vault path into tracked files, a
-comment, or a commit message. Call it "the wiki".
+Documentation lives in the wiki, outside this repository, not in `docs/`. Its path is in the
+gitignored `.claude/wiki-path.local`.
 
 Before changing anything architectural, grep `GitView/Decision Log.md` for the area you are
 touching. Most choices here have a reason recorded there, including the options already ruled out.
-It is one long table and it grows every PR, so search it rather than reading it end to end.
+It is one long table and it grows every release, so search it rather than reading it end to end.
 
-**Every pull request updates the note that owns what changed, and `CLAUDE.md` when a rule moved.**
-Wiki edits sit outside the repository, so they happen before the PR opens or they do not happen at
-all. A PR that changes the scanner updates `Architecture/Fleet Scanner.md`; a PR that adds a feature
-adds a note under `Features/` and links it from the index.
+**Every pull request names the notes it affects under `## Wiki notes`, and updates `CLAUDE.md` when
+a rule moved.** The `/release` pass writes those notes before the tag. A PR that changes the scanner
+names `Architecture/Fleet Scanner.md`; a PR that adds a feature names a new note under `Features/`
+and the index entry it needs. Edit the wiki between releases only to fix a note that would mislead.
 
 ### One note owns a change, the rest link to it
 
@@ -25,7 +27,8 @@ adds a note under `Features/` and links it from the index.
 | `Delivery Phases` and the index | one status entry per phase, not per PR |
 
 Write a finding once, in the note that owns it, and link to it from the others. The ConPTY marker
-findings landed in five notes in one PR, which is four copies to keep true from now on.
+findings landed in five notes in one PR, which is four copies to keep true from now on. A PR's
+`## Wiki notes` section names the owning note first, so the release pass knows where it goes.
 
 ### Where the tokens go, and what to skip
 
@@ -122,6 +125,14 @@ and the wiki's `Architecture/Repo Map.md` covers every file. What the files do n
 | A theme is a registry entry in `lib/themes.ts` plus a block of tokens under `:root[data-theme]` | Colour, radius, blur, shadow and the type scale are tokens, so a theme redefines them rather than touching a selector. What a token cannot say (bevels, a title bar) goes in that theme's own file, scoped to its attribute. The terminal's palette is in the registry because xterm needs hex. The default carries no attribute. A new literal radius or shadow in `styles.css` is a rule every theme has to override, so use `--r-xs`, `--r-sm`, `--r-pill`, `--radius*` and `--shadow-*` |
 | A pull request opens with one kind label at the least and an `area:` label for each part of the app it touches | A phase label dies with its phase; `area: graph` still says which wiki note owns the change three phases on. The kinds are the ones the issues use plus `release`, the areas follow the layout table above, and `gh label list` is the live vocabulary. Pass `--label` to `gh pr create` rather than labelling afterwards, and add a kind for every issue the PR closes. The wiki's `Operations/Wiki and PR Protocol.md` says what each label means |
 
+## Cutting a release
+
+Run `/release`. Version files: `package.json`, `src-tauri/tauri.conf.json` and
+`src-tauri/Cargo.toml`; run `cargo check` after the bump so `Cargo.lock` follows. The tag push runs
+`release.yml`, which fails on a version mismatch, builds the NSIS installer and attaches it. It
+also takes `workflow_dispatch` with a tag, for re-running a release whose build failed. Check that
+the release carries `GitView_<version>_x64-setup.exe`.
+
 ## Building
 
 Rust on Windows needs the MSVC linker, which a Rust install alone does not provide. On a machine
@@ -196,3 +207,7 @@ the DOM to scrape. Vite drops the handle from a production bundle.
 Restart the app rather than trusting Vite's hot update when the change touches the terminal.
 `TerminalPane` holds its sessions in module state, so a hot update leaves the existing `Terminal`
 object in place without any new handler attached.
+
+## Deviations from the standard
+
+None.
