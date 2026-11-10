@@ -2550,6 +2550,8 @@ ${landing} ${cleanup}${warning}${closing}`,
       onClose={() => setDiffTarget(null)}
       onCommand={emit}
       onError={setNote}
+      operation={selected?.operation ?? null}
+      headBranch={selected && !selected.detached ? selected.branch : null}
     />
   ) : fileTarget ? (
     <FilePane
@@ -2820,6 +2822,8 @@ gh pr view ${branchPr.number} --web`}
                 disabled={!shellReady}
                 onCommand={emit}
                 onAbort={askAbort}
+                repoPath={selected.path}
+                reloadKey={changes}
               />
             )}
 

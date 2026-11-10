@@ -232,6 +232,12 @@ async fn repo_compare_file(
     blocking(move || diff::read_compare_file(&PathBuf::from(&path), &base, &head, &file)).await
 }
 
+/// Files that still hold git's conflict markers, staged or not. See diff.rs.
+#[tauri::command]
+async fn repo_conflict_markers(path: String) -> Result<Vec<diff::MarkerFile>, String> {
+    blocking(move || diff::read_markers(&PathBuf::from(&path))).await?
+}
+
 /// The bytes of one side of an image, as a raw response rather than JSON, so a
 /// twenty megabyte photograph is not base64 inside a string on the way over.
 #[tauri::command]
@@ -833,6 +839,7 @@ pub fn run() {
             repo_commit_file,
             repo_compare,
             repo_compare_file,
+            repo_conflict_markers,
             repo_diff_image,
             repo_blame,
             repo_blame_worktree,
