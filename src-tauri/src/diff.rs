@@ -1008,6 +1008,91 @@ pub fn export_commit_file(repo_path: &Path, sha: &str, file: &str) -> Result<Str
     Ok(path.to_string_lossy().to_string())
 }
 
+// --------------------------------------------------------- conflict markers
+
+/// A file with git's conflict markers still in it, and how many conflicts.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkerFile {
+    pub path: String,
+    pub conflicts: usize,
+}
+
+/// A file past this is not read for markers. git does not write markers into
+/// a binary file, and a conflict in a generated file this big is rare.
+const MARKER_SCAN_MAX: u64 = 4 * 1024 * 1024;
+
+/// Opening markers in the bytes: a line that is seven `<` then a space or the
+/// line's end, which is what git writes and what `git diff --check` looks for.
+fn count_markers(bytes: &[u8]) -> usize {
+    bytes
+        .split(|&b| b == b'\n')
+        .filter(|line| {
+            line.len() >= 7
+                && line[..7] == *b"<<<<<<<"
+                && matches!(line.get(7), None | Some(b' ') | Some(b'\r'))
+        })
+        .count()
+}
+
+/// Every file that differs from HEAD, staged or not, that still has markers.
+///
+/// `git add` on a conflicted file clears the conflict from the index whatever
+/// the file holds, so a file staged with its markers in it is no longer
+/// conflicted and nothing else says so. Continue would commit the markers.
+/// This is what the operation strip asks before it offers Continue.
+pub fn read_markers(repo_path: &Path) -> Result<Vec<MarkerFile>, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let root = repo
+        .workdir()
+        .ok_or("The repository has no working tree.")?
+        .to_path_buf();
+    let tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(false);
+    let diff = repo
+        .diff_tree_to_workdir_with_index(tree.as_ref(), Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
+
+    let mut paths: Vec<String> = diff
+        .deltas()
+        .filter(|d| d.status() != Delta::Deleted)
+        .filter_map(|d| slashed(d.new_file().path()))
+        .collect();
+    // A conflicted path may not be in that diff at all.
+    if let Ok(index) = repo.index() {
+        if let Ok(conflicts) = index.conflicts() {
+            for conflict in conflicts.flatten() {
+                let entry = conflict.our.or(conflict.their).or(conflict.ancestor);
+                if let Some(entry) = entry {
+                    paths.push(String::from_utf8_lossy(&entry.path).replace('\\', "/"));
+                }
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+
+    let mut out = Vec::new();
+    for path in paths {
+        let full = root.join(&path);
+        let Ok(meta) = std::fs::metadata(&full) else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() > MARKER_SCAN_MAX {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&full) else {
+            continue;
+        };
+        let conflicts = count_markers(&bytes);
+        if conflicts > 0 {
+            out.push(MarkerFile { path, conflicts });
+        }
+    }
+    Ok(out)
+}
+
 // ------------------------------------------------------------ hunk staging
 
 /// The mode a `new file mode` line has to carry, written out rather than cast
@@ -1401,6 +1486,51 @@ mod tests {
         git(&fixture, &["checkout", "-q", "-"]);
         git(&fixture, &["merge", "side"]);
         fixture
+    }
+
+    /// `git add` clears the conflict from the index with the markers still in
+    /// the file. The read has to find them both before and after, or Continue
+    /// commits them.
+    #[test]
+    fn markers_are_found_in_conflicted_and_staged_files() {
+        let fixture = conflicted("markers");
+        fixture.write(
+            "clean.txt",
+            "======= a rule, not a conflict
+",
+        );
+        let found = read_markers(&fixture.dir).expect("read");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].path, "a.txt");
+        assert_eq!(found[0].conflicts, 1);
+
+        git(&fixture, &["add", "a.txt"]);
+        let found = read_markers(&fixture.dir).expect("read");
+        assert_eq!(found.len(), 1, "staged with markers: {found:?}");
+
+        fixture.write(
+            "a.txt",
+            "one
+ours
+three
+",
+        );
+        git(&fixture, &["add", "a.txt"]);
+        assert!(read_markers(&fixture.dir).expect("read").is_empty());
+    }
+
+    #[test]
+    fn a_marker_is_seven_angles_then_a_space_or_the_end() {
+        assert_eq!(
+            count_markers(
+                b"<<<<<<< HEAD
+x
+<<<<<<<
+<<<<<<<< no
+"
+            ),
+            2
+        );
     }
 
     /// `git diff a.txt` prints the markers here. libgit2's delta has no hunks,

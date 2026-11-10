@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import DiffHunks from "./DiffHunks";
 import PaneNote from "./PaneNote";
 import CloseButton from "./CloseButton";
-import type { DiffTarget, FileDiff } from "../lib/types";
+import type { DiffTarget, FileDiff, Operation } from "../lib/types";
 import { quote, type ShellKind } from "../lib/shell";
+import { conflictSides, countConflicts, keepSideCommand } from "../lib/conflict";
 
 interface Props {
   target: DiffTarget;
@@ -26,6 +27,10 @@ interface Props {
   onCommand: (command: string, typeOnly: boolean) => void;
   /** Where a refused patch goes. The status bar, like every other refusal. */
   onError: (message: string) => void;
+  /** What git is paused in, which says what ours and theirs are. */
+  operation: Operation | null;
+  /** The branch HEAD is on, the ours of a merge. */
+  headBranch: string | null;
 }
 
 /**
@@ -52,6 +57,8 @@ export default function DiffPane({
   onClose,
   onCommand,
   onError,
+  operation,
+  headBranch,
 }: Props) {
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [reading, setReading] = useState(true);
@@ -89,9 +96,23 @@ export default function DiffPane({
   const verb = target.staged ? "unstage" : "stage";
   // The read is what knows, so the button waits for the read of this file rather
   // than flashing up from the last one. `git add` on a conflict marks it resolved
-  // with the markers still in it, so a conflicted file has no stage button at all.
+  // with the markers still in it, so a conflicted file offers stage only once
+  // the read finds no markers left, and keeping a side checks out then adds.
   const current = diff?.path === target.file ? diff : null;
   const conflicted = current?.status === "conflicted";
+  const parties = conflictSides(operation, headBranch);
+  // Conflicts left in the file as read, so the count drops as you edit.
+  const left = useMemo(
+    () =>
+      conflicted && current
+        ? countConflicts(
+            current.hunks.flatMap((h) =>
+              h.lines.filter((l) => l.origin === " " || l.origin === "+").map((l) => l.text),
+            ),
+          )
+        : 0,
+    [conflicted, current],
+  );
 
   /**
    * One hunk, staged or unstaged.
@@ -154,6 +175,52 @@ export default function DiffPane({
           </span>
         )}
 
+        {conflicted && (
+          <span
+            className="diff-conflicts"
+            title={
+              left > 0
+                ? "Conflict markers still in the file. git add would mark them resolved as they are."
+                : "No markers left. git add marks the file resolved."
+            }
+          >
+            {left > 0 ? `${left} ${left === 1 ? "conflict" : "conflicts"} left` : "no markers left"}
+          </span>
+        )}
+        {conflicted &&
+          (["ours", "theirs"] as const).map((side) => {
+            const keep = keepSideCommand(side, target.file, shell);
+            const which = parties[side];
+            return (
+              <button
+                key={side}
+                className="btn tiny"
+                disabled={disabled}
+                onClick={(event) => onCommand(keep, event.shiftKey)}
+                title={
+                  disabled
+                    ? "No shell open for this repository."
+                    : `${keep}\n\nKeeps ${side}, ${which.role}, for the whole file and marks it resolved. Shift-click to type it without running it.`
+                }
+              >
+                keep {which.name}
+              </button>
+            );
+          })}
+        {conflicted && left === 0 && (
+          <button
+            className="btn tiny accent"
+            disabled={disabled}
+            onClick={(event) => onCommand(command, event.shiftKey)}
+            title={
+              disabled
+                ? "No shell open for this repository."
+                : `${command}\n\nMarks it resolved. Shift-click to type it without running it.`
+            }
+          >
+            stage
+          </button>
+        )}
         {current && !conflicted && (
           <button
             className="btn tiny accent"
@@ -195,6 +262,7 @@ export default function DiffPane({
             // A conflict comes back as the file itself, which reads the way the
             // file view draws one: no `@@` band and no hunk to stage.
             whole={diff.status === "conflicted"}
+            conflict={diff.status === "conflicted" ? parties : undefined}
             hunkAction={(index, header) => (
               /* Sticky to the other edge, so it is where the eye expects a
                  button however far the file has been scrolled sideways. */

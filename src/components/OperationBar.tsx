@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
+import { api } from "../lib/api";
 import { operationCommands } from "../lib/shell";
-import { operationTitle, type Operation } from "../lib/types";
+import { operationTitle, type MarkerFile, type Operation } from "../lib/types";
 
 interface Props {
   operation: Operation;
@@ -14,6 +16,12 @@ interface Props {
    * whatever conflict resolution is sitting in the working tree.
    */
   onAbort: (command: string) => void;
+  repoPath: string;
+  /**
+   * Replaced whenever the working tree is re-read, which is when a file can
+   * have gained or lost its markers. The marker read follows it.
+   */
+  reloadKey: unknown;
 }
 
 /**
@@ -36,14 +44,41 @@ export default function OperationBar({
   disabled,
   onCommand,
   onAbort,
+  repoPath,
+  reloadKey,
 }: Props) {
+  /**
+   * Files with markers still in them. `git add` clears a conflict from the
+   * index whatever the file holds, so a file staged with its markers reads as
+   * resolved everywhere else, and Continue would commit them.
+   */
+  const [markers, setMarkers] = useState<MarkerFile[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .repoConflictMarkers(repoPath)
+      .then((found) => {
+        if (!cancelled) setMarkers(found);
+      })
+      .catch(() => {
+        if (!cancelled) setMarkers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath, reloadKey]);
+
   const title = operationTitle(operation);
+  const marked = markers.length;
+  const markerList = markers.map((m) => `${m.path}  ${m.conflicts}`).join("\n");
   const detail =
     conflicted > 0
       ? `${conflicted} ${conflicted === 1 ? "file is" : "files are"} conflicted. Resolve and stage them, then Continue.`
       : operation.kind === "bisect"
         ? "Test this commit, then say which it is."
-        : "Nothing is conflicted. Continue picks up where it stopped.";
+        : marked > 0
+          ? `Nothing is conflicted, but ${marked} ${marked === 1 ? "file still has" : "files still have"} markers.`
+          : "Nothing is conflicted. Continue picks up where it stopped.";
 
   return (
     <div className="operation-bar" role="status">
@@ -51,30 +86,38 @@ export default function OperationBar({
         ⟳
       </span>
       <span className="operation-text">
-        <strong>{title}.</strong> {detail}
+        <strong>{title}.</strong>{" "}
+        <span title={marked > 0 ? `Conflict markers left:\n${markerList}` : undefined}>
+          {detail}
+        </span>
       </span>
       <span className="operation-actions">
-        {operationCommands(operation.kind).map((entry) => (
-          <button
-            key={entry.command}
-            className={`btn${entry.abort ? " danger" : ""}`}
-            disabled={disabled}
-            title={
-              disabled
-                ? "Waiting for the shell"
-                : entry.abort
-                  ? `${entry.command}\n\nAsks first: it throws away anything resolved so far.`
-                  : `${entry.command}\n\nShift-click to type it without running it.`
-            }
-            onClick={(event) =>
-              entry.abort && !event.shiftKey
-                ? onAbort(entry.command)
-                : onCommand(entry.command, event.shiftKey)
-            }
-          >
-            {entry.label}
-          </button>
-        ))}
+        {operationCommands(operation.kind).map((entry) => {
+          const risky = entry.label === "Continue" && marked > 0;
+          return (
+            <button
+              key={entry.command}
+              className={`btn${entry.abort ? " danger" : ""}${risky ? " warn" : ""}`}
+              disabled={disabled}
+              title={
+                disabled
+                  ? "Waiting for the shell"
+                  : entry.abort
+                    ? `${entry.command}\n\nAsks first: it throws away anything resolved so far.`
+                    : risky
+                      ? `${entry.command}\n\nConflict markers are still in ${marked} ${marked === 1 ? "file" : "files"}, and Continue would commit them:\n${markerList}\n\nShift-click to type it without running it.`
+                      : `${entry.command}\n\nShift-click to type it without running it.`
+              }
+              onClick={(event) =>
+                entry.abort && !event.shiftKey
+                  ? onAbort(entry.command)
+                  : onCommand(entry.command, event.shiftKey)
+              }
+            >
+              {entry.label}
+            </button>
+          );
+        })}
       </span>
     </div>
   );

@@ -478,6 +478,12 @@ export interface CommitDiff {
   error: string | null;
 }
 
+/** A file with git's conflict markers still in it, staged or not. */
+export interface MarkerFile {
+  path: string;
+  conflicts: number;
+}
+
 /** What a branch review measured: `git diff <base>...<head>`. */
 export interface CompareInfo {
   base: string;

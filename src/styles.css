@@ -4163,6 +4163,12 @@ button.inbox-check-name.link:hover {
   color: var(--text);
 }
 
+.diff-conflicts {
+  flex: none;
+  font-size: var(--fs-meta);
+  color: var(--amber);
+}
+
 .diff-tally {
   flex: none;
   display: flex;
@@ -4410,6 +4416,54 @@ button.inbox-check-name.link:hover {
 
 .diff-line.fresh .ln {
   color: var(--green);
+}
+
+/* A conflict, drawn whole: ours in blue, theirs in the accent, the base in
+   neither, and the marker rows a shade stronger with the side's name on them.
+   Mixed into --bg rather than over transparent, so the sticky gutter that
+   inherits the row's background stays opaque. */
+.diff-line:is(.conflict-ours, .conflict-ours-start) {
+  background: color-mix(in oklch, var(--blue) 18%, var(--bg));
+}
+
+.diff-line:is(.conflict-theirs, .conflict-split, .conflict-theirs-end) {
+  background: color-mix(in oklch, var(--accent) 18%, var(--bg));
+}
+
+.diff-line:is(.conflict-base, .conflict-base-start) {
+  background: var(--bg-raised);
+}
+
+.diff-line:is(.conflict-ours-start, .conflict-split, .conflict-base-start, .conflict-theirs-end)
+  .text {
+  color: var(--text-dim);
+}
+
+.diff-line.conflict-ours-start {
+  background: color-mix(in oklch, var(--blue) 30%, var(--bg));
+}
+
+.diff-line:is(.conflict-split, .conflict-theirs-end) {
+  background: color-mix(in oklch, var(--accent) 30%, var(--bg));
+}
+
+.conflict-tag {
+  margin-left: 12px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  color: var(--text);
+  user-select: none;
+}
+
+.diff-line.conflict-ours-start .conflict-tag {
+  border-color: var(--blue);
+}
+
+.diff-line.conflict-split .conflict-tag {
+  border-color: var(--accent);
 }
 
 .diff-line.gone-above {
@@ -5249,6 +5303,13 @@ button.inbox-check-name.link:hover {
 
 .btn.danger:hover:not(:disabled) {
   background: color-mix(in oklch, var(--red) 16%, transparent);
+}
+
+/* Continue with conflict markers still in a file: it still runs, and its
+   title names the files. */
+.btn.warn {
+  border-color: color-mix(in oklch, var(--amber) 50%, var(--line));
+  color: var(--amber);
 }
 
 /* The amend toggle beside Commit. A bare word rather than a button, on until

@@ -4,6 +4,7 @@ import type {
   Blame,
   BranchGraph,
   CommitDiff,
+  MarkerFile,
   FileChange,
   FileDiff,
   GhProbe,
@@ -80,6 +81,8 @@ export const api = {
     invoke<CommitDiff>("repo_compare", { path, base, head }),
   repoCompareFile: (path: string, base: string, head: string, file: string) =>
     invoke<FileDiff>("repo_compare_file", { path, base, head, file }),
+  /** Files that still hold conflict markers, staged or not. Asked while git is paused. */
+  repoConflictMarkers: (path: string) => invoke<MarkerFile[]>("repo_conflict_markers", { path }),
   /**
    * The bytes of one side of an image. Raw rather than base64, so a large
    * photograph is not a string on the way over. `sha` reads a commit against

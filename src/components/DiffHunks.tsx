@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import PaneNote from "./PaneNote";
 import ImageDiff, { type ImageSource } from "./ImageDiff";
 import { ageBucket, relativeTime, type BlameHunk, type FileDiff } from "../lib/types";
+import { conflictRoles, type ConflictRole, type ConflictSide } from "../lib/conflict";
 
 /**
  * The rows of one file's diff: the gutters, the sign, the text, and the `@@`
@@ -38,6 +39,29 @@ interface Props {
    * a rule where it was.
    */
   whole?: boolean;
+  /**
+   * A conflicted file, drawn whole, with each side tinted and named where it
+   * starts. The names are the operation's, since ours and theirs swap in a
+   * rebase.
+   */
+  conflict?: { ours: ConflictSide; theirs: ConflictSide };
+}
+
+/** The tag on the marker row that opens each section. */
+function sectionTag(
+  role: ConflictRole | null,
+  sides: { ours: ConflictSide; theirs: ConflictSide },
+): { text: string; title: string } | null {
+  switch (role) {
+    case "ours-start":
+      return { text: `ours · ${sides.ours.name}`, title: `Ours: ${sides.ours.role}.` };
+    case "base-start":
+      return { text: "base", title: "What both sides started from." };
+    case "split":
+      return { text: `theirs · ${sides.theirs.name}`, title: `Theirs: ${sides.theirs.role}.` };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -70,6 +94,7 @@ export default function DiffHunks({
   onBlameCommit,
   imageSource,
   whole = false,
+  conflict,
 }: Props) {
   // The gutter says the sha and the age once per run of lines from one
   // commit, on the first line of the run, and holds its tint for the rest:
@@ -133,6 +158,15 @@ export default function DiffHunks({
             }
           }
           const goneAtEnd = whole && hunk.lines[hunk.lines.length - 1]?.origin === "-";
+          // Roles over every row, drawn or not: a `-` row is not in the file,
+          // so it reads as text and never opens or closes a section.
+          const roles = conflict
+            ? conflictRoles(
+                hunk.lines.map((line) =>
+                  line.origin === " " || line.origin === "+" ? line.text : "",
+                ),
+              )
+            : null;
           return (
             <div className="diff-hunk" key={`${hunk.oldStart}:${hunk.newStart}:${index}`}>
               {!whole && (
@@ -160,8 +194,13 @@ export default function DiffHunks({
                   : "";
                 gone = false;
                 const tone = whole ? "context" : (TONE[line.origin] ?? "context");
+                const role = roles?.[row] ?? null;
+                const tag = conflict ? sectionTag(role, conflict) : null;
                 return (
-                  <div className={`diff-line ${tone}${marks}`} key={row}>
+                  <div
+                    className={`diff-line ${tone}${marks}${role ? ` conflict-${role}` : ""}`}
+                    key={row}
+                  >
                     {blame && (
                       <span
                         className={`blame${who ? ` age-${ageBucket(who.time)}` : ""}`}
@@ -200,6 +239,11 @@ export default function DiffHunks({
                     <span className="text">
                       {line.text}
                       {line.clipped && <span className="clipped"> … line clipped</span>}
+                      {tag && (
+                        <span className="conflict-tag" title={tag.title}>
+                          {tag.text}
+                        </span>
+                      )}
                     </span>
                   </div>
                 );
