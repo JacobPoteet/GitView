@@ -743,8 +743,11 @@ export default function App() {
     setCommitFile(null);
     if (!commitTarget) return;
     let cancelled = false;
-    api
-      .repoCommit(commitTarget.repoPath, commitTarget.id)
+    const review = commitTarget.compare;
+    (review
+      ? api.repoCompare(commitTarget.repoPath, review.base, review.head)
+      : api.repoCommit(commitTarget.repoPath, commitTarget.id)
+    )
       .then((next) => {
         if (cancelled) return;
         setCommit(next);
@@ -823,6 +826,25 @@ export default function App() {
       );
     },
     [selectedPath, historyOpen, commitTarget, commitFile],
+  );
+
+  /**
+   * A whole branch against a base, in the commit's column and pane: `git diff
+   * base...head` read in process. `repoPath` is for the inbox, whose pull
+   * request may be in a repository other than the selected one; selecting it
+   * in the same render keeps the target from being closed as stale.
+   */
+  const openReview = useCallback(
+    (base: string, head: string, repoPath?: string) => {
+      const path = repoPath ?? selectedPath;
+      if (!path) return;
+      if (path !== selectedPath) setSelectedPath(path);
+      setInboxOpen(false);
+      setInboxFocus(null);
+      setCommitTarget({ repoPath: path, id: head, short: head, compare: { base, head } });
+      setChangesShown(true);
+    },
+    [selectedPath, setInboxOpen, setInboxFocus, setChangesShown],
   );
 
   const openCommit = useCallback(
@@ -2426,6 +2448,7 @@ ${keeps} The commits above it are no longer on ${selected.branch}, and git reflo
         // prompt has not been run, so it arms nothing.
         if (!typeOnly && command.startsWith("gh ")) armAfter(path, command);
       }}
+      onReview={(repoPath, base, head) => openReview(base, head, repoPath)}
       onMerge={(item, method, command) => {
         const base = item.baseRef ?? "the base branch";
         const head = item.headRef ?? "the branch";
@@ -2694,6 +2717,7 @@ gh pr view ${branchPr.number} --web`}
                   onCommand={emit}
                   onDeleteBranch={askDeleteBranch}
                   onCopy={copy}
+                  onReview={(base, head) => openReview(base, head)}
                 />
                 {/* The same chips as the sidebar row, so a count means the same
                     thing in both places and wears the same colour. */}
@@ -2812,6 +2836,7 @@ gh pr view ${branchPr.number} --web`}
               onReset={askReset}
               branches={selected.branches}
               shell={shell}
+              onReview={(base, head) => openReview(base, head)}
             />
 
             {/* Between the strip and the shell. `.main.split` hides the strip,

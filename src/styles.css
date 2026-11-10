@@ -1619,6 +1619,10 @@ select:focus-visible,
   font-size: var(--fs-meta);
 }
 
+button.graph-label.reviewable:hover .graph-label-name {
+  text-decoration: underline;
+}
+
 .graph-label-name {
   overflow: hidden;
   text-overflow: ellipsis;

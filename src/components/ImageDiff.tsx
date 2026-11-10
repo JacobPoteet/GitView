@@ -8,6 +8,8 @@ export interface ImageSource {
   staged: boolean;
   /** A commit, read against its first parent. Null for the working tree. */
   sha: string | null;
+  /** With `sha`, a branch review: the head read against its merge base with this. */
+  base?: string | null;
 }
 
 /** The backend refuses past this too. Twenty megabytes is a large photograph. */
@@ -85,6 +87,7 @@ export default function ImageDiff({ diff, source }: { diff: FileDiff; source: Im
         diff.path,
         source.staged,
         source.sha,
+        source.base ?? null,
         newSide,
       );
       const url = URL.createObjectURL(new Blob([buffer], { type: info!.mime }));
@@ -127,7 +130,7 @@ export default function ImageDiff({ diff, source }: { diff: FileDiff; source: Im
     };
     // The diff object is new on every read, which is the signal the file may
     // have changed even when its size did not.
-  }, [diff, info, oversize, oldSize, newSize, source.repoPath, source.staged, source.sha]);
+  }, [diff, info, oversize, oldSize, newSize, source.repoPath, source.staged, source.sha, source.base]);
 
   useEffect(
     () => () => {

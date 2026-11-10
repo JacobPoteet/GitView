@@ -214,6 +214,24 @@ async fn repo_commit_file(path: String, sha: String, file: String) -> Result<Fil
     blocking(move || diff::read_commit_file(&PathBuf::from(&path), &sha, &file)).await
 }
 
+/// Everything a branch changed since it left `base`: `git diff <base>...<head>`,
+/// read in process. The same shape as a commit, so the same column draws it.
+#[tauri::command]
+async fn repo_compare(path: String, base: String, head: String) -> Result<CommitDiff, String> {
+    blocking(move || diff::read_compare(&PathBuf::from(&path), &base, &head)).await
+}
+
+/// One file out of a branch review, against the merge base.
+#[tauri::command]
+async fn repo_compare_file(
+    path: String,
+    base: String,
+    head: String,
+    file: String,
+) -> Result<FileDiff, String> {
+    blocking(move || diff::read_compare_file(&PathBuf::from(&path), &base, &head, &file)).await
+}
+
 /// The bytes of one side of an image, as a raw response rather than JSON, so a
 /// twenty megabyte photograph is not base64 inside a string on the way over.
 #[tauri::command]
@@ -222,6 +240,7 @@ async fn repo_diff_image(
     file: String,
     staged: bool,
     sha: Option<String>,
+    base: Option<String>,
     new_side: bool,
 ) -> Result<tauri::ipc::Response, String> {
     let bytes = blocking(move || {
@@ -230,6 +249,7 @@ async fn repo_diff_image(
             &file,
             staged,
             sha.as_deref(),
+            base.as_deref(),
             new_side,
         )
     })
@@ -811,6 +831,8 @@ pub fn run() {
             repo_diff,
             repo_commit,
             repo_commit_file,
+            repo_compare,
+            repo_compare_file,
             repo_diff_image,
             repo_blame,
             repo_blame_worktree,

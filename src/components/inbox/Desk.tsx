@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { settings, updateSettings } from "../../lib/settings";
-import { mergeCommand, openUrlCommand, rerunCommand, type ShellKind } from "../../lib/shell";
+import {
+  mergeCommand,
+  openUrlCommand,
+  rerunCommand,
+  reviewCommand,
+  type ShellKind,
+} from "../../lib/shell";
 import { checkTone, itemKey, mergeBlock, refKey, refLabel } from "../../lib/inbox";
 import { Links } from "./Links";
 import type { InboxItem, MergeMethod } from "../../lib/types";
@@ -37,6 +43,7 @@ export function Desk({
   onMerge,
   known,
   onReveal,
+  review,
 }: {
   item: InboxItem;
   shell: ShellKind;
@@ -48,6 +55,8 @@ export function Desk({
   known: (key: string) => boolean;
   /** Opens that row's desk and scrolls it into view. */
   onReveal: (key: string) => void;
+  /** Set when the head branch is local: reads it against the base, here. */
+  review: { base: string; head: string; run: () => void } | null;
 }) {
   const [method, setMethod] = useState<MergeMethod>(() => storedMethod(item));
 
@@ -173,6 +182,22 @@ Typed into ${item.repoName}'s shell.`;
             </>
           )}
         </span>
+
+        {review && (
+          <button
+            className="btn tiny"
+            title={`Every file ${review.head} changes, read here.
+
+Shift-click types ${reviewCommand(review.base, review.head, shell)}.`}
+            onClick={(event) =>
+              event.shiftKey
+                ? onCommand(item.repoPath, reviewCommand(review.base, review.head, shell), true)
+                : review.run()
+            }
+          >
+            Review
+          </button>
+        )}
 
         {failedRuns.map((runId) => (
           <button

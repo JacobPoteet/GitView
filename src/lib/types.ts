@@ -473,14 +473,31 @@ export interface CommitDiff {
   files: CommitFile[];
   additions: number;
   deletions: number;
+  /** Set when this is a branch read against a base rather than one commit. */
+  compare: CompareInfo | null;
   error: string | null;
 }
 
-/** A commit the pane is open on. */
+/** What a branch review measured: `git diff <base>...<head>`. */
+export interface CompareInfo {
+  base: string;
+  head: string;
+  /** Short sha of the merge base. */
+  mergeBase: string;
+  /** Commits on the head that the base does not have. */
+  commits: number;
+}
+
+/**
+ * A commit the pane is open on, or with `compare` a whole branch read against
+ * its merge base with a base. A review's `id` is the head's name, so it never
+ * lights a node in the graph or a row in the history.
+ */
 export interface CommitTarget {
   repoPath: string;
   id: string;
   short: string;
+  compare?: { base: string; head: string };
   /** The file to open on, when the commit has it. From the blame gutter, which is about one file. */
   file?: string;
 }
