@@ -2830,7 +2830,7 @@ button.branch-name.has-other .branch-count {
   transition: background 0.12s var(--ease);
 }
 
-.branch-pop-row:hover:not(:disabled) {
+.branch-pop-row:hover:not(.current) {
   background: var(--bg-hover);
 }
 

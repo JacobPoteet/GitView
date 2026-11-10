@@ -245,17 +245,19 @@ function BranchRow({
   // git refuses to switch to a branch another checkout has, so the click does
   // nothing and the title says where it is. The right-click menu still opens.
   const held = branch.worktree;
+  // The row you are on switches nowhere, but it is not `disabled`: a disabled
+  // button gets no contextmenu event, so its menu (copy, review) never opened.
   return (
     <button
       className={`branch-pop-row${branch.isHead ? " current" : ""}`}
-      disabled={branch.isHead}
+      aria-disabled={branch.isHead}
       onClick={(event) => {
-        if (!held) onCommand(command, event.shiftKey);
+        if (!held && !branch.isHead) onCommand(command, event.shiftKey);
       }}
       onContextMenu={(event) => onMenu(event, branch)}
       title={
         branch.isHead
-          ? "You are here."
+          ? "You are here. Right-click for its menu."
           : held
             ? `Checked out in the worktree at ${held}.\n\nRight-click to remove that worktree and delete the branch.`
             : `${command}\n\nShift-click to type it without running it.`
