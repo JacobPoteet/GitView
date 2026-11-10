@@ -8,7 +8,7 @@ import {
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry, type MenuItem } from "./ContextMenu";
 import PaneNote from "./PaneNote";
-import { quote, type ShellKind } from "../lib/shell";
+import { quote, reviewCommand, type ShellKind } from "../lib/shell";
 import type { BranchGraph as Graph, BranchSummary, GraphCommit, Squashed } from "../lib/types";
 import { relativeTime, signedTitle } from "../lib/types";
 
@@ -37,6 +37,8 @@ interface Props {
   /** Every local branch, so a commit that is a branch tip offers the branch. */
   branches: BranchSummary[];
   shell: ShellKind;
+  /** Opens everything `head` changed since it left `base`, in the commit's column. */
+  onReview: (base: string, head: string) => void;
 }
 
 /**
@@ -254,6 +256,7 @@ export default function BranchGraph({
   onReset,
   branches,
   shell,
+  onReview,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const menu = useContextMenu<GraphCommit>();
@@ -349,6 +352,20 @@ export default function BranchGraph({
                   count={graph.ours.length}
                   arrow={graph.unrelated ? "" : "↑"}
                   kind="head"
+                  review={
+                    // The bottom rail is the branch's own commits, so its
+                    // name is where reading all of them at once belongs.
+                    // Unrelated rails have no fork to read from.
+                    graph.base && !graph.unrelated
+                      ? {
+                          command: reviewCommand(graph.base, graph.head ?? "HEAD", shell),
+                          run: (typeOnly) =>
+                            typeOnly
+                              ? onCommand(reviewCommand(graph.base!, graph.head ?? "HEAD", shell), true)
+                              : onReview(graph.base!, graph.head ?? "HEAD"),
+                        }
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -408,16 +425,19 @@ function Label({
   count,
   arrow,
   kind,
+  review,
 }: {
   y: number;
   name: string;
   count: number;
   arrow: string;
   kind: string;
+  /** Set on the head rail: a click reads the branch against the base. */
+  review?: { command: string; run: (typeOnly: boolean) => void };
 }) {
-  return (
-    <span className={`graph-label ${kind}`} style={{ top: y }}>
-      <span className="graph-label-name" title={name}>
+  const body = (
+    <>
+      <span className="graph-label-name" title={review ? undefined : name}>
         {name}
       </span>
       {count > 0 && (
@@ -426,6 +446,25 @@ function Label({
           {count}
         </span>
       )}
+    </>
+  );
+  if (review) {
+    return (
+      <button
+        className={`graph-label ${kind} reviewable`}
+        style={{ top: y }}
+        onClick={(event) => review.run(event.shiftKey)}
+        title={`Review every file ${name} changed, read here.
+
+Shift-click types ${review.command}.`}
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <span className={`graph-label ${kind}`} style={{ top: y }}>
+      {body}
     </span>
   );
 }

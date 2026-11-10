@@ -604,7 +604,23 @@ pub struct CommitDiff {
     pub files: Vec<CommitFile>,
     pub additions: usize,
     pub deletions: usize,
+    /// Set when this is a branch read against a base rather than one commit.
+    /// The message fields then describe the branch's tip.
+    pub compare: Option<CompareInfo>,
     pub error: Option<String>,
+}
+
+/// What a branch review was measured from: `git diff <base>...<head>`, which
+/// is the merge base's tree against the head's.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CompareInfo {
+    pub base: String,
+    pub head: String,
+    /// Short sha of the merge base.
+    pub merge_base: String,
+    /// Commits on `head` that `base` does not have.
+    pub commits: usize,
 }
 
 impl CommitDiff {
@@ -620,6 +636,7 @@ impl CommitDiff {
             files: Vec::new(),
             additions: 0,
             deletions: 0,
+            compare: None,
             error: Some(message),
         }
     }
@@ -685,9 +702,15 @@ pub fn read_commit(repo_path: &Path, sha: &str) -> CommitDiff {
         files: Vec::new(),
         additions: 0,
         deletions: 0,
+        compare: None,
         error: None,
     };
+    list_files(&diff, &mut out);
+    out
+}
 
+/// Every delta in the diff as a row with its counts, summed into `out`.
+fn list_files(diff: &git2::Diff<'_>, out: &mut CommitDiff) {
     for (idx, delta) in diff.deltas().enumerate() {
         let path = slashed(delta.new_file().path())
             .or_else(|| slashed(delta.old_file().path()))
@@ -706,7 +729,7 @@ pub fn read_commit(repo_path: &Path, sha: &str) -> CommitDiff {
             deletions: 0,
         };
         if !file.binary {
-            match Patch::from_diff(&diff, idx) {
+            match Patch::from_diff(diff, idx) {
                 Ok(Some(patch)) => {
                     if let Ok((_, added, removed)) = patch.line_stats() {
                         file.additions = added;
@@ -721,8 +744,134 @@ pub fn read_commit(repo_path: &Path, sha: &str) -> CommitDiff {
         out.deletions += file.deletions;
         out.files.push(file);
     }
+}
 
+// ----------------------------------------------------------- branch review
+
+/// A ref the frontend named, as a commit. A pull request's base arrives as
+/// `origin/main`, and a repository with no `origin` copy of it still has the
+/// local branch, so the remote prefix is dropped once before giving up.
+fn resolve<'r>(repo: &'r Repository, name: &str) -> Result<git2::Commit<'r>, git2::Error> {
+    match repo.revparse_single(name).and_then(|o| o.peel_to_commit()) {
+        Ok(commit) => Ok(commit),
+        Err(err) => match name.split_once('/') {
+            Some((remote, rest)) if !rest.is_empty() && repo.find_remote(remote).is_ok() => repo
+                .revparse_single(rest)
+                .and_then(|o| o.peel_to_commit())
+                .map_err(|_| err),
+            _ => Err(err),
+        },
+    }
+}
+
+/// What `git diff <base>...<head>` reads: the merge base's tree against the
+/// head's, so commits the base gained since the branch forked stay out of it.
+/// That is the squash a merge would land. No pathspec, for the reason `build`
+/// gives.
+fn build_compare<'r>(
+    repo: &'r Repository,
+    base: &str,
+    head: &str,
+) -> Result<(git2::Commit<'r>, Oid, git2::Diff<'r>), String> {
+    let head_commit = resolve(repo, head).map_err(|e| e.message().to_string())?;
+    let base_commit = resolve(repo, base).map_err(|e| e.message().to_string())?;
+    let fork = repo
+        .merge_base(base_commit.id(), head_commit.id())
+        .map_err(|_| {
+            format!(
+                "{head} and {base} share no history, so there is no merge base. \
+                 git diff {base} {head} compares the two tips."
+            )
+        })?;
+    let old = repo
+        .find_commit(fork)
+        .and_then(|c| c.tree())
+        .map_err(|e| e.message().to_string())?;
+    let new = head_commit.tree().map_err(|e| e.message().to_string())?;
+
+    let mut opts = DiffOptions::new();
+    opts.context_lines(CONTEXT).include_typechange(true);
+    let mut diff = repo
+        .diff_tree_to_tree(Some(&old), Some(&new), Some(&mut opts))
+        .map_err(|e| e.message().to_string())?;
+    let mut finder = DiffFindOptions::new();
+    finder.renames(true).copies(false);
+    let _ = diff.find_similar(Some(&mut finder));
+    Ok((head_commit, fork, diff))
+}
+
+/// Everything a branch changed since it left `base`, as one list.
+///
+/// The shape is the commit pane's, so the same column draws it: the message
+/// fields are the head's newest commit, and `compare` says what was measured.
+pub fn read_compare(repo_path: &Path, base: &str, head: &str) -> CommitDiff {
+    let repo = match Repository::open(repo_path) {
+        Ok(repo) => repo,
+        Err(err) => return CommitDiff::failed(head, err.message().to_string()),
+    };
+    let (tip, fork, diff) = match build_compare(&repo, base, head) {
+        Ok(found) => found,
+        Err(message) => return CommitDiff::failed(head, message),
+    };
+
+    // Commits the branch has and the base does not, the count `git log
+    // base..head` prints. Walking oids reads no commit text.
+    let commits = repo
+        .revwalk()
+        .and_then(|mut walk| {
+            walk.push(tip.id())?;
+            walk.hide(fork)?;
+            Ok(walk.count())
+        })
+        .unwrap_or(0);
+
+    let mut out = CommitDiff {
+        id: tip.id().to_string(),
+        short: tip.id().to_string().chars().take(7).collect(),
+        summary: tip.summary().unwrap_or_default().to_string(),
+        body: String::new(),
+        author: tip.author().name().unwrap_or_default().to_string(),
+        time: tip.time().seconds(),
+        parents: Vec::new(),
+        files: Vec::new(),
+        additions: 0,
+        deletions: 0,
+        compare: Some(CompareInfo {
+            base: base.to_string(),
+            head: head.to_string(),
+            merge_base: fork.to_string().chars().take(7).collect(),
+            commits,
+        }),
+        error: None,
+    };
+    list_files(&diff, &mut out);
     out
+}
+
+/// One file out of a branch review, in the shape every other read returns.
+pub fn read_compare_file(repo_path: &Path, base: &str, head: &str, file: &str) -> FileDiff {
+    let repo = match Repository::open(repo_path) {
+        Ok(repo) => repo,
+        Err(err) => return FileDiff::failed(file, false, err.message().to_string()),
+    };
+    let (_, _, diff) = match build_compare(&repo, base, head) {
+        Ok(found) => found,
+        Err(message) => return FileDiff::failed(file, false, message),
+    };
+    let Some(idx) = locate(&diff, file) else {
+        return FileDiff::empty(file, false);
+    };
+    let Some(delta) = diff.get_delta(idx) else {
+        return FileDiff::empty(file, false);
+    };
+    expand(
+        &repo,
+        &diff,
+        idx,
+        delta,
+        false,
+        FileDiff::empty(file, false),
+    )
 }
 
 /// One file out of a commit, in the shape the working-tree reads return so the
@@ -754,15 +903,17 @@ pub fn read_commit_file(repo_path: &Path, sha: &str, file: &str) -> FileDiff {
 
 /// The raw bytes of one side of an image, for the pane to draw.
 ///
-/// `sha` names a commit, read against its first parent; without one the side of
-/// the index `staged` names is read. `new_side` picks the right-hand file of the
-/// delta and false the left. Over `MAX_IMAGE` is refused here as well as in the
-/// pane, since the pane's check is on a size that may have changed since.
+/// `sha` names a commit, read against its first parent, or with `base` a branch
+/// read against its merge base with `base`; without one the side of the index
+/// `staged` names is read. `new_side` picks the right-hand file of the delta and
+/// false the left. Over `MAX_IMAGE` is refused here as well as in the pane,
+/// since the pane's check is on a size that may have changed since.
 pub fn read_image(
     repo_path: &Path,
     file: &str,
     staged: bool,
     sha: Option<&str>,
+    base: Option<&str>,
     new_side: bool,
 ) -> Result<Vec<u8>, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
@@ -781,11 +932,13 @@ pub fn read_image(
         }
         return std::fs::read(full).map_err(|e| e.to_string());
     }
-    let diff = match sha {
-        Some(sha) => build_commit(&repo, sha).map(|(_, diff)| diff),
-        None => build(&repo, staged),
-    }
-    .map_err(|e| e.message().to_string())?;
+    let diff = match (sha, base) {
+        (Some(head), Some(base)) => build_compare(&repo, base, head).map(|(_, _, diff)| diff)?,
+        (Some(sha), None) => build_commit(&repo, sha)
+            .map(|(_, diff)| diff)
+            .map_err(|e| e.message().to_string())?,
+        (None, _) => build(&repo, staged).map_err(|e| e.message().to_string())?,
+    };
     let idx = locate(&diff, file).ok_or_else(|| format!("{file} has no diff on this side."))?;
     let delta = diff
         .get_delta(idx)
@@ -1674,9 +1827,9 @@ two
         assert_eq!(info.mime, "image/png");
         assert_eq!(info.old_size, None);
         assert_eq!(info.new_size, Some(11));
-        assert!(read_image(&fixture.dir, "logo.png", false, None, false).is_err());
+        assert!(read_image(&fixture.dir, "logo.png", false, None, None, false).is_err());
         assert_eq!(
-            read_image(&fixture.dir, "logo.png", false, None, true).unwrap(),
+            read_image(&fixture.dir, "logo.png", false, None, None, true).unwrap(),
             png(1)
         );
 
@@ -1688,11 +1841,11 @@ two
         let info = changed.image.expect("an image");
         assert_eq!((info.old_size, info.new_size), (Some(11), Some(11)));
         assert_eq!(
-            read_image(&fixture.dir, "logo.png", false, None, false).unwrap(),
+            read_image(&fixture.dir, "logo.png", false, None, None, false).unwrap(),
             png(1)
         );
         assert_eq!(
-            read_image(&fixture.dir, "logo.png", false, None, true).unwrap(),
+            read_image(&fixture.dir, "logo.png", false, None, None, true).unwrap(),
             png(2)
         );
 
@@ -1700,11 +1853,11 @@ two
         fixture.commit("second");
         let head = fixture.repo.head().unwrap().target().unwrap().to_string();
         assert_eq!(
-            read_image(&fixture.dir, "logo.png", false, Some(&head), false).unwrap(),
+            read_image(&fixture.dir, "logo.png", false, Some(&head), None, false).unwrap(),
             png(1)
         );
         assert_eq!(
-            read_image(&fixture.dir, "logo.png", false, Some(&head), true).unwrap(),
+            read_image(&fixture.dir, "logo.png", false, Some(&head), None, true).unwrap(),
             png(2)
         );
 
@@ -1713,7 +1866,7 @@ two
         assert_eq!(gone.status, "deleted");
         let info = gone.image.expect("an image");
         assert_eq!((info.old_size, info.new_size), (Some(11), None));
-        assert!(read_image(&fixture.dir, "logo.png", false, None, true).is_err());
+        assert!(read_image(&fixture.dir, "logo.png", false, None, None, true).is_err());
     }
 
     /// An SVG is text, so it keeps its hunks and gains the image beside them.
@@ -1823,8 +1976,100 @@ two
         let info = file.image.expect("an image");
         assert_eq!((info.old_size, info.new_size), (None, Some(11)));
         assert_eq!(
-            read_image(&fixture.dir, "logo.png", false, None, true).unwrap(),
+            read_image(&fixture.dir, "logo.png", false, None, None, true).unwrap(),
             png(3)
         );
+    }
+
+    /// main with a.txt and old.rs, then `feature` forked from it with two
+    /// commits: an edit to a.txt and old.rs renamed to new.rs. main then
+    /// gains c.txt, which the review must leave out.
+    fn branched(tag: &str) -> Fixture {
+        let fixture = Fixture::new(tag);
+        // Through git alone: git2's cached index goes stale under `git switch`.
+        fixture.write(
+            "a.txt", "one
+two
+",
+        );
+        fixture.write("old.rs", &body(0..30));
+        git(&fixture, &["add", "."]);
+        git(&fixture, &["commit", "-m", "first"]);
+        git(&fixture, &["branch", "-M", "main"]);
+        git(&fixture, &["switch", "-c", "feature"]);
+        fixture.write(
+            "a.txt",
+            "one
+two
+three
+",
+        );
+        git(&fixture, &["commit", "-am", "edit"]);
+        git(&fixture, &["mv", "old.rs", "new.rs"]);
+        git(&fixture, &["commit", "-m", "move"]);
+        git(&fixture, &["switch", "main"]);
+        fixture.write(
+            "c.txt",
+            "base only
+",
+        );
+        git(&fixture, &["add", "c.txt"]);
+        git(&fixture, &["commit", "-m", "main moves on"]);
+        fixture
+    }
+
+    #[test]
+    fn a_branch_review_lists_everything_since_the_fork() {
+        let fixture = branched("compare");
+        let review = read_compare(&fixture.dir, "main", "feature");
+        assert!(review.error.is_none(), "{:?}", review.error);
+        let info = review.compare.as_ref().expect("compare info");
+        assert_eq!(info.commits, 2);
+        assert_eq!(info.head, "feature");
+
+        let mut paths: Vec<&str> = review.files.iter().map(|f| f.path.as_str()).collect();
+        paths.sort();
+        // c.txt is the base's, after the fork, and three dots leave it out.
+        assert_eq!(paths, ["a.txt", "new.rs"]);
+        let moved = review.files.iter().find(|f| f.path == "new.rs").unwrap();
+        assert_eq!(moved.status, "renamed");
+        assert_eq!(moved.old_path.as_deref(), Some("old.rs"));
+        assert_eq!(review.additions, 1);
+
+        let file = read_compare_file(&fixture.dir, "main", "feature", "a.txt");
+        assert_eq!(added(&file), ["three"]);
+        let gone = read_compare_file(&fixture.dir, "main", "feature", "c.txt");
+        assert!(gone.empty);
+    }
+
+    /// A pull request's base arrives as `origin/main`. With no copy under
+    /// `origin`, the local branch stands in.
+    #[test]
+    fn a_remote_base_falls_back_to_the_local_branch() {
+        let fixture = branched("compare-remote");
+        git(
+            &fixture,
+            &["remote", "add", "origin", "https://example.invalid/x.git"],
+        );
+        let review = read_compare(&fixture.dir, "origin/main", "feature");
+        assert!(review.error.is_none(), "{:?}", review.error);
+        assert_eq!(review.files.len(), 2);
+        // Not a remote, so no fallback: an unknown ref stays an error.
+        assert!(read_compare(&fixture.dir, "nope/main", "feature")
+            .error
+            .is_some());
+    }
+
+    #[test]
+    fn unrelated_histories_say_so_rather_than_diffing_tips() {
+        let fixture = branched("compare-unrelated");
+        git(&fixture, &["switch", "--orphan", "other"]);
+        fixture.write("z.txt", "z\n");
+        fixture.stage("z.txt");
+        git(&fixture, &["commit", "-m", "orphan"]);
+        let review = read_compare(&fixture.dir, "main", "other");
+        let error = review.error.expect("an error");
+        assert!(error.contains("no merge base"), "{error}");
+        assert!(review.compare.is_none());
     }
 }

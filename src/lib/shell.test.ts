@@ -9,6 +9,7 @@ import {
   fixIssueCommand,
   isClaudeWorktree,
   quote,
+  reviewCommand,
   shellKind,
   tagCommand,
   validRefName,
@@ -209,5 +210,19 @@ describe("claudeCommand", () => {
   it("is bare claude without hooks and names the file with them", () => {
     expect(claudeCommand(null, "powershell")).toBe("claude");
     expect(claudeCommand("C:/d/h.json", "powershell")).toBe("claude --settings 'C:/d/h.json'");
+  });
+});
+
+describe("reviewCommand", () => {
+  it("quotes the three-dot range as one argument", () => {
+    expect(reviewCommand("origin/main", "feature", "powershell")).toBe(
+      "git diff 'origin/main...feature'",
+    );
+  });
+
+  it("names one file without the pager", () => {
+    expect(reviewCommand("main", "it's", "posix", "src/a b.ts")).toBe(
+      "git --no-pager diff 'main...it'\\''s' -- 'src/a b.ts'",
+    );
   });
 });

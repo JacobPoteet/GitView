@@ -1619,6 +1619,10 @@ select:focus-visible,
   font-size: var(--fs-meta);
 }
 
+button.graph-label.reviewable:hover .graph-label-name {
+  text-decoration: underline;
+}
+
 .graph-label-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2826,7 +2830,7 @@ button.branch-name.has-other .branch-count {
   transition: background 0.12s var(--ease);
 }
 
-.branch-pop-row:hover:not(:disabled) {
+.branch-pop-row:hover:not(.current) {
   background: var(--bg-hover);
 }
 

@@ -53,6 +53,19 @@ export function quote(value: string, kind: ShellKind): string {
 }
 
 /**
+ * A branch review as typed: `git diff base...head`, everything `head` changed
+ * since it left `base`. The range is quoted whole, since `'a'...'b'` is not one
+ * argument in PowerShell. With a file, that file alone and without the pager,
+ * which is what the 6000-row cap points at.
+ */
+export function reviewCommand(base: string, head: string, shell: ShellKind, file?: string): string {
+  const range = quote(`${base}...${head}`, shell);
+  return file === undefined
+    ? `git diff ${range}`
+    : `git --no-pager diff ${range} -- ${quote(file, shell)}`;
+}
+
+/**
  * `git commit` with a message, as one line.
  *
  * A newline typed at a prompt submits the command, so a message with a body

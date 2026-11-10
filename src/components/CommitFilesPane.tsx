@@ -3,7 +3,7 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
 import PaneNote from "./PaneNote";
 import CloseButton from "./CloseButton";
-import { openFileCommand, quote, type ShellKind } from "../lib/shell";
+import { openFileCommand, quote, reviewCommand, type ShellKind } from "../lib/shell";
 import type { CommitDiff, CommitFile, CommitTarget, FileChange } from "../lib/types";
 
 interface Props {
@@ -53,6 +53,10 @@ const MARK: Record<FileChange["state"], string> = {
  *
  * Rows here open and never stage: the same `.change-row` and mark as the
  * working tree, without the verb, plus the file's own counts.
+ *
+ * A branch review borrows the column the same way. Its head says what was
+ * measured, `head` against `base` from their merge base, which is the change a
+ * squash merge would land, and the whole range is one shift-click away.
  */
 export default function CommitFilesPane({
   target,
@@ -69,6 +73,7 @@ export default function CommitFilesPane({
 }: Props) {
   const files = commit?.files ?? [];
   const menu = useContextMenu<CommitFile>();
+  const compare = target.compare;
 
   useEffect(() => {
     menu.close();
@@ -88,7 +93,7 @@ export default function CommitFilesPane({
       {
         label: "Open",
         title: deleted
-          ? "Deleted in this commit, so there is nothing to open."
+          ? `Deleted ${compare ? "on this branch" : "in this commit"}, so there is nothing to open.`
           : `Invoke-Item on this file as ${target.short} had it, written under GitView's data folder.`,
         disabled: disabled || deleted,
         run: (typeOnly) => {
@@ -109,7 +114,7 @@ export default function CommitFilesPane({
   return (
     <aside className="changes-pane commit-files-pane">
       <div className="pane-tab-bar">
-        <span>Commit</span>
+        <span>{compare ? "Review" : "Commit"}</span>
         <span style={{ color: "var(--line-strong)" }}>·</span>
         <span className="commit-short">{target.short}</span>
         {files.length > 0 && (
@@ -123,7 +128,42 @@ export default function CommitFilesPane({
         <CloseButton onClick={onClose} label="Back to the working tree" />
       </div>
 
-      {commit && !commit.error && (
+      {commit && !commit.error && commit.compare && (
+        <div className="commit-details">
+          <div className="commit-summary">
+            <code>{commit.compare.head}</code> against <code>{commit.compare.base}</code>
+          </div>
+          <div className="commit-meta">
+            <span title={`git log ${commit.compare.mergeBase}..${commit.compare.head}`}>
+              {commit.compare.commits} {commit.compare.commits === 1 ? "commit" : "commits"} since{" "}
+              {commit.compare.mergeBase}
+            </span>
+            <span className="diff-tally" title="Over the whole branch">
+              <span className="add">+{commit.additions}</span>
+              <span className="del">−{commit.deletions}</span>
+            </span>
+            <button
+              className="btn tiny accent"
+              disabled={disabled}
+              onClick={(event) => {
+                const range = reviewCommand(commit.compare!.base, commit.compare!.head, shell);
+                onCommand(range, event.shiftKey);
+              }}
+              title={
+                disabled
+                  ? "No shell open for this repository."
+                  : `${reviewCommand(commit.compare.base, commit.compare.head, shell)}
+
+Shift-click to type it without running it.`
+              }
+            >
+              diff
+            </button>
+          </div>
+        </div>
+      )}
+
+      {commit && !commit.error && !commit.compare && (
         <div className="commit-details">
           <div className="commit-summary">{commit.summary || "(no message)"}</div>
           {commit.body && <pre className="commit-message">{commit.body}</pre>}
@@ -155,7 +195,11 @@ export default function CommitFilesPane({
         {!commit && <PaneNote kind="loading">Reading…</PaneNote>}
         {commit?.error && <PaneNote kind="error">{commit.error}</PaneNote>}
         {commit && !commit.error && files.length === 0 && (
-          <p className="empty">This commit changed no files.</p>
+          <p className="empty">
+            {compare
+              ? `${compare.head} changes no files against ${compare.base}.`
+              : "This commit changed no files."}
+          </p>
         )}
         {files.map((entry) => {
           const slash = entry.path.lastIndexOf("/");

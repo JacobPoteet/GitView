@@ -66,6 +66,11 @@ interface Props {
    * the command, and the app owns the dialog.
    */
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
+  /**
+   * Reads a pull request's head branch against its base, in the commit's
+   * column, when the head branch is on this disk. Selects its repository.
+   */
+  onReview: (repoPath: string, base: string, head: string) => void;
   /** Where a refused write of the issue body goes. The status bar. */
   onError: (message: string) => void;
   /** Copies, and says so in the status bar. `what` finishes "Copied …". */
@@ -154,6 +159,7 @@ function Row({
   closers,
   known,
   onReveal,
+  review,
 }: {
   item: InboxItem;
   /** The open pull requests that close this issue. Empty for a pull request. */
@@ -171,6 +177,8 @@ function Row({
   onMerge: (item: InboxItem, method: MergeMethod, command: string) => void;
   onError: (message: string) => void;
   onMenu: (event: ReactMouseEvent, item: InboxItem) => void;
+  /** Set when the pull request's head branch is local, so it can be read here. */
+  review: { base: string; head: string; run: () => void } | null;
 }) {
   // Every action names the command it runs, so an inbox row types `gh` the way
   // a sidebar row types `git`. Nothing here writes to GitHub out of sight.
@@ -275,6 +283,7 @@ function Row({
           onMerge={onMerge}
           known={known}
           onReveal={onReveal}
+          review={review}
         />
       )}
       {open && !pr && (
@@ -303,6 +312,7 @@ export default function InboxPane({
   onSelect,
   onCommand,
   onMerge,
+  onReview,
   onError,
   onCopy,
   openKey,
@@ -409,6 +419,20 @@ Typed into ${item.repoName}'s shell.`;
       return next;
     });
 
+  /**
+   * A pull request whose head branch is on this disk, read against the base
+   * as `origin` has it, which is what GitHub diffs against. A repository
+   * with no `origin` copy falls back to the local base in the read.
+   */
+  const reviewOf = (item: InboxItem): { base: string; head: string; run: () => void } | null => {
+    if (item.kind !== "pr" || !item.headRef || !item.baseRef) return null;
+    const repo = repos.find((r) => r.path === item.repoPath);
+    const head = item.headRef;
+    if (!repo?.branches.some((b) => b.name === head)) return null;
+    const base = `origin/${item.baseRef}`;
+    return { base, head, run: () => onReview(item.repoPath, base, head) };
+  };
+
   const renderRow = (item: InboxItem, showNeed: boolean) => {
     const key = itemKey(item);
     return (
@@ -433,6 +457,7 @@ Typed into ${item.repoName}'s shell.`;
         closers={closers.get(key) ?? []}
         known={known}
         onReveal={reveal}
+        review={reviewOf(item)}
       />
     );
   };

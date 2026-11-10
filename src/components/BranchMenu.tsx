@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import type { BranchScope, BranchSummary, RepoState, Squashed } from "../lib/types";
 import { relativeTime } from "../lib/types";
-import { quote, type ShellKind } from "../lib/shell";
+import { quote, reviewCommand, type ShellKind } from "../lib/shell";
 
 interface Props {
   repo: RepoState;
@@ -13,6 +13,8 @@ interface Props {
   /** Deleting asks first, and the app owns the dialog. */
   onDeleteBranch: (name: string, scope: BranchScope) => void;
   onCopy: (text: string, what: string) => void;
+  /** Opens everything `head` changed since it left `base`, in the commit's column. */
+  onReview: (base: string, head: string) => void;
 }
 
 /**
@@ -36,6 +38,7 @@ export default function BranchMenu({
   onCommand,
   onDeleteBranch,
   onCopy,
+  onReview,
 }: Props) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -91,7 +94,32 @@ export default function BranchMenu({
       : repo.remoteUrl === null
         ? "No remote to delete from."
         : `Nothing on ${remote} to delete: this branch was never pushed.`;
+    // The base the counts were measured against, so the review and the arrows
+    // on the row answer the same question.
+    const reviewBase = repo.defaultBase ?? repo.defaultBranch;
+    const isBase =
+      reviewBase !== null &&
+      (branch.name === reviewBase || branch.name === repo.defaultBranch);
+    const review = reviewBase ? reviewCommand(reviewBase, branch.name, shell) : null;
     return [
+      {
+        label: reviewBase ? `Review against ${reviewBase}` : "Review",
+        title: !reviewBase
+          ? "No default branch to measure against."
+          : isBase
+            ? `This is ${reviewBase}.`
+            : `Every file ${branch.name} changed since it left ${reviewBase}, read here.
+
+Shift-click types ${review}.`,
+        disabled: !reviewBase || isBase,
+        run: (typeOnly) => {
+          if (!reviewBase || !review) return;
+          setOpen(false);
+          if (typeOnly) onCommand(review, true);
+          else onReview(reviewBase, branch.name);
+        },
+      },
+      "-",
       {
         label: "Check out",
         title: branch.isHead
@@ -217,17 +245,19 @@ function BranchRow({
   // git refuses to switch to a branch another checkout has, so the click does
   // nothing and the title says where it is. The right-click menu still opens.
   const held = branch.worktree;
+  // The row you are on switches nowhere, but it is not `disabled`: a disabled
+  // button gets no contextmenu event, so its menu (copy, review) never opened.
   return (
     <button
       className={`branch-pop-row${branch.isHead ? " current" : ""}`}
-      disabled={branch.isHead}
+      aria-disabled={branch.isHead}
       onClick={(event) => {
-        if (!held) onCommand(command, event.shiftKey);
+        if (!held && !branch.isHead) onCommand(command, event.shiftKey);
       }}
       onContextMenu={(event) => onMenu(event, branch)}
       title={
         branch.isHead
-          ? "You are here."
+          ? "You are here. Right-click for its menu."
           : held
             ? `Checked out in the worktree at ${held}.\n\nRight-click to remove that worktree and delete the branch.`
             : `${command}\n\nShift-click to type it without running it.`

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import type { Blame, BlameHunk, CommitTarget, FileDiff } from "../lib/types";
-import { quote, type ShellKind } from "../lib/shell";
+import { quote, reviewCommand, type ShellKind } from "../lib/shell";
 import DiffHunks from "./DiffHunks";
 import PaneNote from "./PaneNote";
 import CloseButton from "./CloseButton";
@@ -36,6 +36,9 @@ interface Props {
  *
  * The rows are `DiffHunks`, the same component the working-tree pane draws,
  * without the stage button: a hunk in a commit is already in one.
+ *
+ * A branch review is the same pane over a different read: the file as the
+ * branch has it against the merge base, and `diff` in place of `show`.
  */
 export default function CommitPane({
   target,
@@ -46,6 +49,7 @@ export default function CommitPane({
   onCommand,
   onOpenCommit,
 }: Props) {
+  const compare = target.compare;
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -88,8 +92,10 @@ export default function CommitPane({
     setDiff(null);
     setFailure(null);
     let cancelled = false;
-    api
-      .repoCommitFile(target.repoPath, target.id, file)
+    const read = compare
+      ? api.repoCompareFile(target.repoPath, compare.base, compare.head, file)
+      : api.repoCommitFile(target.repoPath, target.id, file);
+    read
       .then((next) => {
         if (!cancelled) setDiff(next);
       })
@@ -99,14 +105,19 @@ export default function CommitPane({
     return () => {
       cancelled = true;
     };
-  }, [target.repoPath, target.id, file, attempt]);
+    // `compare` is read through its two strings, so a new object with the
+    // same refs does not read the file again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target.repoPath, target.id, compare?.base, compare?.head, file, attempt]);
 
-  const show = `git --no-pager show ${target.short} -- ${quote(file, shell)}`;
+  const show = compare
+    ? reviewCommand(compare.base, compare.head, shell, file)
+    : `git --no-pager show ${target.short} -- ${quote(file, shell)}`;
 
   return (
     <section className="diff-pane commit-pane">
       <div className="pane-tab-bar">
-        <span>Commit</span>
+        <span>{compare ? "Review" : "Commit"}</span>
         <span className="commit-short">{target.short}</span>
         <span className="tab-path" title={file}>
           <bdi>{file}</bdi>
@@ -145,7 +156,7 @@ export default function CommitPane({
               : `${show}\n\nShift-click to type it without running it.`
           }
         >
-          show
+          {compare ? "diff" : "show"}
         </button>
         <CloseButton onClick={onClose} />
       </div>
@@ -167,9 +178,18 @@ export default function CommitPane({
         {diff && (
           <DiffHunks
             diff={diff}
-            imageSource={{ repoPath: target.repoPath, staged: false, sha: target.id }}
+            imageSource={{
+              repoPath: target.repoPath,
+              staged: false,
+              sha: target.id,
+              base: compare?.base ?? null,
+            }}
             restCommand={show}
-            emptyNote="This file is not in the commit."
+            emptyNote={
+              compare
+                ? `${compare.head} no longer changes this file.`
+                : "This file is not in the commit."
+            }
             blame={blameOn ? blameLines : undefined}
             onBlameCommit={(commit) => onOpenCommit({ ...commit, file })}
           />
