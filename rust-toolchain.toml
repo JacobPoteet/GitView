@@ -1,0 +1,7 @@
+# Pins the compiler CI and releases build with. The Rust cache is keyed on the
+# compiler, so tracking stable sent every PR after a Rust release through a cold
+# build. Bump this in a PR of its own.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
