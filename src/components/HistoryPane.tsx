@@ -12,6 +12,7 @@ import { quote, type ShellKind } from "../lib/shell";
 import { api } from "../lib/api";
 import PaneNote from "./PaneNote";
 import CloseButton from "./CloseButton";
+import { MarkdownLine } from "./Markdown";
 import {
   branchTips,
   parseHistoryFilter,
@@ -768,7 +769,9 @@ A squash keeps no link to the branch it came from, so the two are joined here by
           ⤳ {entry.branch}
         </span>
       ))}
-      <span className="history-summary">{row.summary || "(no message)"}</span>
+      <span className="history-summary">
+        {row.summary ? <MarkdownLine text={row.summary} /> : "(no message)"}
+      </span>
       {tipOf && (
         <span
           className="history-squashed-into"

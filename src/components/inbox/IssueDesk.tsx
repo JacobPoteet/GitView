@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "../../lib/api";
-import { issueCommentCommand, type ShellKind } from "../../lib/shell";
+import { issueCommentCommand, openUrlCommand, type ShellKind } from "../../lib/shell";
+import Markdown, { type LinkAction } from "../Markdown";
 import { itemKey } from "../../lib/inbox";
 import { relativeTime, type InboxItem, type IssueDetail } from "../../lib/types";
 import { Links } from "./Links";
@@ -73,6 +74,12 @@ export function IssueDesk({
     }
   }
 
+  const link: LinkAction = {
+    open: (href, typeOnly) => onCommand(item.repoPath, openUrlCommand(href, shell), typeOnly),
+    title: (href) =>
+      `${openUrlCommand(href, shell)}\n\nTyped into ${item.repoName}'s shell. Shift-click to type it without running it.`,
+  };
+
   const when = (iso: string) => relativeTime(Math.floor(Date.parse(iso) / 1000));
   const left = detail ? detail.commentCount - detail.comments.length : 0;
 
@@ -111,7 +118,7 @@ export function IssueDesk({
           </div>
 
           {detail.body.trim() ? (
-            <div className="inbox-body">{detail.body}</div>
+            <Markdown source={detail.body} className="inbox-body" link={link} />
           ) : (
             <p className="inbox-when">No description.</p>
           )}
@@ -129,7 +136,7 @@ export function IssueDesk({
                     <span className="inbox-comment-author">{entry.author || "someone"}</span>
                     <span className="inbox-when">{when(entry.createdAt)}</span>
                   </div>
-                  <div className="inbox-body">{entry.body}</div>
+                  <Markdown source={entry.body} className="inbox-body" link={link} />
                 </li>
               ))}
             </ul>

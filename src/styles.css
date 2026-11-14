@@ -3802,7 +3802,6 @@ button.inbox-check-name.link:hover {
   font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--text);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 260px;
   overflow: auto;
@@ -4678,12 +4677,195 @@ button.inbox-check-name.link:hover {
 
 .commit-message {
   margin: 6px 0 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--font-ui);
   font-size: var(--fs-small);
   line-height: 1.45;
   color: var(--text-dim);
+}
+
+/* A subject's inline code, in the rows and headers that show one line of a
+   message. The mono face says it is something a prompt would accept; the size
+   steps down one so a mono run does not stand taller than the words round it. */
+.commit-summary code,
+.history-summary code,
+.graph-caption .msg code,
+.inbox-title code,
+.inbox-link-title code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* --------------------------------------------------------------- markdown */
+/* A commit body or an issue thread, drawn by `Markdown.tsx`. Sized for a
+   column 300 px wide: headings step up by weight more than by size, since an
+   `h1` at display size would take the message block's whole height. The block
+   that holds it sets the size and colour; everything here is relative. */
+
+.md {
+  overflow-wrap: anywhere;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md :is(p, ul, ol, pre, blockquote, .md-table, hr) {
+  margin: 0 0 0.6em;
+}
+
+.md :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0.9em 0 0.35em;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.md h1 {
+  font-size: var(--fs-title);
+}
+
+.md :is(h5, h6) {
+  font-size: inherit;
+  color: var(--text-dim);
+}
+
+.md strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.md del {
+  color: var(--text-faint);
+}
+
+.md :is(ul, ol) {
+  padding-left: 1.4em;
+}
+
+.md li > :is(p, ul, ol) {
+  margin-bottom: 0.2em;
+}
+
+.md li::marker {
+  color: var(--text-faint);
+}
+
+/* A task item's box replaces its bullet. remark-gfm names the item and its list. */
+.md li.task-list-item {
+  list-style: none;
+  position: relative;
+}
+
+.md-box {
+  position: absolute;
+  left: -1.3em;
+  top: 0.2em;
+  width: 0.95em;
+  height: 0.95em;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xs);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.md-box.checked {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0 0.25em;
+  border-radius: var(--r-xs);
+  background: var(--bg-inset);
+  color: var(--text);
+}
+
+.md pre {
+  padding: 6px 8px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  line-height: 1.4;
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.md blockquote {
+  padding-left: 0.8em;
+  border-left: 2px solid var(--line-strong);
+  color: var(--text-faint);
+}
+
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.md-table {
+  overflow-x: auto;
+}
+
+.md table {
+  border-collapse: collapse;
+  font-size: inherit;
+}
+
+.md :is(th, td) {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: normal;
+  min-width: 4em;
+}
+
+.md th {
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+/* A link types `Start-Process` rather than navigating, so it is a button
+   dressed as a link, and wraps like the words round it. */
+.md-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-align: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 2px;
+}
+
+.md-link:hover,
+.md-link:focus-visible {
+  text-decoration-color: currentColor;
+}
+
+/* With no shell to type into, a link is its text with the address in the title. */
+.md-link-text {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
 }
 
 .commit-meta {
