@@ -67,7 +67,8 @@ fn read(repo: &Path, name: &str) -> Option<String> {
 /// A tool-independent manifest for the one case none of the others cover: a bespoke script
 /// with no `package.json` or `Makefile` to live in. Checked in, so the task travels with the
 /// repository through git rather than staying a saved row on whichever machine typed it first.
-/// Parses only the shape below, not general TOML.
+/// Other tables and keys are ignored, and a file that is not valid TOML proposes nothing rather
+/// than failing discovery for the whole repository.
 ///
 /// ```toml
 /// [[task]]
@@ -78,53 +79,28 @@ fn gitview_tasks(repo: &Path, out: &mut Vec<Task>) {
     let Some(contents) = read(repo, "gitview.toml") else {
         return;
     };
-
-    let mut name: Option<String> = None;
-    let mut command: Option<String> = None;
-    let mut in_task = false;
-
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
+    let Ok(manifest) = toml::from_str::<Manifest>(&contents) else {
+        return;
+    };
+    for entry in manifest.task {
+        // A `'''` command keeps the newline before its closing quotes; the terminal adds its own.
+        if let (Some(name), Some(command)) = (entry.name, entry.command) {
+            out.push(Task::new("gitview.toml", &name, command.trim().to_string()));
         }
-        if line == "[[task]]" {
-            flush_task(&mut name, &mut command, out);
-            in_task = true;
-            continue;
-        }
-        if line.starts_with('[') {
-            flush_task(&mut name, &mut command, out);
-            in_task = false;
-            continue;
-        }
-        if !in_task {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let value = toml_string(value.trim());
-        match key.trim() {
-            "name" => name = value,
-            "command" => command = value,
-            _ => {}
-        }
-    }
-    flush_task(&mut name, &mut command, out);
-}
-
-fn flush_task(name: &mut Option<String>, command: &mut Option<String>, out: &mut Vec<Task>) {
-    if let (Some(n), Some(c)) = (name.take(), command.take()) {
-        out.push(Task::new("gitview.toml", &n, c));
     }
 }
 
-/// A double-quoted TOML string, unescaped for `\"` and `\\`. Single quotes, multi-line strings
-/// and every other TOML value type are out of scope for a file that holds a name and a command.
-fn toml_string(value: &str) -> Option<String> {
-    let inner = value.strip_prefix('"')?.strip_suffix('"')?;
-    Some(inner.replace("\\\"", "\"").replace("\\\\", "\\"))
+#[derive(Deserialize)]
+struct Manifest {
+    #[serde(default)]
+    task: Vec<ManifestTask>,
+}
+
+/// Both keys optional, so an entry missing one is skipped instead of failing the file.
+#[derive(Deserialize)]
+struct ManifestTask {
+    name: Option<String>,
+    command: Option<String>,
 }
 
 /// npm, and whichever of pnpm, yarn or bun the lockfile points at.
@@ -380,6 +356,69 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].command, "echo \"hello\"");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn tasks_from(name: &str, manifest: &str) -> Vec<Task> {
+        let dir = scratch_dir(name);
+        std::fs::write(dir.join("gitview.toml"), manifest).unwrap();
+        let mut out = Vec::new();
+        gitview_tasks(&dir, &mut out);
+        let _ = std::fs::remove_dir_all(&dir);
+        out
+    }
+
+    /// The hand-rolled scanner read `"build" # why` as a value that was not a string, and
+    /// dropped the task without a word.
+    #[test]
+    fn a_trailing_comment_keeps_the_task() {
+        let out = tasks_from(
+            "comment",
+            "[[task]]\nname = \"build\" # the release build\ncommand = \"npm run build\" # slow\n",
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "build");
+        assert_eq!(out[0].command, "npm run build");
+    }
+
+    /// A literal string, the natural way to write a Windows path without doubling backslashes.
+    #[test]
+    fn a_single_quoted_string_is_read_literally() {
+        let out = tasks_from(
+            "literal",
+            "[[task]]\nname = 'install'\ncommand = 'powershell -File tools\\install.ps1'\n",
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "install");
+        assert_eq!(out[0].command, "powershell -File tools\\install.ps1");
+    }
+
+    #[test]
+    fn a_multi_line_literal_command_is_read_whole() {
+        let out = tasks_from(
+            "multiline",
+            "[[task]]\nname = \"release\"\ncommand = '''\nnpm run build && npm run package\n'''\n",
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].command, "npm run build && npm run package");
+    }
+
+    #[test]
+    fn other_tables_and_keys_are_ignored() {
+        let out = tasks_from(
+            "other",
+            "title = \"tools\"\n\n[settings]\nshell = \"pwsh\"\n\n[[task]]\nname = \"lint\"\ncommand = \"npm run lint\"\ncwd = \"web\"\n",
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "gitview.toml:lint");
+    }
+
+    #[test]
+    fn an_unparseable_manifest_proposes_nothing() {
+        let out = tasks_from(
+            "broken",
+            "[[task]]\nname = \"build\ncommand = \"npm run build\"\n",
+        );
+        assert!(out.is_empty());
     }
 
     #[test]
