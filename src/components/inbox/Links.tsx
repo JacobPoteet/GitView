@@ -1,3 +1,5 @@
+import { MarkdownLine } from "../Markdown";
+
 /** One end of a link between a pull request and an issue, as the desk shows it. */
 export interface Link {
   key: string;
@@ -28,7 +30,9 @@ export function Links({ lead, links }: { lead: string; links: Link[] }) {
               onClick={(event) => link.onOpen(event.shiftKey)}
             >
               <span className="inbox-link-number">{link.label}</span>
-              <span className="inbox-link-title">{link.title}</span>
+              <span className="inbox-link-title">
+                <MarkdownLine text={link.title} />
+              </span>
             </button>
           </li>
         ))}

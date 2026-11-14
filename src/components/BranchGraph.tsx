@@ -8,6 +8,7 @@ import {
 } from "react";
 import ContextMenu, { useContextMenu, type MenuEntry, type MenuItem } from "./ContextMenu";
 import PaneNote from "./PaneNote";
+import { MarkdownLine } from "./Markdown";
 import { quote, reviewCommand, type ShellKind } from "../lib/shell";
 import type { BranchGraph as Graph, BranchSummary, GraphCommit, Squashed } from "../lib/types";
 import { relativeTime, signedTitle } from "../lib/types";
@@ -517,7 +518,9 @@ function Node({
       {captions && (
         <span className="graph-caption">
           <span className="sha">{commit.short}</span>
-          <span className="msg">{commit.summary}</span>
+          <span className="msg">
+            <MarkdownLine text={commit.summary} />
+          </span>
         </span>
       )}
     </button>

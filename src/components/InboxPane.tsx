@@ -10,6 +10,7 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { Desk, CheckMark } from "./inbox/Desk";
 import { IssueDesk } from "./inbox/IssueDesk";
 import CloseButton from "./CloseButton";
+import { MarkdownLine } from "./Markdown";
 import { NewIssue } from "./inbox/NewIssue";
 import { NewPullRequest } from "./inbox/NewPullRequest";
 import {
@@ -217,7 +218,9 @@ function Row({
               {item.kind === "pr" ? "PR" : "Issue"}
             </span>
             <span className="inbox-number">#{item.number}</span>
-            <span className="inbox-title">{item.title}</span>
+            <span className="inbox-title">
+              <MarkdownLine text={item.title} />
+            </span>
           </span>
           <span className="inbox-meta">
             <span className="inbox-repo">{item.repoName}</span>

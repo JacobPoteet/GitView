@@ -3,7 +3,8 @@ import ContextMenu, { useContextMenu, type MenuEntry } from "./ContextMenu";
 import { api } from "../lib/api";
 import PaneNote from "./PaneNote";
 import CloseButton from "./CloseButton";
-import { openFileCommand, quote, reviewCommand, type ShellKind } from "../lib/shell";
+import Markdown, { MarkdownLine, type LinkAction } from "./Markdown";
+import { openFileCommand, openUrlCommand, quote, reviewCommand, type ShellKind } from "../lib/shell";
 import type { CommitDiff, CommitFile, CommitTarget, FileChange } from "../lib/types";
 
 interface Props {
@@ -74,6 +75,14 @@ export default function CommitFilesPane({
   const files = commit?.files ?? [];
   const menu = useContextMenu<CommitFile>();
   const compare = target.compare;
+  // A link in the message types `Start-Process` into this repository's shell,
+  // and with no shell open it stays text with its address in the title.
+  const link: LinkAction | undefined = disabled
+    ? undefined
+    : {
+        open: (href, typeOnly) => onCommand(openUrlCommand(href, shell), typeOnly),
+        title: (href) => `${openUrlCommand(href, shell)}\n\nShift-click to type it without running it.`,
+      };
 
   useEffect(() => {
     menu.close();
@@ -165,8 +174,10 @@ Shift-click to type it without running it.`
 
       {commit && !commit.error && !commit.compare && (
         <div className="commit-details">
-          <div className="commit-summary">{commit.summary || "(no message)"}</div>
-          {commit.body && <pre className="commit-message">{commit.body}</pre>}
+          <div className="commit-summary">
+            {commit.summary ? <MarkdownLine text={commit.summary} /> : "(no message)"}
+          </div>
+          {commit.body && <Markdown source={commit.body} className="commit-message" link={link} />}
           <div className="commit-meta">
             <span>{commit.author}</span>
             <span>{new Date(commit.time * 1000).toLocaleString()}</span>
