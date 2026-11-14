@@ -49,9 +49,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install the pinned Rust toolchain
-        # Reads rust-toolchain.toml at the repository root.
-        run: rustup toolchain install
+      - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:

@@ -23,16 +23,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install the pinned Rust toolchain
-        # Reads rust-toolchain.toml at the repository root.
-        run: rustup toolchain install
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-          # Pull requests restore main's cache and never write their own. Each
-          # write is about a gigabyte, and the repository's 10 GB cap would
-          # otherwise evict main's after a handful of open PRs.
+          # Pull requests restore main's cache and never write their own: each
+          # write is about a gigabyte, costs half a minute, and counts against
+          # the repository's 10 GB cap. A stable Rust release keys the cache
+          # afresh, so PR runs stay cold until the next push to main saves one.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install frontend dependencies
