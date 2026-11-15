@@ -615,10 +615,15 @@ pub fn parse_owner_repo(url: &str) -> Option<String> {
 /// whose trunk is `develop` was measured against it by the sidebar and the
 /// graph and against nothing by the squash detection.
 pub(crate) fn default_branch(repo: &Repository) -> Option<String> {
-    // What origin says, when origin has been asked.
+    // What origin says, when origin has been asked. `origin/HEAD` is written
+    // at clone time and a fetch never moves it, so it can still name a branch
+    // the remote deleted long ago. Trusting that made `main` look like a
+    // branch away from home, so a target that no longer exists is skipped.
     if let Ok(reference) = repo.find_reference("refs/remotes/origin/HEAD") {
         if let Some(target) = reference.symbolic_target() {
-            return Some(short_ref(target).to_string());
+            if repo.find_reference(target).is_ok() {
+                return Some(short_ref(target).to_string());
+            }
         }
     }
     for candidate in ["main", "master", "develop", "trunk"] {
@@ -1279,6 +1284,49 @@ mod tests {
         assert_eq!(by_name("main").origin_tip, by_name("main").tip);
         // origin/main has a local namesake and origin/remote-only does not.
         assert_eq!(state.remote_only_branches, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A clone whose remote later changed its default branch and deleted the
+    /// old one keeps an `origin/HEAD` naming a branch that is not there.
+    #[test]
+    fn an_origin_head_naming_a_deleted_branch_is_not_the_default() {
+        let dir = std::env::temp_dir().join(format!("gitview-dead-head-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git.exe");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["config", "user.email", "t@t"]);
+        git(&["config", "user.name", "t"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/docs/initial-plan",
+        ]);
+
+        let repo = git2::Repository::open(&dir).unwrap();
+        assert_eq!(super::default_branch(&repo).as_deref(), Some("main"));
+
+        // A live target is still what origin says, ahead of the name list.
+        git(&[
+            "update-ref",
+            "refs/remotes/origin/docs/initial-plan",
+            "HEAD",
+        ]);
+        assert_eq!(
+            super::default_branch(&repo).as_deref(),
+            Some("docs/initial-plan")
+        );
+        drop(repo);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
