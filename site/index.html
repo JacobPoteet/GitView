@@ -10,7 +10,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23181a24'/%3E%3Ccircle cx='10' cy='9' r='3' fill='%23a78bfa'/%3E%3Ccircle cx='10' cy='23' r='3' fill='%23a78bfa'/%3E%3Ccircle cx='22' cy='16' r='3' fill='%2360d394'/%3E%3Cpath d='M10 12v8M10 12c0 6 12 -2 12 4' stroke='%23a78bfa' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Antonio:wght@500;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:oklch(15.5% .008 268);--bg-raised:oklch(18.5% .010 268);--bg-hover:oklch(22% .012 268);
@@ -158,6 +158,73 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 .file b{font-weight:600;width:12px}
 .file b.m{color:var(--amber)}.file b.a{color:var(--green)}.file b.d{color:var(--red)}
 
+/* ---------- the hero window in the app's other two themes ---------- */
+/* As in the app: each theme redefines the tokens, then says in a few rules what a token cannot. */
+.skins{display:flex;gap:4px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:18px}
+.skins .lbl{font-size:.78rem;color:var(--text-faint);margin-right:6px}
+.skins button{font:inherit;font-size:.82rem;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg-raised);color:var(--text-dim);cursor:pointer;transition:color .2s,border-color .2s,background .2s}
+.skins button:hover{color:var(--text);border-color:var(--line-strong)}
+.skins button.on{color:var(--text);border-color:var(--accent-line);background:var(--accent-soft)}
+.app[data-skin]{color:var(--text)}
+.app[data-skin]::after{display:none}
+
+.app[data-skin=win98]{--bg:#c0c0c0;--bg-raised:#c0c0c0;--bg-hover:#dfdfdf;--bg-inset:#c0c0c0;--line:#808080;--line-strong:#808080;--text:#000;--text-dim:#000;--text-faint:#444;--accent:#000080;--accent-soft:#000080;--accent-line:#000080;--green:#007000;--amber:#7a5c00;--blue:#000080;--red:#a00000;--lane-1:#000080;
+  font-family:"Pixelated MS Sans Serif","Microsoft Sans Serif","MS Sans Serif",Tahoma,sans-serif;font-size:11px;-webkit-font-smoothing:none;border:0;border-radius:0;padding:3px;
+  box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #dfdfdf,inset -2px -2px #808080,inset 2px 2px #fff,0 40px 120px -30px oklch(0% 0 0 / .8)}
+.app[data-skin=win98] .titlebar{height:22px;padding:0 3px 0 5px;border:0;background:linear-gradient(90deg,#000080,#1084d0)}
+.app[data-skin=win98] .titlebar .dot{display:none}
+.app[data-skin=win98] .titlebar .name{margin:0;color:#fff;font-family:inherit;font-size:11px;font-weight:700}
+.app[data-skin=win98] .titlebar .status,.app[data-skin=win98] .titlebar .status .ok{color:#fff;font-size:11px}
+.app[data-skin=win98] .titlebar::after{content:"";flex:none;width:50px;height:14px;margin-left:10px;background:linear-gradient(90deg,#c0c0c0 0 16px,transparent 16px 17px,#c0c0c0 17px 33px,transparent 33px 34px,#c0c0c0 34px)}
+.app[data-skin=win98] .body{gap:3px;margin-top:3px}
+.app[data-skin=win98] .side,.app[data-skin=win98] .right{border:0;background:#fff;box-shadow:inset -1px -1px #fff,inset 1px 1px #808080,inset -2px -2px #dfdfdf,inset 2px 2px #0a0a0a}
+.app[data-skin=win98] .repo,.app[data-skin=win98] .task{border-radius:0}
+.app[data-skin=win98] .repo:hover,.app[data-skin=win98] .task:hover{background:none;transform:none}
+.app[data-skin=win98] .repo.sel{background:#000080;box-shadow:none}
+.app[data-skin=win98] .repo.sel .n,.app[data-skin=win98] .repo.sel .b,.app[data-skin=win98] .repo.sel .pin{color:#fff}
+.app[data-skin=win98] .tag{border-radius:0;background:#fff;border-color:#808080}
+.app[data-skin=win98] .task.new{background:none}
+.app[data-skin=win98] .term{background:#c0c0c0}
+.app[data-skin=win98] .tbody{--text:#c0c0c0;--text-dim:#c0c0c0;--text-faint:#808080;--lane-2:#c0c0c0;--green:#00aa00;--blue:#5555ff;--red:#aa0000;background:#000;box-shadow:inset 1px 1px #808080,inset 2px 2px #0a0a0a}
+.app[data-skin=win98] .graphbar,.app[data-skin=win98] .blockbar{border:0}
+.app[data-skin=win98] .graphbar .br::before{box-shadow:none}
+.app[data-skin=win98] .rails i{border-color:#000080;background:#fff}
+.app[data-skin=win98] .rails i.f{background:#000080;animation:none}
+.app[data-skin=win98] .rails s{background:#000080}
+.app[data-skin=win98] .blockbar .chip{border:0;border-radius:0;background:#c0c0c0;color:#000;font-family:inherit;box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf}
+
+.app[data-skin=lcars]{--bg:#000;--bg-raised:#0d0a10;--bg-hover:#1c1522;--bg-inset:#000;--line:#3e3048;--line-strong:#664466;--text:#ffe4c4;--text-dim:#cc99cc;--text-faint:#9988bb;--accent:#9999ff;--accent-soft:rgb(153 153 255 / .16);--accent-line:rgb(153 153 255 / .5);--green:#66cc99;--amber:#ffcc66;--red:#ff6655;--blue:#99ccff;--lane-1:#9999ff;--lane-2:#99ccff;
+  border:0;border-radius:0;background:#000;box-shadow:0 40px 120px -30px oklch(0% 0 0 / .8),0 0 120px -20px rgb(255 153 51 / .22)}
+.app[data-skin=lcars] .titlebar{height:40px;padding:0 18px 0 22px;border:0;border-radius:36px 0 0 0;color:#000;font-family:Antonio,var(--font-ui);text-transform:uppercase;letter-spacing:.04em;
+  background:linear-gradient(90deg,#ff9933 0 58%,#000 58% calc(58% + 4px),#cc99cc calc(58% + 4px) 76%,#000 76% calc(76% + 4px),#ffcc99 calc(76% + 4px))}
+.app[data-skin=lcars] .titlebar .dot{display:none}
+.app[data-skin=lcars] .titlebar .name{margin:0;color:#000;font-family:inherit;font-size:15px;font-weight:700}
+.app[data-skin=lcars] .titlebar .status,.app[data-skin=lcars] .titlebar .status .ok{color:#000;font-size:13px;font-weight:500}
+.app[data-skin=lcars] .side{position:relative;border:0;padding-left:48px}
+.app[data-skin=lcars] .side::before{content:"";position:absolute;left:0;top:0;bottom:0;width:36px;border-radius:0 0 0 18px;background:linear-gradient(#ff9933 0 46%,#000 46% calc(46% + 4px),#cc99cc calc(46% + 4px) 72%,#000 72% calc(72% + 4px),#ffcc66 calc(72% + 4px))}
+.app[data-skin=lcars] .side::after{content:"";position:absolute;left:36px;top:0;width:22px;height:22px;background:radial-gradient(circle at 100% 100%,transparent 21.5px,#ff9933 22px)}
+.app[data-skin=lcars] .side .hdr,.app[data-skin=lcars] .right .hdr{margin-bottom:6px;padding:3px 12px;border-radius:999px;background:#cc99cc;color:#000;font-family:Antonio,var(--font-ui);font-size:13px;font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+.app[data-skin=lcars] .side .hdr{margin-left:14px}
+.app[data-skin=lcars] .right{border:0}
+.app[data-skin=lcars] .right .hdr.files{background:#9999ff}
+.app[data-skin=lcars] .repo{border-radius:999px}
+.app[data-skin=lcars] .repo .n,.app[data-skin=lcars] .task{font-family:Antonio,var(--font-ui);font-size:14px;font-weight:500;letter-spacing:.03em}
+.app[data-skin=lcars] .task{border-radius:999px}
+.app[data-skin=lcars] .tag{border:0;border-radius:999px;background:#cc99cc;color:#000;font-weight:600}
+.app[data-skin=lcars] .tag.up{background:#66cc99}.app[data-skin=lcars] .tag.dn{background:#ffcc66}.app[data-skin=lcars] .tag.dirty{background:#99ccff}
+.app[data-skin=lcars] .graphbar{--text:#000;--text-faint:rgb(0 0 0 / .72);--lane-1:#000;height:28px;margin:8px 12px 0 0;border:0;border-radius:0 999px 999px 0;background:#ffcc99;font-family:Antonio,var(--font-ui);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+.app[data-skin=lcars] .graphbar .br{text-transform:none;letter-spacing:0;white-space:nowrap}
+@media(max-width:600px){
+  .app[data-skin=lcars] .graphbar .ab{display:none}
+  .app[data-skin=lcars] .term{border-left:28px solid #ff9933;border-radius:0 0 0 18px}
+}
+.app[data-skin=lcars] .graphbar .br::before{box-shadow:none}
+.app[data-skin=lcars] .rails i{background:#ffcc99}
+.app[data-skin=lcars] .rails i.f{background:#000;animation:none}
+.app[data-skin=lcars] .tbody .cur{background:#ff9933}
+.app[data-skin=lcars] .blockbar{border:0;background:#000}
+.app[data-skin=lcars] .blockbar .chip{border:0;border-radius:999px;background:#9999ff;color:#000}
+
 /* ---------- sections ---------- */
 section{padding:110px 0}
 .eyebrow{font-family:var(--font-mono);font-size:.78rem;letter-spacing:.06em;color:var(--accent);margin-bottom:14px}
@@ -247,7 +314,7 @@ h3.sh{font-size:clamp(1.3rem,2.4vw,1.6rem);font-weight:700;margin-top:88px}
 .story{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:56px;margin-top:24px}
 .stage{grid-column:2;grid-row:1;position:sticky;top:calc(50vh - 250px);align-self:start;z-index:2}
 .steps{grid-column:1;grid-row:1}
-.step{min-height:78vh;display:flex;flex-direction:column;justify-content:center;padding:24px 0;opacity:.32;transition:opacity .5s var(--ease)}
+.step{min-height:68vh;display:flex;flex-direction:column;justify-content:center;padding:24px 0;opacity:.32;transition:opacity .5s var(--ease)}
 .step.on{opacity:1}
 .step:first-child{min-height:60vh;justify-content:flex-start;padding-top:120px}
 .step:last-child{min-height:70vh}
@@ -345,10 +412,42 @@ h3.sh{font-size:clamp(1.3rem,2.4vw,1.6rem);font-weight:700;margin-top:88px}
 .opbar .acts span.dz{color:var(--red);border-color:oklch(68% .185 24 / .4)}
 .on .opbar{animation:drop .5s var(--ease) both}
 @keyframes drop{from{transform:translateY(-100%);opacity:0}}
-.conf{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
-.conf b{color:var(--red)}
-.rterm{flex:1;padding:10px 12px;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--text-dim);white-space:pre-wrap;word-break:break-word}
-.rterm .p{color:var(--lane-2)}.rterm .c{color:var(--text)}.rterm .er{color:var(--red)}.rterm .h{color:var(--amber)}
+.cbar{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);font-size:11px;color:var(--text-dim)}
+.cbar .f{font-family:var(--font-mono);color:var(--text);margin-right:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cbar .keep{padding:1px 8px;border-radius:5px;border:1px solid var(--line-strong);color:var(--text-dim);font-size:10.5px;white-space:nowrap}
+.on .cbar .keep.k2{animation:press 2.2s var(--ease) .2s both}
+.dl.ours{background:oklch(74% .135 242 / .09)}.dl.ours .tx{color:oklch(84% .09 242)}
+.dl.theirs{background:oklch(70% .185 292 / .10)}.dl.theirs .tx{color:oklch(84% .10 292)}
+.dl.mk .tx{color:var(--text-faint)}
+.dl{transition:opacity .5s}
+.kept .dl.ours,.kept .dl.mk{opacity:.22}
+.dl .side{font-family:var(--font-ui);font-style:normal;font-size:9.5px;padding:0 6px;margin-left:8px;border-radius:4px;border:1px solid}
+.dl .side.o{color:var(--blue);border-color:oklch(74% .135 242 / .45)}
+.dl .side.t{color:var(--accent);border-color:var(--accent-line)}
+
+/* image frame: four ways to compare one picture */
+@property --k{syntax:'<number>';inherits:true;initial-value:.5}
+.imodes{display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-bottom:1px solid var(--line);font-size:11px;color:var(--text-dim)}
+.imodes .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg{display:flex;gap:2px;flex:none}
+.seg i{font-style:normal;padding:2px 8px;border-radius:5px;border:1px solid transparent;color:var(--text-faint);font-size:10.5px;white-space:nowrap;transition:.3s}
+.seg i.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--text)}
+.istage{position:relative;flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
+.ipane{position:relative;display:grid;place-items:center;border:1px solid var(--line);border-radius:8px;background:conic-gradient(var(--bg-raised) 25%,var(--bg-inset) 0 50%,var(--bg-raised) 0 75%,var(--bg-inset) 0) 0 0/16px 16px}
+.ipane::before{content:attr(data-l);position:absolute;top:6px;left:8px;font-family:var(--font-mono);font-size:10px;color:var(--text-faint)}
+.ipane svg{width:clamp(72px,56%,150px);height:auto}
+.istage:not([data-m=side]){grid-template-columns:1fr}
+.istage:not([data-m=side]) .ipane{grid-area:1/1}
+.istage:not([data-m=side]) .ipane::before{display:none}
+.istage:not([data-m=side]) .after{background:none;border-color:transparent}
+.istage[data-m=swipe]{animation:swipe 1.5s ease-in-out infinite alternate}
+.istage[data-m=swipe] .after{clip-path:inset(0 0 0 calc(var(--k) * 100%))}
+@keyframes swipe{from{--k:.22}to{--k:.78}}
+.handle{position:absolute;top:12px;bottom:12px;width:2px;left:calc(12px + (100% - 24px) * var(--k));background:var(--accent);box-shadow:0 0 10px var(--accent);opacity:0;pointer-events:none}
+.istage[data-m=swipe] .handle{opacity:1}
+.istage[data-m=onion] .after{animation:onion 1.2s ease-in-out infinite alternate}
+@keyframes onion{from{opacity:0}to{opacity:1}}
+.istage[data-m=diff] .after{mix-blend-mode:difference}
 
 /* ---------- how it's built ---------- */
 .arch{margin-top:56px;display:flex;flex-direction:column;align-items:center}
@@ -436,6 +535,7 @@ footer a:hover{color:var(--text)}
   .stage::after{content:"";position:absolute;left:0;right:0;bottom:-28px;height:28px;background:linear-gradient(var(--bg),transparent);pointer-events:none}
   .steps{grid-column:1;grid-row:2}
   .win .wbody{height:300px}
+  #cframe .opbar{display:none}
   .dots{margin-top:10px}
   .step,.step:first-child,.step:last-child{min-height:62vh;justify-content:flex-start;padding:48px 0 0}
   .step:last-child{min-height:80vh}
@@ -503,7 +603,7 @@ footer a:hover{color:var(--text)}
   <div class="grid-bg"></div>
   <div class="orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
   <div class="wrap">
-    <div class="pill rv in"><b>v0.7</b> Windows · Tauri · Rust · MIT</div>
+    <div class="pill rv in"><b>v0.9</b> Windows · Tauri · Rust · MIT</div>
     <h1 class="rv in"><span class="w">Twenty repos</span><br><span class="w">on one screen,</span><br><span class="w shine">your git.</span></h1>
     <p class="lede rv in d1">GitView is a Windows git client for the developer who keeps twenty repositories and types most of their git by hand. The fleet is the home screen, the terminal is the main pane, and each button names the command it runs.</p>
     <div class="btns rv in d2">
@@ -549,6 +649,12 @@ footer a:hover{color:var(--text)}
         </div>
       </div>
     </div>
+    <div class="skins rv d3" role="group" aria-label="Theme for the window above">
+      <span class="lbl">Appearance</span>
+      <button type="button" data-skin="" class="on" aria-pressed="true">GitView</button>
+      <button type="button" data-skin="win98" aria-pressed="false">Windows 98</button>
+      <button type="button" data-skin="lcars" aria-pressed="false">LCARS</button>
+    </div>
   </div>
 </header>
 
@@ -583,9 +689,10 @@ footer a:hover{color:var(--text)}
       <div class="eyebrow rv">Built for the solo dev with too many repos</div>
       <h2 class="rv d1">Sync the whole fleet from one button.</h2>
       <ul>
-        <li class="rv d1"><span><b>Sync and prune across repositories.</b> The transcript keeps each command as typed, its exit code and its output, so you can read what ran and copy a line out of it. The batch reads each repository again between commands, since a fetch changes what the pull should do.</span></li>
-        <li class="rv d2"><span><b>A sort that knows what needs you.</b> Behind, dirty, a paused rebase, and commits that exist only on this disk on any local branch. GitView fetches on launch, so the ↓ counts are today’s.</span></li>
-        <li class="rv d3"><span><b>Pin what you work on, archive the rest.</b> A hidden repository drops out of the sweep, the inbox and the <span class="kbd">Ctrl+K</span> palette. A hidden npm script leaves the palette too.</span></li>
+        <li class="rv d1"><span><b>Sync the fleet, then clean up.</b> The transcript keeps each command as typed, with its exit code and output. Clean up lists every finished branch and worktree with what deleting it takes, types the lot after one confirmation, and leaves out <code>--force</code> so git can still refuse.</span></li>
+        <li class="rv d2"><span><b>A sort that knows what needs you.</b> Behind, dirty, a paused rebase, commits only this disk has. GitView fetches on launch, so the ↓ counts are today’s.</span></li>
+        <li class="rv d3"><span><b>Pin what you work on, archive the rest.</b> A hidden repository drops out of the sweep, the inbox and the <span class="kbd">Ctrl+K</span> palette.</span></li>
+        <li class="rv d3"><span><b>Step inside one.</b> Double-click a row and the rail trades the fleet for that repository’s files, ignored ones faint, changed ones lettered. <span class="kbd">Ctrl+1</span> to <span class="kbd">Ctrl+9</span> walk between repositories without leaving it.</span></li>
         <li class="rv d3"><span><b>GitView finds the tasks.</b> <code>package.json</code>, <code>Cargo.toml</code>, <code>Makefile</code>, <code>justfile</code>, <code>pyproject.toml</code>, <code>.csproj</code>, <code>CMakeLists.txt</code>, Compose files, Unity projects, and a checked-in <code>gitview.toml</code> for the script none of those cover.</span></li>
       </ul>
     </div>
@@ -608,11 +715,11 @@ footer a:hover{color:var(--text)}
       <h2 class="rv d1">One shell per repository, and it outlives the view.</h2>
       <p class="sub rv d1">Switch projects and come back: the scrollback and the dev server you left running are still there. Close the app and reopen it, and the scrollback is too.</p>
       <ul>
-        <li class="rv d2"><span><b>Command blocks.</b> PowerShell tells GitView where each command started and how it exited. A bar in the scrollback turns green or red with the exit code, and violet while the command runs.</span></li>
+        <li class="rv d2"><span><b>Command blocks.</b> PowerShell tells GitView where each command started and how it exited. A bar in the scrollback turns green or red with the exit code, and violet while the command runs. The hook wraps your prompt in memory, so Starship and oh-my-posh keep working.</span></li>
         <li class="rv d2"><span><b>Ports as chips.</b> A running command prints <code>localhost:5183</code> and GitView shows it as a chip. Click it and GitView types <code>Start-Process</code>, the same as any other button.</span></li>
         <li class="rv d3"><span><b>Keep a command you already ran.</b> One button saves the last block as a task for that repository. GitView writes nothing into the repository itself.</span></li>
         <li class="rv d3"><span><b>Scrollback across restarts.</b> Each shell’s buffer goes to disk as it settles and on close, and comes back above the next launch’s first prompt. <span class="kbd">Ctrl+F</span> searches it, and a second shell keeps git free while the first one runs the dev server.</span></li>
-        <li class="rv d3"><span><b>Your prompt survives.</b> Starship and oh-my-posh keep working. GitView wraps the prompt in memory and writes nothing to your profile.</span></li>
+        <li class="rv d3"><span><b>Claude Code in the next tab.</b> A Claude tab sits beside each shell and starts nothing until you click it. Switch on its hooks and the repository row shows whether Claude is working, waiting on you or done, with nothing written to <code>~/.claude</code>.</span></li>
       </ul>
     </div>
     <div class="panel rv d1" id="termPanel">
@@ -638,7 +745,8 @@ footer a:hover{color:var(--text)}
           <span data-on="1">History · path:src/lib/shell.ts · 4 commits</span>
           <span data-on="2 3">e4a1c07 · src/lib/shell.ts</span>
           <span data-on="4">Unstaged · src/components/Welcome.tsx</span>
-          <span data-on="5">gitview · HEAD detached at 3a9c1e2</span>
+          <span data-on="5">Diff · src-tauri/icons/icon.png · modified</span>
+          <span data-on="6">gitview · rebasing feat/inbox-filters, 2 of 5</span>
         </div><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
         <div class="wbody">
 
@@ -671,20 +779,32 @@ footer a:hover{color:var(--text)}
           </div>
 
           <div class="frame" data-on="5">
-            <div class="opbar"><span class="mk">⟳</span><span class="txt"><strong>Rebasing feat/inbox-filters onto main, 2 of 5 applied.</strong> 1 file is conflicted. Resolve and stage them, then Continue.</span><span class="acts"><span>Continue</span><span>Skip</span><span class="dz">Abort</span></span></div>
-            <div class="conf"><b>U</b> src/lib/api.ts</div>
-            <div class="rterm"><span class="p">PS F:\GitHub\gitview&gt;</span> <span class="c">git rebase main</span>
-Auto-merging src/lib/api.ts
-<span class="er">CONFLICT (content): Merge conflict in src/lib/api.ts</span>
-<span class="er">error: could not apply 3a9c1e2... Inbox filters read a saved view</span>
-<span class="h">hint: Resolve all conflicts manually, mark them as resolved with
-hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</span>
-<span class="p">PS F:\GitHub\gitview&gt;</span> </div>
+            <div class="imodes"><span class="mono">src-tauri/icons/icon.png</span><span class="seg" id="iseg"><i data-m="side">side by side</i><i data-m="swipe">swipe</i><i data-m="onion">onion skin</i><i data-m="diff">difference</i></span></div>
+            <div class="istage" id="istage" data-m="side">
+              <div class="ipane" data-l="before"><svg viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#181a24"/><path d="M20 24v16M20 24c0 12 24-4 24 8" stroke="#a78bfa" stroke-width="4" fill="none"/><circle cx="20" cy="18" r="6" fill="#a78bfa"/><circle cx="20" cy="46" r="6" fill="#a78bfa"/><circle cx="44" cy="32" r="6" fill="#60d394"/></svg></div>
+              <div class="ipane after" data-l="after"><svg viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#181a24"/><path d="M20 24v16M20 26c0 8 24 4 24-4M20 40c0 6 24 10 24 4" stroke="#a78bfa" stroke-width="4" fill="none"/><circle cx="20" cy="18" r="6" fill="#a78bfa"/><circle cx="20" cy="46" r="6" fill="#a78bfa"/><circle cx="44" cy="22" r="6" fill="#60d394"/><circle cx="44" cy="44" r="6" fill="#60a5fa"/></svg></div>
+              <div class="handle"></div>
+            </div>
+          </div>
+
+          <div class="frame" data-on="6" id="cframe">
+            <div class="opbar"><span class="mk">⟳</span><span class="txt"><strong>Rebasing feat/inbox-filters onto main, 2 of 5 applied.</strong> src/lib/api.ts still has conflict markers.</span><span class="acts"><span>Continue</span><span>Skip</span><span class="dz">Abort</span></span></div>
+            <div class="cbar"><span class="f">src/lib/api.ts</span><span id="cleft">1 conflict left</span><span class="keep">keep main</span><span class="keep k2">keep feature</span></div>
+            <div class="diff">
+              <div class="dl mk"><span></span><span class="ln">41</span><span class="sg"></span><span class="tx">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD<i class="side o">main</i></span></div>
+              <div class="dl ours"><span></span><span class="ln">42</span><span class="sg"></span><span class="tx">export const inbox = (repos: string[]) =&gt;</span></div>
+              <div class="dl ours"><span></span><span class="ln">43</span><span class="sg"></span><span class="tx">  gh(["api", "graphql", "-f", aliased(repos)]);</span></div>
+              <div class="dl mk"><span></span><span class="ln">44</span><span class="sg"></span><span class="tx">=======</span></div>
+              <div class="dl theirs"><span></span><span class="ln">45</span><span class="sg"></span><span class="tx">export const inbox = (repos: string[], view?: View) =&gt;</span></div>
+              <div class="dl theirs"><span></span><span class="ln">46</span><span class="sg"></span><span class="tx">  gh(["api", "graphql", "-f", aliased(repos, view)]);</span></div>
+              <div class="dl mk"><span></span><span class="ln">47</span><span class="sg"></span><span class="tx">&gt;&gt;&gt;&gt;&gt;&gt;&gt; 3a9c1e2 (Inbox filters read a saved view)<i class="side t">feature</i></span></div>
+            </div>
+            <div class="mini"><span class="p">PS F:\GitHub\gitview&gt;</span> <span class="cmdt" id="keepCmd" data-cmd="git checkout --theirs -- 'src/lib/api.ts'; if ($?) { git add -- 'src/lib/api.ts' }"></span><div class="after" id="keepAfter"><span class="ok">■ exit 0</span> · feature’s side kept and staged, Continue is ready</div></div>
           </div>
 
         </div>
       </div>
-      <div class="dots" id="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="dots" id="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     </div>
 
     <div class="steps">
@@ -701,7 +821,7 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
       <article class="step" data-step="2">
         <div class="num">03 · one commit</div>
         <h3>Its files and its hunks</h3>
-        <p>Click a row to read the commit in the pane, or shift-click to type <code>git show</code>. Right-click offers revert, cherry-pick and reset, each typed at the prompt. A signed commit wears a mark; GitView reads that the signature is there and leaves checking it to <code>git verify-commit</code>.</p>
+        <p>Click a row to read the commit, its message rendered as markdown, or shift-click to type <code>git show</code>. Right-click offers revert, cherry-pick and reset, each typed at the prompt. <b>Review</b> reads a whole branch the same way: everything <code>git diff main...feature</code> shows, which is what a squash merge would land.</p>
       </article>
       <article class="step" data-step="3">
         <div class="num">04 · blame</div>
@@ -714,9 +834,14 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
         <p>A hunk is the one argument nobody can type at a prompt. GitView writes it to a patch under its own data folder and types <code>git apply --cached</code> against that path, which is what <code>git add -p</code> does underneath. The scrollback keeps the command.</p>
       </article>
       <article class="step" data-step="5">
-        <div class="num">06 · a paused rebase</div>
-        <h3>The state a prompt hides</h3>
-        <p>With nothing conflicted, a paused rebase looks like a detached HEAD. GitView reads the state and keeps a strip under the header, with git’s own next steps as buttons. Continue and Skip type straight away. Abort asks first, because it throws away what you resolved.</p>
+        <div class="num">06 · an image</div>
+        <h3>Before and after, four ways</h3>
+        <p>A changed image draws in the diff pane side by side, as a swipe, as onion skin, or as the difference of the two. Rust hands over both blobs as raw bytes and the WebView’s own decoder reads the size, so the binary carries no image crate.</p>
+      </article>
+      <article class="step" data-step="6">
+        <div class="num">07 · a conflict</div>
+        <h3>Both sides, named for what they are</h3>
+        <p>A paused rebase keeps a strip under the header with git’s next steps as buttons, and Abort asks first. Mid-rebase, git’s “ours” is the branch you rebase onto, so GitView tags the sides <code>main</code> and <code>feature</code>. <b>keep feature</b> types the checkout, and the <code>git add</code> after it runs only if the checkout worked.</p>
       </article>
     </div>
   </div>
@@ -730,8 +855,8 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
       <h2 class="rv d1">Reads GitHub out of sight, writes to it by typing.</h2>
       <p class="sub rv d1">One aliased GraphQL query through <code class="mono">gh</code> pulls the pull requests, issues and check runs for the whole fleet. <code class="mono">gh</code> holds the token; GitView has no HTTP client and no place to store one.</p>
       <ul>
-        <li class="rv d2"><span><b>The inbox.</b> Open pull requests, issues and check runs from all your repositories in one list, grouped by repository. A pull request names the issues it closes, and an issue names its pull request.</span></li>
-        <li class="rv d2"><span><b>The PR desk.</b> Push, open a pull request from a form, watch the checks by name, then merge and delete the branch. Merge stays off, with the reason, for a draft, a conflict or a branch behind. Each step goes into that repository’s shell as a <code>gh</code> command.</span></li>
+        <li class="rv d2"><span><b>The inbox.</b> Open pull requests, issues and check runs from all your repositories in one list, grouped by repository. A pull request names the issues it closes, and an issue names its pull request. Threads render as markdown, and a link types <code>Start-Process</code> with its address.</span></li>
+        <li class="rv d2"><span><b>The PR desk.</b> Push, open a pull request from a form, watch the checks by name, read the branch against <code>origin/main</code>, then merge and delete it. Merge stays off, with the reason, for a draft, a conflict or a branch behind. Each step goes into that repository’s shell as a <code>gh</code> command.</span></li>
         <li class="rv d3"><span><b>Updates that name their command.</b> GitView checks its own latest release through <code>gh release view</code> and hands you the <code>gh release download</code> line to run yourself.</span></li>
       </ul>
     </div>
@@ -752,9 +877,9 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
   <p class="sub rv d2">Tauri v2, a Rust core and a React front end. One rule decides which process each call reaches, and that rule is why GitView holds no credentials: credential helpers, SSH agents and GitHub tokens stay with the tools that already own them.</p>
 
   <div class="arch rv" id="arch">
-    <div class="layer"><b>Window</b><span>React 18 · TypeScript · xterm.js on WebGL · WebView2</span></div>
+    <div class="layer"><b>Window</b><span>React 18 · TypeScript · xterm.js on WebGL · three themes on one set of tokens</span></div>
     <div class="wire"></div>
-    <div class="layer"><b>Rust core</b><span>Tauri commands · a sweep that streams rows · 85 unit tests</span></div>
+    <div class="layer"><b>Rust core</b><span>Tauri commands · a sweep that streams rows · 139 unit tests</span></div>
     <div class="wire w2"></div>
     <div class="procs">
       <div class="proc" style="--c:var(--lane-1)"><h4>git2</h4><p>Every repository read, in process: status, the graph, the history, a diff, blame.</p><div class="for">no spawn per read</div></div>
@@ -766,10 +891,10 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
   </div>
 
   <h3 class="sh rv">Six decisions, and what each one ruled out</h3>
-  <p class="sub rv d1">From a decision log that holds 121 choices and 69 dead ends, kept so nobody tries the same thing twice.</p>
+  <p class="sub rv d1">From a decision log that holds 145 choices and 92 dead ends, kept so nobody tries the same thing twice.</p>
   <div class="decs">
-    <div class="dec rv"><h4>Updates go through <code>gh</code></h4><p><code>gh release view</code> reads the latest release, and the install is a typed <code>gh release download</code>, so the one action that replaces the binary still names what it ran.</p>
-      <dl><dt>Ruled out</dt><dd><code>tauri-plugin-updater</code>: an HTTP client, a TLS stack and a signing key in an Actions secret</dd><dt>Result</dt><dd>No HTTP client in the binary</dd></dl></div>
+    <div class="dec rv"><h4>A theme is a block of tokens</h4><p>Windows 98 and LCARS each redefine the tokens under <code>data-theme</code>, then add one file for what a token cannot say: bevels, elbows, a pixel face. A new theme is one registry entry and one file.</p>
+      <dl><dt>Ruled out</dt><dd>Importing 98.css, which styles bare <code>button</code> and <code>body</code> and would restyle the default theme too</dd><dt>Result</dt><dd>An install that never opens Appearance looks as it did</dd></dl></div>
     <div class="dec rv d1"><h4>Lanes packed in Rust</h4><p>A lane depends on every commit newer than it, so a page from the middle has nothing to start from. The walk runs from the top each time and reads text only for the rows asked for.</p>
       <dl><dt>Ruled out</dt><dd>Packing lanes in the front end</dd><dt>Measured</dt><dd class="ms">140 ms a page over 5,500 commits, any page</dd></dl></div>
     <div class="dec rv d2"><h4>The terminal is the file watcher</h4><p>The shell in the next pane makes most of the changes, so GitView refreshes a repository 900 ms after its output goes quiet.</p>
@@ -789,15 +914,15 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
       <p>Each pull request updates the wiki note that owns what changed, and a number in the wiki is a measurement. The page you are reading follows the same rule: every figure on it came from the app, the repository or the log.</p>
     </div>
     <div class="stats rv d2">
-      <div class="stat"><b><em data-n="79">0</em></b><span>pull requests merged in 14 days</span></div>
-      <div class="stat"><b><em data-n="157">0</em></b><span>unit tests, 85 Rust and 72 TypeScript</span></div>
-      <div class="stat"><b><em data-n="121">0</em></b><span>decisions logged, with 69 dead ends</span></div>
+      <div class="stat"><b><em data-n="125">0</em></b><span>pull requests merged since 9 Sep</span></div>
+      <div class="stat"><b><em data-n="355">0</em></b><span>unit tests, 139 Rust and 216 TypeScript</span></div>
+      <div class="stat"><b><em data-n="145">0</em></b><span>decisions logged, with 92 dead ends</span></div>
       <div class="stat"><b><em data-n="140">0</em><small> ms</small></b><span>a history page, over 5,500 commits</span></div>
       <div class="stat"><b><em data-n="1">0</em><small> query</small></b><span>for the fleet’s PRs, issues and checks</span></div>
       <div class="stat"><b><em data-n="0">0</em><small> tokens</small></b><span>held by GitView</span></div>
     </div>
   </div>
-  <p class="asof rv">Counts as of 23 Sep 2026.</p>
+  <p class="asof rv">Counts as of 15 Nov 2026.</p>
 
   <div class="byline rv">
     <div class="who"><b>Jacob Poteet</b><span>Designed, built and documented GitView: the Rust core, the interface, the page you are reading.</span></div>
@@ -819,7 +944,7 @@ hint: "git add/rm &lt;conflicted_files&gt;", then run "git rebase --continue".</
       </a>
       <a class="btn" href="https://github.com/JacobPoteet/GitView#running-it">Build from source</a>
     </div>
-    <div class="cmdbox rv d2" id="cmdbox"><div class="lines"><span class="p">PS F:\GitHub&gt;</span> <span class="c">gh release download -R JacobPoteet/GitView -p "*setup.exe"</span><br><span class="p">PS F:\GitHub&gt;</span> <span class="c">Start-Process .\GitView_0.7.0_x64-setup.exe</span></div><button class="cp" id="copyCmd" type="button">copy</button></div>
+    <div class="cmdbox rv d2" id="cmdbox"><div class="lines"><span class="p">PS F:\GitHub&gt;</span> <span class="c">gh release download -R JacobPoteet/GitView -p "*setup.exe"</span><br><span class="p">PS F:\GitHub&gt;</span> <span class="c">Start-Process .\GitView_0.9.0_x64-setup.exe</span></div><button class="cp" id="copyCmd" type="button">copy</button></div>
     <div class="reqs rv d3">
       <span>Windows 10 / 11</span><span><code>git</code> on PATH</span><span><code>gh</code> logged in, for GitHub</span><span>PowerShell for command blocks</span><span>Installs per user, no elevation</span>
     </div>
@@ -884,6 +1009,12 @@ if(!reduced&&fine){
     b.addEventListener('pointerleave',()=>{b.style.setProperty('--tx','0px');b.style.setProperty('--ty','0px')});
   });
 }
+
+/* the hero window wears whichever of the app's three themes is picked under it */
+$$('.skins button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.dataset.skin)app.dataset.skin=b.dataset.skin;else delete app.dataset.skin;
+  $$('.skins button').forEach(o=>{o.classList.toggle('on',o===b);o.setAttribute('aria-pressed',String(o===b))});
+}));
 
 /* count the stats up when they arrive */
 function countUp(el){
@@ -951,14 +1082,14 @@ once('#app',async()=>{
   await type(p,'npm run dev');c.remove();
   bar.className='bar run';blk.textContent='npm run dev';
   await sleep(400);
-  line(t,'<span style="color:var(--text-faint)">&gt; gitview@0.7.0 dev</span>');
+  line(t,'<span style="color:var(--text-faint)">&gt; gitview@0.9.0 dev</span>');
   line(t,'<span style="color:var(--text-faint)">&gt; tauri dev</span>');
   await sleep(600);
   line(t,'  <span class="ok">VITE v5.4</span>  ready in <b style="color:var(--text)">312 ms</b>');
   line(t,'  ➜  Local:   <span style="color:var(--blue);text-decoration:underline">http://localhost:5183/</span>');
   await sleep(300);chip.classList.add('show');
   await sleep(900);
-  line(t,'<span style="color:var(--text-faint)">   Compiling gitview v0.7.0 (F:\\GitHub\\gitview\\src-tauri)</span>');
+  line(t,'<span style="color:var(--text-faint)">   Compiling gitview v0.9.0 (F:\\GitHub\\gitview\\src-tauri)</span>');
   await sleep(1400);
   line(t,'<span style="color:var(--text-faint)">    Finished `dev` profile in 4.82s</span>');
   line(t,'<span style="color:var(--text-faint)">     Running `target\\debug\\gitview.exe`</span>');
@@ -996,7 +1127,7 @@ const fleetRun=replayable('#fleetReplay',async()=>{
     msg.textContent=`${i+1}/${rows.length} · ${r[0]}: ${r[3]?`pulled ${r[3]}`:'up to date'}`;
   }
   await sleep(500);
-  btn.classList.remove('busy');btn.textContent='Transcript';msg.textContent='7 repos · 4 pulled · 3 branches pruned · 0 failed';
+  btn.classList.remove('busy');btn.textContent='Transcript';msg.textContent='7 repos · 4 pulled · 3 branches deleted · 0 failed';
   await sleep(700);
   tr.classList.add('show');
   const out=[
@@ -1118,6 +1249,27 @@ const commits=[
     steps.forEach((s,i)=>s.classList.toggle('on',i===n));
     count.textContent=n===1?'4 of 5,512':'5,512';
     if(n===4)typeApply();
+    if(n===5)cycleImage();
+    if(n===6)typeKeep();
+  }
+  /* step six walks the image through its four modes for as long as the step is showing */
+  const stage=$('#istage'),modes=$$('#iseg i');
+  async function cycleImage(){
+    const me=++run;
+    for(let i=0;;i=(i+1)%modes.length){
+      stage.dataset.m=modes[i].dataset.m;modes.forEach((m,j)=>m.classList.toggle('on',j===i));
+      await sleep(reduced?1800:[1600,3000,2400,2000][i]);
+      if(me!==run||cur!==5)return;
+    }
+  }
+  /* step seven presses keep feature and types what that button types */
+  const kcmd=$('#keepCmd'),kafter=$('#keepAfter'),cframe=$('#cframe'),cleft=$('#cleft');
+  async function typeKeep(){
+    const me=++run;kcmd.textContent='';kafter.classList.remove('show');cframe.classList.remove('kept');cleft.textContent='1 conflict left';
+    await sleep(reduced?0:1000);
+    for(const ch of kcmd.dataset.cmd){if(me!==run||cur!==6)return;kcmd.textContent+=ch;if(!reduced)await sleep(14)}
+    await sleep(reduced?0:300);
+    if(me===run&&cur===6){kafter.classList.add('show');cframe.classList.add('kept');cleft.textContent='0 left'}
   }
   /* step five types its command the way the app would, and a step change stops it */
   const cmd=$('#applyCmd'),after=$('#applyAfter');let run=0;
@@ -1144,7 +1296,7 @@ const inboxItems=[
   ['pr','orbit-api','#118 Cap burst window at 30 req/s','fix/rate-limit → main','ggp','gh pr checkout 118'],
   ['issue','fleetview','#9 Splash stays after a folder is removed','opened 2 days ago','','gh issue view 9 --web'],
   ['pr','homelab','#7 Bump traefik to 3.1','renovate/traefik → main','ggr','gh pr checks 7'],
-  ['issue','gitview','#41 Prune dialog misses a branch with a slash','opened yesterday','','gh issue view 41 --web'],
+  ['issue','gitview','#41 Clean up misses a branch with a slash','opened yesterday','','gh issue view 41 --web'],
 ];
 const ir=$('#inboxRows');
 const icons={pr:'<svg class="ico" viewBox="0 0 16 16" fill="var(--green)"><path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354z"/></svg>',
