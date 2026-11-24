@@ -226,24 +226,116 @@ fn python_tasks(repo: &Path, out: &mut Vec<Task>) {
     }
 }
 
+/// A project at the root takes the bare commands. A solution root builds and tests bare too, but
+/// `dotnet run` there finds no project and fails, so each runnable project the solution lists gets
+/// a `dotnet run --project` of its own. `dotnet build` refuses a folder holding two solutions, so
+/// with more than one at the root every command names its solution.
 fn dotnet_tasks(repo: &Path, out: &mut Vec<Task>) {
-    let has_project = std::fs::read_dir(repo)
-        .map(|entries| {
-            entries.flatten().any(|entry| {
-                let name = entry.file_name().to_string_lossy().to_lowercase();
-                name.ends_with(".sln") || name.ends_with(".csproj")
-            })
-        })
-        .unwrap_or(false);
-    if !has_project {
+    let mut solutions = Vec::new();
+    let mut has_csproj = false;
+    for entry in std::fs::read_dir(repo).into_iter().flatten().flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let lower = name.to_lowercase();
+        if lower.ends_with(".csproj") {
+            has_csproj = true;
+        } else if lower.ends_with(".sln") {
+            solutions.push(name);
+        }
+    }
+
+    if has_csproj {
+        for (name, command) in [
+            ("build", "dotnet build"),
+            ("run", "dotnet run"),
+            ("test", "dotnet test"),
+        ] {
+            out.push(Task::new("dotnet", name, command.to_string()));
+        }
         return;
     }
-    for (name, command) in [
-        ("build", "dotnet build"),
-        ("run", "dotnet run"),
-        ("test", "dotnet test"),
-    ] {
-        out.push(Task::new("dotnet", name, command.to_string()));
+
+    // `read_dir` promises no order, and the list should not reshuffle between scans.
+    solutions.sort();
+    if let [_] = solutions.as_slice() {
+        out.push(Task::new("dotnet", "build", "dotnet build".to_string()));
+        out.push(Task::new("dotnet", "test", "dotnet test".to_string()));
+    } else {
+        for solution in &solutions {
+            let stem = file_stem(solution);
+            let arg = shell_arg(solution);
+            out.push(Task::new(
+                "dotnet",
+                &format!("build {stem}"),
+                format!("dotnet build {arg}"),
+            ));
+            out.push(Task::new(
+                "dotnet",
+                &format!("test {stem}"),
+                format!("dotnet test {arg}"),
+            ));
+        }
+    }
+
+    for solution in &solutions {
+        let Some(contents) = read(repo, solution) else {
+            continue;
+        };
+        for project in solution_projects(&contents) {
+            let name = format!("run {}", file_stem(&project));
+            // Two solutions often list the same project.
+            if out.iter().any(|task| task.id == format!("dotnet:{name}")) {
+                continue;
+            }
+            if !read(repo, &project).is_some_and(|csproj| runnable(&csproj)) {
+                continue;
+            }
+            let command = format!("dotnet run --project {}", shell_arg(&project));
+            out.push(Task::new("dotnet", &name, command));
+        }
+    }
+}
+
+/// The `.csproj` paths a solution lists, with forward slashes. Each project line reads
+/// `Project("{type}") = "Name", "path\to\Name.csproj", "{guid}"`; a solution folder has the same
+/// shape with its name for a path, so it falls out on the extension.
+fn solution_projects(solution: &str) -> Vec<String> {
+    solution
+        .lines()
+        .filter(|line| line.trim_start().starts_with("Project("))
+        .filter_map(|line| {
+            let (_, rest) = line.split_once('=')?;
+            let path = rest.split('"').nth(3)?;
+            path.to_lowercase()
+                .ends_with(".csproj")
+                .then(|| path.replace('\\', "/"))
+        })
+        .collect()
+}
+
+/// An `Exe` or `WinExe` that is not a test project. A test project can be an `Exe` too, since
+/// the newer test runners build one, but `dotnet test` is how it runs.
+fn runnable(csproj: &str) -> bool {
+    let text: String = csproj.to_lowercase().split_whitespace().collect();
+    let executable = text.contains("<outputtype>exe</outputtype>")
+        || text.contains("<outputtype>winexe</outputtype>");
+    let test = text.contains("microsoft.net.test.sdk")
+        || text.contains("<istestproject>true</istestproject>");
+    executable && !test
+}
+
+fn file_stem(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// Quoted when it holds a space, so the terminal passes it as one argument.
+fn shell_arg(value: &str) -> String {
+    if value.contains(' ') {
+        format!("\"{value}\"")
+    } else {
+        value.to_string()
     }
 }
 
@@ -419,6 +511,148 @@ mod tests {
             "[[task]]\nname = \"build\ncommand = \"npm run build\"\n",
         );
         assert!(out.is_empty());
+    }
+
+    fn write(dir: &std::path::Path, path: &str, contents: &str) {
+        let path = dir.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    fn solution(projects: &[(&str, &str)]) -> String {
+        let mut text = String::from(
+            "Microsoft Visual Studio Solution File, Format Version 12.00\n\
+             Project(\"{2150E333-8FDC-42A3-9474-1A3956D46DE8}\") = \"src\", \"src\", \"{827E0CD3-B72D-47B6-A68D-7590B98EB39B}\"\n\
+             EndProject\n",
+        );
+        for (name, path) in projects {
+            text.push_str(&format!(
+                "Project(\"{{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}}\") = \"{name}\", \"{path}\", \"{{F42E50EA-3413-459D-B4C2-1433521EEDD0}}\"\r\nEndProject\r\n"
+            ));
+        }
+        text
+    }
+
+    const EXE: &str = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n  </PropertyGroup>\n</Project>\n";
+    const WINEXE: &str = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>WinExe</OutputType>\n  </PropertyGroup>\n</Project>\n";
+    const LIBRARY: &str = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n</Project>\n";
+    const TESTS: &str = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <IsTestProject>true</IsTestProject>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include=\"Microsoft.NET.Test.Sdk\" Version=\"17.8.0\" />\n  </ItemGroup>\n</Project>\n";
+
+    fn dotnet_from(dir: &std::path::Path) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        dotnet_tasks(dir, &mut out);
+        out.into_iter()
+            .map(|task| (task.id, task.command))
+            .collect()
+    }
+
+    fn pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {
+        expected
+            .iter()
+            .map(|(id, command)| (id.to_string(), command.to_string()))
+            .collect()
+    }
+
+    /// ShrinkRay's layout: a bare `dotnet run` at its root failed with "Couldn't find a project
+    /// to run". The library and the test project, an `Exe` itself, get no run task.
+    #[test]
+    fn a_solution_root_runs_each_runnable_project() {
+        let dir = scratch_dir("dotnet-solution");
+        write(
+            &dir,
+            "Fleet.sln",
+            &solution(&[
+                ("Fleet.Core", "src\\Fleet.Core\\Fleet.Core.csproj"),
+                ("Fleet.Cli", "src\\Fleet.Cli\\Fleet.Cli.csproj"),
+                ("Fleet.Tests", "tests\\Fleet.Tests\\Fleet.Tests.csproj"),
+                ("Fleet.Desk", "src\\Fleet Desk\\Fleet.Desk.csproj"),
+            ]),
+        );
+        write(&dir, "src/Fleet.Core/Fleet.Core.csproj", LIBRARY);
+        write(&dir, "src/Fleet.Cli/Fleet.Cli.csproj", EXE);
+        write(&dir, "tests/Fleet.Tests/Fleet.Tests.csproj", TESTS);
+        write(&dir, "src/Fleet Desk/Fleet.Desk.csproj", WINEXE);
+
+        assert_eq!(
+            dotnet_from(&dir),
+            pairs(&[
+                ("dotnet:build", "dotnet build"),
+                ("dotnet:test", "dotnet test"),
+                (
+                    "dotnet:run Fleet.Cli",
+                    "dotnet run --project src/Fleet.Cli/Fleet.Cli.csproj"
+                ),
+                (
+                    "dotnet:run Fleet.Desk",
+                    "dotnet run --project \"src/Fleet Desk/Fleet.Desk.csproj\""
+                ),
+            ])
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A project at the root keeps the bare commands, solution or not.
+    #[test]
+    fn a_root_project_keeps_the_bare_commands() {
+        let dir = scratch_dir("dotnet-project");
+        write(&dir, "Tool.csproj", EXE);
+        write(&dir, "Tool.sln", &solution(&[("Tool", "Tool.csproj")]));
+
+        assert_eq!(
+            dotnet_from(&dir),
+            pairs(&[
+                ("dotnet:build", "dotnet build"),
+                ("dotnet:run", "dotnet run"),
+                ("dotnet:test", "dotnet test"),
+            ])
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Bare `dotnet build` stops at MSB1011 when the folder holds two solutions, so each command
+    /// names one. A project both solutions list gets one run task.
+    #[test]
+    fn several_solutions_are_each_named() {
+        let dir = scratch_dir("dotnet-solutions");
+        write(
+            &dir,
+            "Full.sln",
+            &solution(&[
+                ("App", "src\\App\\App.csproj"),
+                ("Server", "src\\Server\\Server.csproj"),
+            ]),
+        );
+        write(
+            &dir,
+            "App.sln",
+            &solution(&[("App", "src\\App\\App.csproj")]),
+        );
+        write(&dir, "src/App/App.csproj", WINEXE);
+        write(&dir, "src/Server/Server.csproj", EXE);
+
+        assert_eq!(
+            dotnet_from(&dir),
+            pairs(&[
+                ("dotnet:build App", "dotnet build App.sln"),
+                ("dotnet:test App", "dotnet test App.sln"),
+                ("dotnet:build Full", "dotnet build Full.sln"),
+                ("dotnet:test Full", "dotnet test Full.sln"),
+                ("dotnet:run App", "dotnet run --project src/App/App.csproj"),
+                (
+                    "dotnet:run Server",
+                    "dotnet run --project src/Server/Server.csproj"
+                ),
+            ])
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn no_dotnet_files_proposes_nothing() {
+        let dir = scratch_dir("dotnet-absent");
+        write(&dir, "README.md", "# nothing here\n");
+        assert!(dotnet_from(&dir).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
